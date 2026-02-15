@@ -6,12 +6,29 @@ exports.runSnippet = (req, res) => {
   const { code } = req.body;
 
   const filePath = path.join(__dirname, 'temp.cpp');
+  const executableName = process.platform === 'win32' ? 'temp.exe' : './temp';
+
   fs.writeFileSync(filePath, code);
 
-  exec(`g++ ${filePath} -o temp && ./temp`, { timeout: 3000 }, (error, stdout, stderr) => {
+  // Compile first
+  exec(`g++ temp.cpp -o temp`, { cwd: __dirname, timeout: 3000 }, (error, stdout, stderr) => {
     if (error) {
+      fs.unlink(filePath, () => {});
       return res.json({ output: stderr || error.message });
     }
-    res.json({ output: stdout });
+
+    // Then run - just use the executable name
+    const runCommand = process.platform === 'win32' ? 'temp.exe' : './temp';
+    exec(runCommand, { cwd: __dirname, timeout: 3000 }, (runError, runStdout, runStderr) => {
+      fs.unlink(filePath, () => {});
+      fs.unlink(path.join(__dirname, 'temp.exe'), () => {});
+      fs.unlink(path.join(__dirname, 'temp'), () => {});
+
+      if (runError) {
+        return res.json({ output: runStderr || runError.message });
+      }
+
+      res.json({ output: runStdout });
+    });
   });
 };

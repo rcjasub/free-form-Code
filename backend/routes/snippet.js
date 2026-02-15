@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { runSnippet } = require('../controllers/snippetsController');
+const { runSnippet } = require('./controller/snippetController');
 
 router.post('/run', runSnippet);
 

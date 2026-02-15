@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const snippetRoutes = require('./routes/snippets');
+const snippetRoutes = require('./routes/snippet');
 
 const app = express();
 app.use(cors());
