@@ -1,11 +1,8 @@
-# React + TypeScript + Vite
+# free-form
+
+An infinite canvas where you can type and run code freely — inspired by Excalidraw.
 
 ## Database Schema
 
-![DB Schema](public/images/db_schema.png)
-
-
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
+![DB Schema](my-app/public/images/db_schema.png)
 

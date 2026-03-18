@@ -1,5 +1,5 @@
 -- canvas app schema
--- run with: psql -U postgres -d canvas_db -f init.sql
+-- run with: psql -U postgres -d free_code -f backend/db/schema.sql
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS canvases (
 CREATE TABLE IF NOT EXISTS blocks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   canvas_id  UUID REFERENCES canvases(id) ON DELETE CASCADE,
+  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text' or 'code'
   content    TEXT NOT NULL DEFAULT '',
   x          FLOAT NOT NULL DEFAULT 100,
   y          FLOAT NOT NULL DEFAULT 100,
