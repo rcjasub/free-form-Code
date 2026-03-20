@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 
 interface Props {
   id: number;
@@ -19,29 +19,62 @@ export default function OutputBubble({
   onMove,
   onDismiss,
 }: Props) {
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const xRef = useRef(x);
+  const yRef = useRef(y);
+  const onMoveRef = useRef(onMove);
+  xRef.current = x;
+  yRef.current = y;
+  onMoveRef.current = onMove;
 
-  function startDrag(e: React.MouseEvent) {
-    e.preventDefault();
-    dragging.current = true;
-    dragOffset.current = { x: e.clientX - x, y: e.clientY - y };
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging.current) return;
-      onMove(id, e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y);
+    function onMouseDown(e: MouseEvent) {
+      if (e.button !== 2) return;
+      e.preventDefault();
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const offset = { x: startX - xRef.current, y: startY - yRef.current };
+      let isDragging = false;
+
+      function onMouseMove(mv: MouseEvent) {
+        if (!isDragging) {
+          const dx = mv.clientX - startX;
+          const dy = mv.clientY - startY;
+          if (Math.sqrt(dx * dx + dy * dy) > 5) isDragging = true;
+        }
+        if (isDragging) {
+          onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+        }
+      }
+
+      function onMouseUp() {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      }
+
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
     }
-    function onMouseUp() {
-      dragging.current = false;
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+
+    function onContextMenu(e: MouseEvent) {
+      e.preventDefault();
     }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }
+
+    el.addEventListener("mousedown", onMouseDown, true);
+    el.addEventListener("contextmenu", onContextMenu, true);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown, true);
+      el.removeEventListener("contextmenu", onContextMenu, true);
+    };
+  }, [id]);
 
   return (
     <div
+      ref={containerRef}
       className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-mono whitespace-pre-wrap border ${
         isError
           ? "bg-red-50 text-red-700 border-red-200"
@@ -56,14 +89,6 @@ export default function OutputBubble({
       >
         ✕
       </button>
-
-      <div
-        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-40 cursor-grab active:cursor-grabbing transition-opacity select-none text-gray-400 text-xs"
-        onMouseDown={startDrag}
-      >
-        ⠿
-      </div>
-
       <span className="pr-3">{text}</span>
     </div>
   );
