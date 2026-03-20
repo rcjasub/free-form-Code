@@ -1,4 +1,7 @@
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { EditorView } from "@codemirror/view";
 
 interface Props {
   id: number;
@@ -7,9 +10,48 @@ interface Props {
   content: string;
   onChange: (id: number, content: string) => void;
   onMove: (id: number, x: number, y: number) => void;
-  onSaveSelection: (content: string, el: HTMLTextAreaElement) => void;
+  onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: number) => void;
 }
+
+const transparentTheme = EditorView.theme({
+  "&": {
+    background: "transparent !important",
+    fontSize: "14px",
+    fontFamily: "monospace",
+    minWidth: "180px",
+    maxWidth: "480px",
+    outline: "none !important",
+  },
+  ".cm-content": {
+    background: "transparent",
+    color: "#1f2937",
+    caretColor: "#1f2937",
+    padding: "0",
+  },
+  ".cm-editor": {
+    background: "transparent",
+  },
+  ".cm-focused": {
+    outline: "none !important",
+  },
+  ".cm-editor.cm-focused": {
+    outline: "none !important",
+  },
+  ".cm-line": {
+    padding: "0",
+    lineHeight: "1.625",
+  },
+  ".cm-gutters": {
+    display: "none",
+  },
+  ".cm-cursor": {
+    borderLeftColor: "#1f2937",
+  },
+  ".cm-selectionBackground, ::selection": {
+    background: "#bfdbfe !important",
+  },
+});
 
 export default function FloatingNode({
   id,
@@ -21,20 +63,9 @@ export default function FloatingNode({
   onSaveSelection,
   onDelete,
 }: Props) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (content === "") textareaRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = ta.scrollHeight + "px";
-  }, [content]);
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -43,11 +74,7 @@ export default function FloatingNode({
 
     function onMouseMove(e: MouseEvent) {
       if (!dragging.current) return;
-      onMove(
-        id,
-        e.clientX - dragOffset.current.x,
-        e.clientY - dragOffset.current.y,
-      );
+      onMove(id, e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y);
     }
     function onMouseUp() {
       dragging.current = false;
@@ -59,13 +86,20 @@ export default function FloatingNode({
   }
 
   return (
-    <div className="absolute group" style={{ left: x, top: y }}>
+    <div
+      ref={containerRef}
+      className="absolute group outline-none"
+      style={{ left: x, top: y }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* delete button */}
       <div
         className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-gray-400 text-xs transition-opacity"
         onClick={() => onDelete(id)}
       >
         ✕
       </div>
+
       {/* drag handle */}
       <div
         className="absolute -left-5 top-1 opacity-0 group-hover:opacity-40 cursor-grab active:cursor-grabbing transition-opacity select-none text-gray-400 text-xs"
@@ -74,21 +108,30 @@ export default function FloatingNode({
         ⠿
       </div>
 
-      <textarea
-        ref={textareaRef}
-        className="bg-transparent resize-none outline-none font-mono text-sm text-gray-800 leading-relaxed min-w-[180px] max-w-[480px] overflow-hidden placeholder-gray-300"
+      <CodeMirror
         value={content}
-        placeholder="type here..."
-        rows={1}
-        onChange={(e) => onChange(id, e.target.value)}
-        onMouseUp={(e) => {
-          const ta = e.currentTarget;
-          const selected = ta.value
-            .substring(ta.selectionStart, ta.selectionEnd)
-            .trim();
-          if (selected) onSaveSelection(selected, ta);
+        extensions={[javascript(), transparentTheme, EditorView.lineWrapping]}
+        onChange={(val) => onChange(id, val)}
+        onStatistics={(data) => {
+          if (!containerRef.current) return;
+          const selected = data.selectionCode.trim();
+          const toSave = selected || content.trim();
+          if (toSave) onSaveSelection(toSave, containerRef.current);
         }}
-        onMouseDown={(e) => e.stopPropagation()}
+        basicSetup={{
+          lineNumbers: false,
+          foldGutter: false,
+          dropCursor: false,
+          allowMultipleSelections: false,
+          indentOnInput: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: false,
+          highlightActiveLine: false,
+          highlightSelectionMatches: false,
+          searchKeymap: false,
+        }}
+        placeholder="type here..."
       />
     </div>
   );

@@ -24,7 +24,7 @@ export default function App() {
   const nextId = useRef(1);
   const lastSelection = useRef<{
     content: string;
-    el: HTMLTextAreaElement;
+    el: HTMLElement;
   } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -45,15 +45,7 @@ export default function App() {
       let x = 200;
       let y = 100;
 
-      const active = document.activeElement;
-      if (active instanceof HTMLTextAreaElement) {
-        const { selectionStart, selectionEnd, value } = active;
-        code = value.substring(selectionStart, selectionEnd).trim();
-        if (!code) code = value.trim();
-        const rect = active.getBoundingClientRect();
-        x = rect.right + 20;
-        y = rect.top;
-      } else if (lastSelection.current) {
+      if (lastSelection.current) {
         code = lastSelection.current.content;
         const rect = lastSelection.current.el.getBoundingClientRect();
         x = rect.right + 20;
@@ -111,7 +103,7 @@ export default function App() {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
   }
 
-  function saveSelection(content: string, el: HTMLTextAreaElement) {
+  function saveSelection(content: string, el: HTMLElement) {
     lastSelection.current = { content, el };
   }
 
