@@ -30,11 +30,34 @@ export default function App() {
     content: string;
     el: HTMLElement;
   } | null>(null);
+  const spaceHeld = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // keep refs in sync so pan/zoom handlers always see latest values
   useEffect(() => { offsetRef.current = offset }, [offset]);
   useEffect(() => { scaleRef.current = scale }, [scale]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault()
+        spaceHeld.current = true
+        document.body.style.cursor = 'grab'
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') {
+        spaceHeld.current = false
+        document.body.style.cursor = ''
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target !== canvasRef.current) return;
@@ -69,10 +92,13 @@ export default function App() {
     applyZoom(Math.max(+(scaleRef.current - 0.1).toFixed(1), 0.2));
   }
 
-  // pan with middle-click drag on the background
+  // pan with Space + left-click drag, or middle-click anywhere
   function handlePanStart(e: React.MouseEvent) {
-    if (e.button !== 1) return;
+    const isMiddle = e.button === 1;
+    const isSpaceDrag = e.button === 0 && spaceHeld.current;
+    if (!isMiddle && !isSpaceDrag) return;
     e.preventDefault();
+    document.body.style.cursor = 'grabbing';
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
 
@@ -80,6 +106,7 @@ export default function App() {
       setOffset({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
+      document.body.style.cursor = spaceHeld.current ? 'grab' : '';
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -192,7 +219,7 @@ export default function App() {
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">
-              click anywhere to start typing
+              click anywhere to start
             </p>
           </div>
         )}

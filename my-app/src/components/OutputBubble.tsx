@@ -48,9 +48,7 @@ export default function OutputBubble({
           : "bg-gray-900 text-green-400 border-gray-700"
       }`}
       style={{ left: x, top: y }}
-      onMouseDown={(e) => {
-        if (e.button === 1) startDrag(e);
-      }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <button
         className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-red-400" : "text-gray-400"}`}

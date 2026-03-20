@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
@@ -29,28 +29,13 @@ const transparentTheme = EditorView.theme({
     caretColor: "#1f2937",
     padding: "0",
   },
-  ".cm-editor": {
-    background: "transparent",
-  },
-  ".cm-focused": {
-    outline: "none !important",
-  },
-  ".cm-editor.cm-focused": {
-    outline: "none !important",
-  },
-  ".cm-line": {
-    padding: "0",
-    lineHeight: "1.625",
-  },
-  ".cm-gutters": {
-    display: "none",
-  },
-  ".cm-cursor": {
-    borderLeftColor: "#1f2937",
-  },
-  ".cm-selectionBackground, ::selection": {
-    background: "#bfdbfe !important",
-  },
+  ".cm-editor": { background: "transparent" },
+  ".cm-focused": { outline: "none !important" },
+  ".cm-editor.cm-focused": { outline: "none !important" },
+  ".cm-line": { padding: "0", lineHeight: "1.625" },
+  ".cm-gutters": { display: "none" },
+  ".cm-cursor": { borderLeftColor: "#1f2937" },
+  ".cm-selectionBackground, ::selection": { background: "#bfdbfe !important" },
 });
 
 export default function FloatingNode({
@@ -64,36 +49,66 @@ export default function FloatingNode({
   onDelete,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const xRef = useRef(x);
+  const yRef = useRef(y);
+  const onMoveRef = useRef(onMove);
+  xRef.current = x;
+  yRef.current = y;
+  onMoveRef.current = onMove;
 
-  function startDrag(e: React.MouseEvent) {
-    e.preventDefault();
-    dragging.current = true;
-    dragOffset.current = { x: e.clientX - x, y: e.clientY - y };
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging.current) return;
-      onMove(id, e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y);
+    // Right-click drag → move node
+    function onMouseDown(e: MouseEvent) {
+      if (e.button !== 2) return;
+      e.preventDefault();
+
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const offset = { x: startX - xRef.current, y: startY - yRef.current };
+      let isDragging = false;
+
+      function onMouseMove(mv: MouseEvent) {
+        if (!isDragging) {
+          const dx = mv.clientX - startX;
+          const dy = mv.clientY - startY;
+          if (Math.sqrt(dx * dx + dy * dy) > 5) isDragging = true;
+        }
+        if (isDragging) {
+          onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+        }
+      }
+
+      function onMouseUp() {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      }
+
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
     }
-    function onMouseUp() {
-      dragging.current = false;
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+
+    // Suppress browser context menu
+    function onContextMenu(e: MouseEvent) {
+      e.preventDefault();
     }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }
+
+    el.addEventListener("mousedown", onMouseDown, true);
+    el.addEventListener("contextmenu", onContextMenu, true);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown, true);
+      el.removeEventListener("contextmenu", onContextMenu, true);
+    };
+  }, [id]);
 
   return (
     <div
       ref={containerRef}
       className="absolute group outline-none"
       style={{ left: x, top: y }}
-      onMouseDown={(e) => {
-        if (e.button === 1) startDrag(e);
-        else e.stopPropagation();
-      }}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* delete button */}
       <div
@@ -101,14 +116,6 @@ export default function FloatingNode({
         onClick={() => onDelete(id)}
       >
         ✕
-      </div>
-
-      {/* drag handle */}
-      <div
-        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-40 cursor-grab active:cursor-grabbing transition-opacity select-none text-gray-400 text-xs"
-        onMouseDown={startDrag}
-      >
-        ⠿
       </div>
 
       <CodeMirror
