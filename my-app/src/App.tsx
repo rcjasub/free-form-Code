@@ -111,6 +111,10 @@ export default function App() {
     setOutputs((prev) => prev.filter((o) => o.id !== id));
   }
 
+  function moveOutput(id: number, x: number, y: number) {
+    setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
+  }
+
   function deleteNode(id: number) {
     setNodes((prev) => prev.filter((n) => n.id !== id));
   }
@@ -171,6 +175,7 @@ export default function App() {
           text={out.text}
           isError={out.isError}
           onDismiss={dismissOutput}
+          onMove={moveOutput}
         />
       ))}
     </div>

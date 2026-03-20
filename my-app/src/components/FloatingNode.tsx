@@ -90,7 +90,10 @@ export default function FloatingNode({
       ref={containerRef}
       className="absolute group outline-none"
       style={{ left: x, top: y }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        if (e.button === 1) startDrag(e);
+        else e.stopPropagation();
+      }}
     >
       {/* delete button */}
       <div
