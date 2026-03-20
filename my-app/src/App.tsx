@@ -34,29 +34,33 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // keep refs in sync so pan/zoom handlers always see latest values
-  useEffect(() => { offsetRef.current = offset }, [offset]);
-  useEffect(() => { scaleRef.current = scale }, [scale]);
+  useEffect(() => {
+    offsetRef.current = offset;
+  }, [offset]);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.code === 'Space' && !e.repeat) {
-        e.preventDefault()
-        spaceHeld.current = true
-        document.body.style.cursor = 'grab'
+      if (e.code === "Space" && !e.repeat) {
+        e.preventDefault();
+        spaceHeld.current = true;
+        document.body.style.cursor = "grab";
       }
     }
     function onKeyUp(e: KeyboardEvent) {
-      if (e.code === 'Space') {
-        spaceHeld.current = false
-        document.body.style.cursor = ''
+      if (e.code === "Space") {
+        spaceHeld.current = false;
+        document.body.style.cursor = "";
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-    }
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -84,6 +88,14 @@ export default function App() {
     setScale(newScale);
   }
 
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    setOffset((prev) => ({
+      x: prev.x - e.deltaX,
+      y: prev.y - e.deltaY,
+    }));
+  }
+
   function zoomIn() {
     applyZoom(Math.min(+(scaleRef.current + 0.1).toFixed(1), 3));
   }
@@ -98,7 +110,7 @@ export default function App() {
     const isSpaceDrag = e.button === 0 && spaceHeld.current;
     if (!isMiddle && !isSpaceDrag) return;
     e.preventDefault();
-    document.body.style.cursor = 'grabbing';
+    document.body.style.cursor = "grabbing";
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
 
@@ -106,7 +118,7 @@ export default function App() {
       setOffset({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
-      document.body.style.cursor = spaceHeld.current ? 'grab' : '';
+      document.body.style.cursor = spaceHeld.current ? "grab" : "";
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -205,6 +217,7 @@ export default function App() {
         backgroundSize: "28px 28px",
       }}
       onMouseDown={handlePanStart}
+      onWheel={handleWheel}
     >
       <div
         ref={canvasRef}
