@@ -43,7 +43,9 @@ export default function App() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.code === "Space" && !e.repeat) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isEditable = (e.target as HTMLElement)?.isContentEditable;
+      if (e.code === "Space" && !e.repeat && tag !== "TEXTAREA" && tag !== "INPUT" && !isEditable) {
         e.preventDefault();
         spaceHeld.current = true;
         document.body.style.cursor = "grab";
