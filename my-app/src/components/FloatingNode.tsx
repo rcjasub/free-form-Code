@@ -2,6 +2,7 @@ import { useRef, useEffect } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
+import type { Mode } from "../App";
 
 interface Props {
   id: number;
@@ -12,6 +13,7 @@ interface Props {
   onMove: (id: number, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: number) => void;
+  mode: Mode;
 }
 
 const transparentTheme = EditorView.theme({
@@ -47,6 +49,7 @@ export default function FloatingNode({
   onMove,
   onSaveSelection,
   onDelete,
+  mode,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -60,7 +63,7 @@ export default function FloatingNode({
     const el = containerRef.current;
     if (!el) return;
 
-    // Right-click drag → move node
+    // Right-click drag → move node (universal fallback)
     function onMouseDown(e: MouseEvent) {
       if (e.button !== 2) return;
       e.preventDefault();
@@ -90,7 +93,6 @@ export default function FloatingNode({
       window.addEventListener("mouseup", onMouseUp);
     }
 
-    // Suppress browser context menu
     function onContextMenu(e: MouseEvent) {
       e.preventDefault();
     }
@@ -103,16 +105,63 @@ export default function FloatingNode({
     };
   }, [id]);
 
+  // Left-click drag from the drag handle (select mode)
+  function handleDragHandleMouseDown(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    let isDragging = false;
+
+    function onMouseMove(mv: MouseEvent) {
+      if (!isDragging) {
+        const dx = mv.clientX - startX;
+        const dy = mv.clientY - startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 3) isDragging = true;
+      }
+      if (isDragging) {
+        onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+      }
+    }
+
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
   return (
     <div
       ref={containerRef}
       className="absolute group outline-none"
       style={{ left: x, top: y }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        // in hand mode, let clicks bubble up so the canvas pan handler fires
+        if (mode !== "hand") e.stopPropagation();
+      }}
     >
+      {/* drag handle — visible on hover in select mode */}
+      {mode === "select" && (
+        <div
+          className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+          onMouseDown={handleDragHandleMouseDown}
+        >
+          <div className="w-8 h-1 bg-gray-300 rounded-full" />
+        </div>
+      )}
+
+      {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
+      {mode === "hand" && (
+        <div className="absolute inset-0 z-10 cursor-grab" />
+      )}
+
       {/* delete button */}
       <div
-        className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-gray-400 text-xs transition-opacity"
+        className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-gray-400 text-xs transition-opacity z-20"
         onClick={() => onDelete(id)}
       >
         ✕

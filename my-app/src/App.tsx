@@ -3,6 +3,8 @@ import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import "./App.css";
 
+export type Mode = "select" | "hand" | "text";
+
 interface Node {
   id: number;
   x: number;
@@ -26,6 +28,8 @@ export default function App() {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
+  const [mode, setMode] = useState<Mode>("select");
+  const modeRef = useRef<Mode>("select");
   const lastSelection = useRef<{
     content: string;
     el: HTMLElement;
@@ -33,22 +37,28 @@ export default function App() {
   const spaceHeld = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // keep refs in sync so pan/zoom handlers always see latest values
-  useEffect(() => {
-    offsetRef.current = offset;
-  }, [offset]);
-  useEffect(() => {
-    scaleRef.current = scale;
-  }, [scale]);
+  // keep refs in sync
+  useEffect(() => { offsetRef.current = offset; }, [offset]);
+  useEffect(() => { scaleRef.current = scale; }, [scale]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       const isEditable = (e.target as HTMLElement)?.isContentEditable;
-      if (e.code === "Space" && !e.repeat && tag !== "TEXTAREA" && tag !== "INPUT" && !isEditable) {
+      const inEditor = tag === "TEXTAREA" || tag === "INPUT" || isEditable;
+
+      if (e.code === "Space" && !e.repeat && !inEditor) {
         e.preventDefault();
         spaceHeld.current = true;
         document.body.style.cursor = "grab";
+      }
+
+      // mode shortcuts — only outside editors
+      if (!inEditor && !e.ctrlKey && !e.metaKey && !e.repeat) {
+        if (e.key === "v" || e.key === "V") setMode("select");
+        if (e.key === "h" || e.key === "H") setMode("hand");
+        if (e.key === "t" || e.key === "T") setMode("text");
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -66,6 +76,7 @@ export default function App() {
   }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (mode !== "text") return;
     if (e.target !== canvasRef.current) return;
     const id = nextId.current++;
     setNodes((prev) => [
@@ -79,7 +90,6 @@ export default function App() {
     ]);
   }
 
-  // zoom toward screen center
   function applyZoom(newScale: number) {
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -106,11 +116,11 @@ export default function App() {
     applyZoom(Math.max(+(scaleRef.current - 0.1).toFixed(1), 0.2));
   }
 
-  // pan with Space + left-click drag, or middle-click anywhere
   function handlePanStart(e: React.MouseEvent) {
     const isMiddle = e.button === 1;
     const isSpaceDrag = e.button === 0 && spaceHeld.current;
-    if (!isMiddle && !isSpaceDrag) return;
+    const isHandMode = e.button === 0 && modeRef.current === "hand";
+    if (!isMiddle && !isSpaceDrag && !isHandMode) return;
     e.preventDefault();
     document.body.style.cursor = "grabbing";
     const startX = e.clientX - offsetRef.current.x;
@@ -120,7 +130,8 @@ export default function App() {
       setOffset({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
-      document.body.style.cursor = spaceHeld.current ? "grab" : "";
+      const m = modeRef.current;
+      document.body.style.cursor = spaceHeld.current || m === "hand" ? "grab" : "";
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -210,17 +221,73 @@ export default function App() {
     setNodes((prev) => prev.filter((n) => n.id !== id));
   }
 
+  const cursorClass =
+    mode === "hand" ? "cursor-grab" : mode === "text" ? "cursor-crosshair" : "cursor-default";
+
+  const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
+    <button
+      onClick={() => setMode(m)}
+      title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+        mode === m
+          ? "bg-gray-100 text-gray-800"
+          : "text-gray-400 hover:text-gray-700"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div
-      className="relative w-screen h-screen overflow-hidden bg-white select-none cursor-crosshair"
+      className={`relative w-screen h-screen overflow-hidden bg-white select-none ${cursorClass}`}
       style={{
-        backgroundImage:
-          "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
+        backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
         backgroundSize: "28px 28px",
       }}
       onMouseDown={handlePanStart}
       onWheel={handleWheel}
     >
+      {/* branding */}
+      <div className="absolute top-4 left-4 z-10 pointer-events-none">
+        <span className="text-xs font-semibold text-gray-300 tracking-widest uppercase">
+          free-form
+        </span>
+      </div>
+
+      {/* mode toolbar */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm p-1">
+        {toolbarBtn(
+          "select",
+          // arrow / cursor icon
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" />
+          </svg>,
+          "Select (V)"
+        )}
+        {toolbarBtn(
+          "hand",
+          // hand icon
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" />
+          </svg>,
+          "Hand (H)"
+        )}
+        {toolbarBtn(
+          "text",
+          <span className="text-xs font-bold leading-none">T</span>,
+          "Text (T)"
+        )}
+      </div>
+
+      {/* run hint */}
+      <div className="absolute top-4 right-4 z-10 pointer-events-none">
+        <span className="text-xs text-gray-300 font-mono">
+          select code + ctrl+enter to run
+        </span>
+      </div>
+
+      {/* canvas */}
       <div
         ref={canvasRef}
         className="w-full h-full"
@@ -230,27 +297,13 @@ export default function App() {
         }}
         onClick={handleCanvasClick}
       >
-        {/* hint */}
-        {nodes.length === 0 && (
+        {nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">
               click anywhere to start
             </p>
           </div>
         )}
-
-        {/* toolbar */}
-        <div className="absolute top-4 left-4 z-10 pointer-events-none">
-          <span className="text-xs font-semibold text-gray-300 tracking-widest uppercase">
-            free-form
-          </span>
-        </div>
-
-        <div className="absolute top-4 right-4 z-10 pointer-events-none">
-          <span className="text-xs text-gray-300 font-mono">
-            select code + ctrl+enter to run
-          </span>
-        </div>
 
         {nodes.map((node) => (
           <FloatingNode
@@ -263,6 +316,7 @@ export default function App() {
             onMove={moveNode}
             onSaveSelection={saveSelection}
             onDelete={deleteNode}
+            mode={mode}
           />
         ))}
 
