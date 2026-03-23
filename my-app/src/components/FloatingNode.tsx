@@ -140,8 +140,10 @@ export default function FloatingNode({
       className="absolute group outline-none"
       style={{ left: x, top: y }}
       onMouseDown={(e) => {
-        // in hand mode, let clicks bubble up so the canvas pan handler fires
         if (mode !== "hand") e.stopPropagation();
+      }}
+      onMouseEnter={() => {
+        if (mode === "erase") onDelete(id);
       }}
     >
       {/* drag handle — visible on hover in select mode */}

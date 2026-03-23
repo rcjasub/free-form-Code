@@ -3,7 +3,7 @@ import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import "./App.css";
 
-export type Mode = "select" | "hand" | "text";
+export type Mode = "select" | "hand" | "text" | "erase";
 
 interface Node {
   id: number;
@@ -38,9 +38,15 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // keep refs in sync
-  useEffect(() => { offsetRef.current = offset; }, [offset]);
-  useEffect(() => { scaleRef.current = scale; }, [scale]);
-  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => {
+    offsetRef.current = offset;
+  }, [offset]);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -59,6 +65,7 @@ export default function App() {
         if (e.key === "v" || e.key === "V") setMode("select");
         if (e.key === "h" || e.key === "H") setMode("hand");
         if (e.key === "t" || e.key === "T") setMode("text");
+        if (e.key === "e" || e.key === "E") setMode("erase");
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -131,7 +138,8 @@ export default function App() {
     }
     function onMouseUp() {
       const m = modeRef.current;
-      document.body.style.cursor = spaceHeld.current || m === "hand" ? "grab" : "";
+      document.body.style.cursor =
+        spaceHeld.current || m === "hand" ? "grab" : "";
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -222,7 +230,11 @@ export default function App() {
   }
 
   const cursorClass =
-    mode === "hand" ? "cursor-grab" : mode === "text" ? "cursor-crosshair" : "cursor-default";
+    mode === "hand"
+      ? "cursor-grab"
+      : mode === "text"
+        ? "cursor-crosshair"
+        : "cursor-default";
 
   const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
     <button
@@ -242,7 +254,8 @@ export default function App() {
     <div
       className={`relative w-screen h-screen overflow-hidden bg-white select-none ${cursorClass}`}
       style={{
-        backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
+        backgroundImage:
+          "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
         backgroundSize: "28px 28px",
       }}
       onMouseDown={handlePanStart}
@@ -263,20 +276,37 @@ export default function App() {
           <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" />
           </svg>,
-          "Select (V)"
+          "Select (V)",
         )}
         {toolbarBtn(
           "hand",
           // hand icon
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" />
           </svg>,
-          "Hand (H)"
+          "Hand (H)",
         )}
         {toolbarBtn(
           "text",
           <span className="text-xs font-bold leading-none">T</span>,
-          "Text (T)"
+          "Text (T)",
+        )}
+        {toolbarBtn(
+          "erase",
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" />
+            <path d="M6.5 17.5l4-4" />
+          </svg>,
+          "Erase (E)",
         )}
       </div>
 
@@ -328,7 +358,7 @@ export default function App() {
             y={out.y}
             text={out.text}
             isError={out.isError}
-            onDismiss={dismissOutput}
+            onDelete={dismissOutput}
             onMove={moveOutput}
             mode={mode}
           />

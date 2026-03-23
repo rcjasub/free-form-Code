@@ -7,7 +7,7 @@ interface Props {
   y: number;
   text: string;
   isError: boolean;
-  onDismiss: (id: number) => void;
+  onDelete: (id: number) => void;
   onMove: (id: number, x: number, y: number) => void;
   mode: Mode;
 }
@@ -19,7 +19,7 @@ export default function OutputBubble({
   text,
   isError,
   onMove,
-  onDismiss,
+  onDelete,
   mode,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,6 +115,9 @@ export default function OutputBubble({
       onMouseDown={(e) => {
         if (mode !== "hand") e.stopPropagation();
       }}
+      onMouseEnter={() => {
+        if (mode === "erase") onDelete(id);
+      }}
     >
       {/* drag handle — visible on hover in select mode */}
       {mode === "select" && (
@@ -130,7 +133,7 @@ export default function OutputBubble({
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
         className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-red-400" : "text-gray-400"}`}
-        onClick={() => onDismiss(id)}
+        onClick={() => onDelete(id)}
       >
         ✕
       </button>
