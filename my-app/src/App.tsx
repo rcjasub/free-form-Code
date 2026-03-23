@@ -330,6 +330,7 @@ export default function App() {
             isError={out.isError}
             onDismiss={dismissOutput}
             onMove={moveOutput}
+            mode={mode}
           />
         ))}
       </div>

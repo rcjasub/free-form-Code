@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import type { Mode } from "../App";
 
 interface Props {
   id: number;
@@ -8,6 +9,7 @@ interface Props {
   isError: boolean;
   onDismiss: (id: number) => void;
   onMove: (id: number, x: number, y: number) => void;
+  mode: Mode;
 }
 
 export default function OutputBubble({
@@ -18,6 +20,7 @@ export default function OutputBubble({
   isError,
   onMove,
   onDismiss,
+  mode,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -72,6 +75,34 @@ export default function OutputBubble({
     };
   }, [id]);
 
+  function handleDragHandleMouseDown(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    let isDragging = false;
+
+    function onMouseMove(mv: MouseEvent) {
+      if (!isDragging) {
+        const dx = mv.clientX - startX;
+        const dy = mv.clientY - startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 3) isDragging = true;
+      }
+      if (isDragging) {
+        onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+      }
+    }
+
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
   return (
     <div
       ref={containerRef}
@@ -81,8 +112,22 @@ export default function OutputBubble({
           : "bg-gray-900 text-green-400 border-gray-700"
       }`}
       style={{ left: x, top: y }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        if (mode !== "hand") e.stopPropagation();
+      }}
     >
+      {/* drag handle — visible on hover in select mode */}
+      {mode === "select" && (
+        <div
+          className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
+          onMouseDown={handleDragHandleMouseDown}
+        >
+          <div className="w-8 h-1 bg-gray-300 rounded-full" />
+        </div>
+      )}
+
+      {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
+      {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
         className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-red-400" : "text-gray-400"}`}
         onClick={() => onDismiss(id)}
