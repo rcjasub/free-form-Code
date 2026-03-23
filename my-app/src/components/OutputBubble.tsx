@@ -11,6 +11,7 @@ interface Props {
   onMove: (id: number, x: number, y: number) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
+  isDark: boolean;
 }
 
 export default function OutputBubble({
@@ -23,6 +24,7 @@ export default function OutputBubble({
   onDelete,
   mode,
   isMouseDown,
+  isDark,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -110,8 +112,8 @@ export default function OutputBubble({
       ref={containerRef}
       className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-mono whitespace-pre-wrap border ${
         isError
-          ? "bg-red-50 text-red-700 border-red-200"
-          : "bg-gray-900 text-green-400 border-gray-700"
+          ? isDark ? "bg-[#2d1515] text-red-400 border-[#5c2a2a]" : "bg-red-50 text-red-700 border-red-200"
+          : isDark ? "bg-[#232329] text-green-400 border-[#3c3c4a]" : "bg-gray-900 text-green-400 border-gray-700"
       }`}
       style={{ left: x, top: y }}
       onMouseDown={(e) => {
@@ -127,7 +129,7 @@ export default function OutputBubble({
           className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragHandleMouseDown}
         >
-          <div className="w-8 h-1 bg-gray-300 rounded-full" />
+          <div className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`} />
         </div>
       )}
 

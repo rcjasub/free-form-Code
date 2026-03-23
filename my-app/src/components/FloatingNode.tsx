@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
@@ -15,31 +15,36 @@ interface Props {
   onDelete: (id: number) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
+  isDark: boolean;
 }
 
-const transparentTheme = EditorView.theme({
-  "&": {
-    background: "transparent !important",
-    fontSize: "14px",
-    fontFamily: "monospace",
-    minWidth: "180px",
-    maxWidth: "480px",
-    outline: "none !important",
-  },
-  ".cm-content": {
-    background: "transparent",
-    color: "#1f2937",
-    caretColor: "#1f2937",
-    padding: "0",
-  },
-  ".cm-editor": { background: "transparent" },
-  ".cm-focused": { outline: "none !important" },
-  ".cm-editor.cm-focused": { outline: "none !important" },
-  ".cm-line": { padding: "0", lineHeight: "1.625" },
-  ".cm-gutters": { display: "none" },
-  ".cm-cursor": { borderLeftColor: "#1f2937" },
-  ".cm-selectionBackground, ::selection": { background: "#bfdbfe !important" },
-});
+function makeTheme(isDark: boolean) {
+  return EditorView.theme({
+    "&": {
+      background: "transparent !important",
+      fontSize: "14px",
+      fontFamily: "monospace",
+      minWidth: "180px",
+      maxWidth: "480px",
+      outline: "none !important",
+    },
+    ".cm-content": {
+      background: "transparent",
+      color: isDark ? "#f5f5f5" : "#1f2937",
+      caretColor: isDark ? "#f5f5f5" : "#1f2937",
+      padding: "0",
+    },
+    ".cm-editor": { background: "transparent" },
+    ".cm-focused": { outline: "none !important" },
+    ".cm-editor.cm-focused": { outline: "none !important" },
+    ".cm-line": { padding: "0", lineHeight: "1.625" },
+    ".cm-gutters": { display: "none" },
+    ".cm-cursor": { borderLeftColor: isDark ? "#f5f5f5" : "#1f2937" },
+    ".cm-selectionBackground, ::selection": {
+      background: isDark ? "#264f78 !important" : "#bfdbfe !important",
+    },
+  });
+}
 
 export default function FloatingNode({
   id,
@@ -52,6 +57,7 @@ export default function FloatingNode({
   onDelete,
   mode,
   isMouseDown,
+  isDark,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -60,6 +66,8 @@ export default function FloatingNode({
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
+
+  const theme = useMemo(() => makeTheme(isDark), [isDark]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -154,18 +162,18 @@ export default function FloatingNode({
           className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragHandleMouseDown}
         >
-          <div className="w-8 h-1 bg-gray-300 rounded-full" />
+          <div className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`} />
         </div>
       )}
 
-      {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
+      {/* hand mode overlay */}
       {mode === "hand" && (
         <div className="absolute inset-0 z-10 cursor-grab" />
       )}
 
       {/* delete button */}
       <div
-        className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-gray-400 text-xs transition-opacity z-20"
+        className={`absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
         onClick={() => onDelete(id)}
       >
         ✕
@@ -173,7 +181,7 @@ export default function FloatingNode({
 
       <CodeMirror
         value={content}
-        extensions={[javascript(), transparentTheme, EditorView.lineWrapping]}
+        extensions={[javascript(), theme, EditorView.lineWrapping]}
         onChange={(val) => onChange(id, val)}
         onStatistics={(data) => {
           if (!containerRef.current) return;

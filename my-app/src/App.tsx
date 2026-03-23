@@ -4,6 +4,7 @@ import OutputBubble from "./components/OutputBubble";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase";
+export type DisplayMode = "light" | "dark";
 
 interface Node {
   id: number;
@@ -30,6 +31,7 @@ export default function App() {
   const scaleRef = useRef(1);
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
+  const [displayM, setDisplayM] = useState<DisplayMode>("light");
   const lastSelection = useRef<{
     content: string;
     el: HTMLElement;
@@ -243,20 +245,22 @@ export default function App() {
       title={title}
       className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
         mode === m
-          ? "bg-gray-100 text-gray-800"
-          : "text-gray-400 hover:text-gray-700"
+          ? isDark ? "bg-[#3c3c4a] text-[#f5f5f5]" : "bg-gray-100 text-gray-800"
+          : isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"
       }`}
     >
       {label}
     </button>
   );
 
+  const isDark = displayM === "dark";
+
   return (
     <div
-      className={`relative w-screen h-screen overflow-hidden bg-white select-none ${cursorClass}`}
+      className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
       style={{
-        backgroundImage:
-          "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
+        backgroundColor: isDark ? "#121212" : "#ffffff",
+        backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
         backgroundSize: "28px 28px",
       }}
       onWheel={handleWheel}
@@ -271,7 +275,7 @@ export default function App() {
       </div>
 
       {/* mode toolbar */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm p-1">
+      <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
         {toolbarBtn(
           "select",
           // arrow / cursor icon
@@ -321,11 +325,32 @@ export default function App() {
         )}
       </div>
 
-      {/* run hint */}
-      <div className="absolute top-4 right-4 z-10 pointer-events-none">
-        <span className="text-xs text-gray-300 font-mono">
+      {/* top-right: run hint + dark/light toggle */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
+        <span className="text-xs text-gray-300 font-mono pointer-events-none">
           select code + ctrl+enter to run
         </span>
+        <button
+          onClick={() => setDisplayM(isDark ? "light" : "dark")}
+          title="Toggle dark mode"
+          className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
+            isDark
+              ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
+              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
+          }`}
+        >
+          {isDark ? (
+            // sun icon
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+            </svg>
+          ) : (
+            // moon icon
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          )}
+        </button>
       </div>
 
       {/* canvas */}
@@ -359,6 +384,7 @@ export default function App() {
             onDelete={deleteNode}
             mode={mode}
             isMouseDown={isMouseDown}
+            isDark={isDark}
           />
         ))}
 
@@ -374,23 +400,24 @@ export default function App() {
             onMove={moveOutput}
             mode={mode}
             isMouseDown={isMouseDown}
+            isDark={isDark}
           />
         ))}
       </div>
 
       {/* zoom controls */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white border border-gray-200 rounded-lg shadow-sm px-2 py-1">
+      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
         <button
-          className="text-gray-400 hover:text-gray-700 text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors"
+          className={`text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors ${isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"}`}
           onClick={zoomOut}
         >
           −
         </button>
-        <span className="text-xs font-mono text-gray-400 w-10 text-center">
+        <span className={`text-xs font-mono w-10 text-center ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
           {Math.round(scale * 100)}%
         </span>
         <button
-          className="text-gray-400 hover:text-gray-700 text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors"
+          className={`text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors ${isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"}`}
           onClick={zoomIn}
         >
           +
