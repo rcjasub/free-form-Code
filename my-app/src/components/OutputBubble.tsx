@@ -10,6 +10,7 @@ interface Props {
   onDelete: (id: number) => void;
   onMove: (id: number, x: number, y: number) => void;
   mode: Mode;
+  isMouseDown: React.RefObject<boolean>;
 }
 
 export default function OutputBubble({
@@ -21,6 +22,7 @@ export default function OutputBubble({
   onMove,
   onDelete,
   mode,
+  isMouseDown,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -116,7 +118,7 @@ export default function OutputBubble({
         if (mode !== "hand") e.stopPropagation();
       }}
       onMouseEnter={() => {
-        if (mode === "erase") onDelete(id);
+        if (mode === "erase" && isMouseDown.current) onDelete(id);
       }}
     >
       {/* drag handle — visible on hover in select mode */}

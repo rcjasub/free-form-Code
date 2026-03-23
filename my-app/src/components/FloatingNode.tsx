@@ -14,6 +14,7 @@ interface Props {
   onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: number) => void;
   mode: Mode;
+  isMouseDown: React.RefObject<boolean>;
 }
 
 const transparentTheme = EditorView.theme({
@@ -50,6 +51,7 @@ export default function FloatingNode({
   onSaveSelection,
   onDelete,
   mode,
+  isMouseDown,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -143,7 +145,7 @@ export default function FloatingNode({
         if (mode !== "hand") e.stopPropagation();
       }}
       onMouseEnter={() => {
-        if (mode === "erase") onDelete(id);
+        if (mode === "erase" && isMouseDown.current) onDelete(id);
       }}
     >
       {/* drag handle — visible on hover in select mode */}

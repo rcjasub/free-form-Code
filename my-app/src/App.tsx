@@ -36,6 +36,7 @@ export default function App() {
   } | null>(null);
   const spaceHeld = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const isMouseDown = useRef(false);
 
   // keep refs in sync
   useEffect(() => {
@@ -258,8 +259,9 @@ export default function App() {
           "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
         backgroundSize: "28px 28px",
       }}
-      onMouseDown={handlePanStart}
       onWheel={handleWheel}
+      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
+      onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
       <div className="absolute top-4 left-4 z-10 pointer-events-none">
@@ -302,7 +304,16 @@ export default function App() {
         )}
         {toolbarBtn(
           "erase",
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" />
             <path d="M6.5 17.5l4-4" />
           </svg>,
@@ -347,6 +358,7 @@ export default function App() {
             onSaveSelection={saveSelection}
             onDelete={deleteNode}
             mode={mode}
+            isMouseDown={isMouseDown}
           />
         ))}
 
@@ -361,6 +373,7 @@ export default function App() {
             onDelete={dismissOutput}
             onMove={moveOutput}
             mode={mode}
+            isMouseDown={isMouseDown}
           />
         ))}
       </div>
