@@ -13,6 +13,7 @@ interface Props {
   onMove: (id: number, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: number) => void;
+  onRun: (id: number) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -39,7 +40,7 @@ function makeTheme(isDark: boolean) {
     ".cm-editor.cm-focused": { outline: "none !important" },
     ".cm-line": { padding: "0", lineHeight: "1.625" },
     ".cm-gutters": { display: "none" },
-    ".cm-cursor": { borderLeftColor: isDark ? "#f5f5f5" : "#1f2937" },
+    ".cm-cursor": { borderLeftColor: isDark ? "#f5f5f5" : "#1f2937", borderLeftWidth: "2px" },
     ".cm-selectionBackground, ::selection": {
       background: isDark ? "#264f78 !important" : "#bfdbfe !important",
     },
@@ -55,6 +56,7 @@ export default function FloatingNode({
   onMove,
   onSaveSelection,
   onDelete,
+  onRun,
   mode,
   isMouseDown,
   isDark,
@@ -151,6 +153,7 @@ export default function FloatingNode({
   return (
     <div
       ref={containerRef}
+      data-node-id={id}
       className="absolute group outline-none"
       style={{ left: x, top: y }}
       onMouseDown={(e) => {
@@ -174,6 +177,14 @@ export default function FloatingNode({
       {mode === "hand" && (
         <div className="absolute inset-0 z-10 cursor-grab" />
       )}
+
+      {/* play button */}
+      <div
+        className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
+        onClick={() => onRun(id)}
+      >
+        ▶
+      </div>
 
       {/* delete button */}
       <div
