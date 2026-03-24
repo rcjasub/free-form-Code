@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
@@ -66,6 +66,10 @@ export default function FloatingNode({
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
+
+  // Use initial content only — let CodeMirror own its state so the cursor
+  // doesn't reset on every keystroke via the controlled-value feedback loop.
+  const [initialContent] = useState(content);
 
   const theme = useMemo(() => makeTheme(isDark), [isDark]);
 
@@ -180,7 +184,7 @@ export default function FloatingNode({
       </div>
 
       <CodeMirror
-        value={content}
+        value={initialContent}
         extensions={[javascript(), theme, EditorView.lineWrapping]}
         onChange={(val) => onChange(id, val)}
         onStatistics={(data) => {
