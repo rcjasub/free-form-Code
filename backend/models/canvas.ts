@@ -17,6 +17,7 @@ export interface CreateCanvasParams {
   is_public: boolean
 }
 
+
 export async function create(params: CreateCanvasParams): Promise<Canvas> {
   const { user_id, name, share_id, is_public } = params
   const result = await pool.query<Canvas>(
@@ -28,8 +29,10 @@ export async function create(params: CreateCanvasParams): Promise<Canvas> {
   return result.rows[0]
 }
 
-export async function getById(id: string): Promise<Canvas | null> {          
-    const result = await.pool.query<canvas>(
-      SELECT * FROM canvases WHERE id = $1,
-    )                                                                                                      
+export async function getById(id: string): Promise<Canvas | null> {    
+    const result = await pool.query<Canvas>(
+      `SELECT * FROM canvases WHERE id = $1`,
+      [id]
+    )   
+    return result.rows[0] ?? null
   }    

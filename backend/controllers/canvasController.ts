@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { randomBytes } from "crypto";
 import * as Canvas from "../models/canvas";
-import { promises } from "dns";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
@@ -28,16 +27,16 @@ export async function getCanvasById(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const { user_id, name = "Untitled", is_public = false } = req.body;
+  const { id } = req.params;
 
-  if (!user_id) {
-    res.status(400).json({ error: "user_id is required" });
-    return;
-  }
-
-  try{
-
-  }catch(err){
-    
+  try {
+    const canvas = await Canvas.getById(id);
+    if (!canvas) {
+      res.status(404).json({ error: "Canvas not found" });
+      return;
+    }
+    res.status(200).json(canvas);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
