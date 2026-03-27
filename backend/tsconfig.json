@@ -9,6 +9,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["./**/*.ts"],
+  "include": ["db/pool.query"],
   "exclude": ["node_modules", "dist"]
 }

@@ -27,3 +27,9 @@ export async function create(params: CreateCanvasParams): Promise<Canvas> {
   )
   return result.rows[0]
 }
+
+export async function getById(id: string): Promise<Canvas | null> {          
+    const result = await.pool.query<canvas>(
+      SELECT * FROM canvases WHERE id = $1,
+    )                                                                                                      
+  }    
