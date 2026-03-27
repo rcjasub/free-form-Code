@@ -1,9 +1,9 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
+import 'dotenv/config'
+import express from 'express'
+import cors from 'cors'
 
-const canvasRoutes = require('./routes/canvas')
-const runRoutes = require('./routes/run')
+import canvasRoutes from './routes/canvas'
+import runRoutes from './routes/run'
 
 const app = express()
 const PORT = process.env.PORT || 3001
