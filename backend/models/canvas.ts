@@ -26,7 +26,7 @@ export async function create(params: CreateCanvasParams): Promise<Canvas> {
      RETURNING *`,
     [user_id, name, share_id, is_public]
   )
-  return result.rows[0]
+  return result.rows[0];
 }
 
 export async function getById(id: string): Promise<Canvas | null> {    
@@ -34,5 +34,13 @@ export async function getById(id: string): Promise<Canvas | null> {
       `SELECT * FROM canvases WHERE id = $1`,
       [id]
     )   
-    return result.rows[0] ?? null
+    return result.rows[0] ?? null;
   }    
+
+  export async function getCanvasByShareId(id: string): Promise<Canvas | null> {
+    const result = await pool.query<Canvas>(
+      'SELECT * FROM canvases WHERE share_id = $1',
+      [id]
+    )
+     return result.rows[0] ?? null;
+  }
