@@ -40,3 +40,21 @@ export async function getCanvasById(
     res.status(500).json({ error: (err as Error).message });
   }
 }
+
+export async function getCanvasByShareId(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { id } = req.params;
+
+  try {
+    const canvas = await Canvas.getCanvasByShareId(id);
+    if (!canvas) {
+      res.status(404).json({ error: "Canvas not found" });
+      return;
+    }
+    res.status(200).json(canvas);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
