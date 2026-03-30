@@ -13,6 +13,7 @@ interface Props {
   onMove: (id: string, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: string) => void;
+  onRun: (id: string) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -55,6 +56,7 @@ export default function FloatingNode({
   onMove,
   onSaveSelection,
   onDelete,
+  onRun,
   mode,
   isMouseDown,
   isDark,
@@ -151,6 +153,7 @@ export default function FloatingNode({
   return (
     <div
       ref={containerRef}
+      data-node-id={id}
       className="absolute group outline-none"
       style={{ left: x, top: y }}
       onMouseDown={(e) => {
@@ -177,15 +180,10 @@ export default function FloatingNode({
 
       {/* play button */}
       <div
-        className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
-        onClick={() => {
-          onSaveSelection(content, containerRef.current!);
-          window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }));
-        }}
+        className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
+        onClick={() => onRun(id)}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <polygon points="5,3 19,12 5,21" />
-        </svg>
+        ▶
       </div>
 
       {/* delete button */}

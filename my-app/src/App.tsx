@@ -245,6 +245,51 @@ export default function App() {
     if (canvasId) deleteBlock(canvasId, id);
   }
 
+  async function handleRunNode(id: string) {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || !node.content.trim()) return;
+
+    // Find the node's DOM element to position the output to its right
+    const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
+    let x = node.x + 220;
+    let y = node.y;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      x = (rect.right + 20 - offset.x) / scale;
+      y = (rect.top - offset.y) / scale;
+    }
+
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: node.content, language: "javascript" }),
+      });
+      const data = await res.json();
+      setOutputs((prev) => [
+        ...prev,
+        {
+          id: nextId.current++,
+          x,
+          y,
+          text: data.output,
+          isError: !!data.error,
+        },
+      ]);
+    } catch {
+      setOutputs((prev) => [
+        ...prev,
+        {
+          id: nextId.current++,
+          x,
+          y,
+          text: "Failed to reach server",
+          isError: true,
+        },
+      ]);
+    }
+  }
+
   const cursorClass =
     mode === "hand"
       ? "cursor-grab"
@@ -408,6 +453,7 @@ export default function App() {
             onMove={moveNode}
             onSaveSelection={saveSelection}
             onDelete={deleteNode}
+            onRun={handleRunNode}
             mode={mode}
             isMouseDown={isMouseDown}
             isDark={isDark}
