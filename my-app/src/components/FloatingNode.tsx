@@ -5,14 +5,14 @@ import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
 
 interface Props {
-  id: number;
+  id: string;
   x: number;
   y: number;
   content: string;
-  onChange: (id: number, content: string) => void;
-  onMove: (id: number, x: number, y: number) => void;
+  onChange: (id: string, content: string) => void;
+  onMove: (id: string, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
-  onDelete: (id: number) => void;
+  onDelete: (id: string) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -174,6 +174,19 @@ export default function FloatingNode({
       {mode === "hand" && (
         <div className="absolute inset-0 z-10 cursor-grab" />
       )}
+
+      {/* play button */}
+      <div
+        className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
+        onClick={() => {
+          onSaveSelection(content, containerRef.current!);
+          window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }));
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5,3 19,12 5,21" />
+        </svg>
+      </div>
 
       {/* delete button */}
       <div
