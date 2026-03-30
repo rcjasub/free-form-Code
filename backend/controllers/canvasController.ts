@@ -1,18 +1,15 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { randomBytes } from "crypto";
 import * as Canvas from "../models/canvas";
+import { AuthRequest } from "../middleware/auth";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
 }
 
-export async function createCanva(req: Request, res: Response): Promise<void> {
-  const { user_id, name = "Untitled", is_public = false } = req.body;
-
-  if (!user_id) {
-    res.status(400).json({ error: "user_id is required" });
-    return;
-  }
+export async function createCanva(req: AuthRequest, res: Response): Promise<void> {
+  const { name = "Untitled", is_public = false } = req.body;
+  const user_id = req.user!.id;
 
   try {
     const share_id = generateShareId();
@@ -23,10 +20,7 @@ export async function createCanva(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function getCanvasById(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function getCanvasById(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
   try {
@@ -41,10 +35,7 @@ export async function getCanvasById(
   }
 }
 
-export async function getCanvasByShareId(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function getCanvasByShareId(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
   try {
@@ -59,10 +50,7 @@ export async function getCanvasByShareId(
   }
 }
 
-export async function updateCanvasName(
-  req: Request,
-  res: Response,
-): Promise<void> {
+export async function updateCanvasName(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
   const { name } = req.body;
 
@@ -83,7 +71,7 @@ export async function updateCanvasName(
   }
 }
 
-export async function deleteCanvas(req: Request, res: Response): Promise<void> {
+export async function deleteCanvas(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
   if (!id) {
@@ -93,7 +81,6 @@ export async function deleteCanvas(req: Request, res: Response): Promise<void> {
 
   try {
     const canvas = await Canvas.deleteCanvas(id);
-
     if (!canvas) {
       res.status(404).json({ error: "Canvas not found" });
       return;

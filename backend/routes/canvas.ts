@@ -6,14 +6,14 @@ import {
   updateCanvasName,
   deleteCanvas,
 } from "../controllers/canvasController";
+import { authenticate } from "../middleware/auth";
 
 const router = Router();
 
-router.post("/", createCanva);
-router.get("/share/:id", getCanvasByShareId);
-router.get("/:id", getCanvasById);
-router.put("/:id", updateCanvasName); 
-router.delete("/:id", deleteCanvas); 
-
+router.get("/share/:id", getCanvasByShareId); // public — share link access
+router.get("/:id", authenticate, getCanvasById);
+router.post("/", authenticate, createCanva);
+router.put("/:id", authenticate, updateCanvasName);
+router.delete("/:id", authenticate, deleteCanvas);
 
 export default router;
