@@ -1,11 +1,13 @@
 import { Router } from "express";
-import { createCanvas } from "../controllers/canvasController";
-import { getCanvasById } from "../controllers/canvasController";
-import { getCanvasByShareId } from "../controllers/canvasController";
+import {
+  createCanva,
+  getCanvasById,
+  getCanvasByShareId,
+} from "../controllers/canvasController";
 
 const router = Router();
 
-router.post("/", createCanvas);
+router.post("/", createCanva);
 router.get("/share/:id", getCanvasByShareId);
 router.get("/:id", getCanvasById);
 
