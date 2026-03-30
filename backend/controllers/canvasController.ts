@@ -6,7 +6,7 @@ function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
 }
 
-export async function createCanvas(req: Request, res: Response): Promise<void> {
+export async function createCanva(req: Request, res: Response): Promise<void> {
   const { user_id, name = "Untitled", is_public = false } = req.body;
 
   if (!user_id) {
