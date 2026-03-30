@@ -58,3 +58,48 @@ export async function getCanvasByShareId(
     res.status(500).json({ error: (err as Error).message });
   }
 }
+
+export async function updateCanvasName(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+
+  try {
+    const canvas = await Canvas.updateCanvasName(id, name);
+    if (!canvas) {
+      res.status(404).json({ error: "Canvas not found" });
+      return;
+    }
+    res.status(200).json(canvas);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+export async function deleteCanvas(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+
+  if (!id) {
+    res.status(400).json({ error: "Canvas ID is required" });
+    return;
+  }
+
+  try {
+    const canvas = await Canvas.deleteCanvas(id);
+
+    if (!canvas) {
+      res.status(404).json({ error: "Canvas not found" });
+      return;
+    }
+    res.status(200).json({ message: "Canvas Deleted Successfully" });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
