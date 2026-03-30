@@ -31,15 +31,15 @@ export async function createBlock(req: Request, res: Response): Promise<void> {
 }
 
 export async function deleteBlock(req: Request, res: Response): Promise<void> {
-  const { blockId } = req.params;
+  const { id } = req.params;
 
-  if (!blockId) {
+  if (!id) {
     res.status(400).json({ error: "Block ID is required" });
     return;
   }
 
   try {
-    const block = await Blocks.deleteBlock(blockId);
+    const block = await Blocks.deleteBlock(id);
 
     if (!block) {
       res.status(404).json({ error: "Block not found" });
@@ -53,16 +53,16 @@ export async function deleteBlock(req: Request, res: Response): Promise<void> {
 }
 
 export async function updateBlock(req: Request, res: Response): Promise<void> {
-  const { blockId } = req.params;
+  const { id } = req.params;
   const { x, y } = req.body;
 
-  if (!blockId) {
+  if (!id) {
     res.status(400).json({ error: "Block ID is required" });
     return;
   }
 
   try {
-    const block = await Blocks.updateBlockPosition(blockId, x, y);
+    const block = await Blocks.updateBlockPosition(id, x, y);
     if (!block) {
       res.status(404).json({ error: "Block not found" });
       return;
