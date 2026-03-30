@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
+import { getAllBlocks, createBlock, updateBlockPosition, deleteBlock, updateBlockContent } from "./API/block";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase";
 export type DisplayMode = "light" | "dark";
 
 interface Node {
-  id: number;
+  id: string;
   x: number;
   y: number;
   content: string;
@@ -22,9 +24,11 @@ interface Output {
 }
 
 export default function App() {
+  const { canvasId } = useParams<{ canvasId: string }>();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
+  const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -50,6 +54,14 @@ export default function App() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  // load blocks from DB on mount
+  useEffect(() => {
+    if (!canvasId) return;
+    getAllBlocks(canvasId).then(({ data }) => {
+      setNodes(data.map((b: any) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
+    });
+  }, [canvasId]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -85,19 +97,14 @@ export default function App() {
     };
   }, []);
 
-  function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+  async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "text") return;
     if (e.target !== canvasRef.current) return;
-    const id = nextId.current++;
-    setNodes((prev) => [
-      ...prev,
-      {
-        id,
-        x: (e.clientX - offset.x) / scale,
-        y: (e.clientY - offset.y) / scale,
-        content: "",
-      },
-    ]);
+    if (!canvasId) return;
+    const x = (e.clientX - offset.x) / scale;
+    const y = (e.clientY - offset.y) / scale;
+    const { data } = await createBlock(canvasId, x, y);
+    setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
   }
 
   function applyZoom(newScale: number) {
@@ -208,12 +215,17 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function updateNode(id: number, content: string) {
+  function updateNode(id: string, content: string) {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
+    if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
+    contentSaveTimer.current = setTimeout(() => {
+      if (canvasId) updateBlockContent(canvasId, id, content);
+    }, 800);
   }
 
-  function moveNode(id: number, x: number, y: number) {
+  function moveNode(id: string, x: number, y: number) {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
+    if (canvasId) updateBlockPosition(canvasId, id, x, y);
   }
 
   function saveSelection(content: string, el: HTMLElement) {
@@ -228,11 +240,12 @@ export default function App() {
     setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
   }
 
-  function deleteNode(id: number) {
+  function deleteNode(id: string) {
     setNodes((prev) => prev.filter((n) => n.id !== id));
+    if (canvasId) deleteBlock(canvasId, id);
   }
 
-  async function handleRunNode(id: number) {
+  async function handleRunNode(id: string) {
     const node = nodes.find((n) => n.id === id);
     if (!node || !node.content.trim()) return;
 
@@ -375,6 +388,19 @@ export default function App() {
         <span className="text-xs text-gray-300 font-mono pointer-events-none">
           select code + ctrl+enter to run
         </span>
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }))}
+          title="Run selected code"
+          className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
+            isDark
+              ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
+              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
+          }`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5,3 19,12 5,21" />
+          </svg>
+        </button>
         <button
           onClick={() => setDisplayM(isDark ? "light" : "dark")}
           title="Toggle dark mode"

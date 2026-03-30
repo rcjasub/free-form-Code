@@ -5,15 +5,15 @@ import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
 
 interface Props {
-  id: number;
+  id: string;
   x: number;
   y: number;
   content: string;
-  onChange: (id: number, content: string) => void;
-  onMove: (id: number, x: number, y: number) => void;
+  onChange: (id: string, content: string) => void;
+  onMove: (id: string, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
-  onDelete: (id: number) => void;
-  onRun: (id: number) => void;
+  onDelete: (id: string) => void;
+  onRun: (id: string) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;

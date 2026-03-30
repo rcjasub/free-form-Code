@@ -56,7 +56,18 @@ export async function updateBlockPosition(
 ): Promise<Block> {
   const result = await pool.query<Block>(
     `UPDATE blocks SET x = $1, y = $2 WHERE id = $3 RETURNING *`,
-    [blockId, x, y],
+    [x, y, blockId],
+  );
+  return result.rows[0];
+}
+
+export async function updateBlockContent(
+  blockId: string,
+  content: string,
+): Promise<Block> {
+  const result = await pool.query<Block>(
+    `UPDATE blocks SET content = $1 WHERE id = $2 RETURNING *`,
+    [content, blockId],
   );
   return result.rows[0];
 }
