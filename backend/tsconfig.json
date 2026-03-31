@@ -7,8 +7,19 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
   },
-  "include": ["db/pool.query"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "db/pool.query"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { useTheme } from "next-themes";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
+import { ThemeToggleButton } from "./components/ThemeToggle";
 import { getAllBlocks, createBlock, updateBlockPosition, deleteBlock, updateBlockContent } from "./API/block";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase";
-export type DisplayMode = "light" | "dark";
 
 interface Node {
   id: string;
@@ -35,7 +36,7 @@ export default function App() {
   const scaleRef = useRef(1);
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
-  const [displayM, setDisplayM] = useState<DisplayMode>("light");
+  const { resolvedTheme } = useTheme();
   const lastSelection = useRef<{
     content: string;
     el: HTMLElement;
@@ -311,7 +312,7 @@ export default function App() {
     </button>
   );
 
-  const isDark = displayM === "dark";
+  const isDark = resolvedTheme === "dark";
 
   return (
     <div
@@ -401,27 +402,7 @@ export default function App() {
             <polygon points="5,3 19,12 5,21" />
           </svg>
         </button>
-        <button
-          onClick={() => setDisplayM(isDark ? "light" : "dark")}
-          title="Toggle dark mode"
-          className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
-            isDark
-              ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
-              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
-          }`}
-        >
-          {isDark ? (
-            // sun icon
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-            </svg>
-          ) : (
-            // moon icon
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            </svg>
-          )}
-        </button>
+        <ThemeToggleButton />
       </div>
 
       {/* canvas */}
