@@ -7,6 +7,16 @@ function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
 }
 
+export async function getUserCanvases(req: AuthRequest, res: Response): Promise<void> {
+  const user_id = req.user!.id;
+  try {
+    const canvases = await Canvas.getByUserId(user_id);
+    res.status(200).json(canvases);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
 export async function createCanva(req: AuthRequest, res: Response): Promise<void> {
   const { name = "Untitled", is_public = false } = req.body;
   const user_id = req.user!.id;
