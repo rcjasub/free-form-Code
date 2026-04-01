@@ -4,12 +4,16 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { ThemeProvider } from 'next-themes'
 import './index.css'
 import App from './App.tsx'
+import Home from './pages/Home.tsx'
+import Dashboard from './pages/Dashboard.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="light">
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/canvas/:canvasId" element={<App />} />
         </Routes>
       </BrowserRouter>

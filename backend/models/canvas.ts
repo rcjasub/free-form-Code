@@ -53,6 +53,14 @@ export async function getById(canvasId: string): Promise<Canvas | null> {
     return result.rows[0];
   }
 
+  export async function getByUserId(userId: string): Promise<Canvas[]> {
+    const result = await pool.query<Canvas>(
+      `SELECT * FROM canvases WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    )
+    return result.rows;
+  }
+
   export async function deleteCanvas(canvasId: string): Promise<Canvas> {
     const result = await pool.query<Canvas>(
       `DELETE FROM canvases WHERE id = $1 RETURNING *`,
