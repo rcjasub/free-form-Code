@@ -4,7 +4,15 @@ import { useTheme } from "next-themes";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
-import { getAllBlocks, createBlock, updateBlockPosition, deleteBlock, updateBlockContent } from "./API/block";
+import socket from "./lib/socket";
+
+import {
+  getAllBlocks,
+  createBlock,
+  updateBlockPosition,
+  deleteBlock,
+  updateBlockContent,
+} from "./API/block";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase";
@@ -56,12 +64,61 @@ export default function App() {
     modeRef.current = mode;
   }, [mode]);
 
-  // load blocks from DB on mount
   useEffect(() => {
     if (!canvasId) return;
+
+    socket.emit("canvas:join", canvasId);
+
+    // load blocks from DB on mount
     getAllBlocks(canvasId).then(({ data }) => {
-      setNodes(data.map((b: any) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
+      setNodes(
+        data.map((b: any) => ({
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          content: b.content,
+        })),
+      );
     });
+
+    // someone else created a block
+    socket.on("block:created", (block) => {
+      setNodes((prev) => [
+        ...prev,
+        { id: block.id, x: block.x, y: block.y, content: block.content },
+      ]);
+    });
+
+    // someone else moved a block
+    socket.on("block:moved", (data) => {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === data.id ? { ...n, x: data.x, y: data.y } : n,
+        ),
+      );
+    });
+
+    // someone else typed in a block
+    socket.on("block:updated", (data) => {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === data.id ? { ...n, content: data.content } : n,
+        ),
+      );
+    });
+
+    // someone else deleted a block
+    socket.on("block:deleted", (blockId) => {
+      setNodes((prev) => prev.filter((n) => n.id !== blockId));
+    });
+
+    // cleanup when you leave the page
+    return () => {
+      socket.off("block:created");
+      socket.off("block:moved");
+      socket.off("block:updated");
+      socket.off("block:deleted");
+    };
   }, [canvasId]);
 
   useEffect(() => {
@@ -84,6 +141,7 @@ export default function App() {
         if (e.key === "e" || e.key === "E") setMode("erase");
       }
     }
+
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") {
         spaceHeld.current = false;
@@ -105,7 +163,11 @@ export default function App() {
     const x = (e.clientX - offset.x) / scale;
     const y = (e.clientY - offset.y) / scale;
     const { data } = await createBlock(canvasId, x, y);
-    setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
+    setNodes((prev) => [
+      ...prev,
+      { id: data.id, x: data.x, y: data.y, content: data.content },
+    ]);
+    socket.emit("block:created", canvasId, data);
   }
 
   function applyZoom(newScale: number) {
@@ -220,13 +282,19 @@ export default function App() {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
-      if (canvasId) updateBlockContent(canvasId, id, content);
+      if (canvasId) {
+        updateBlockContent(canvasId, id, content);
+        socket.emit("block:updated", canvasId, { id, content });
+      }
     }, 800);
   }
 
   function moveNode(id: string, x: number, y: number) {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
-    if (canvasId) updateBlockPosition(canvasId, id, x, y);
+    if (canvasId) {
+      updateBlockPosition(canvasId, id, x, y);
+      socket.emit("block:moved", canvasId, { id, x, y });
+    }
   }
 
   function saveSelection(content: string, el: HTMLElement) {
@@ -243,7 +311,10 @@ export default function App() {
 
   function deleteNode(id: string) {
     setNodes((prev) => prev.filter((n) => n.id !== id));
-    if (canvasId) deleteBlock(canvasId, id);
+    if (canvasId) {
+      deleteBlock(canvasId, id);
+      socket.emit("block:deleted", canvasId, id);
+    }
   }
 
   async function handleRunNode(id: string) {
@@ -251,7 +322,9 @@ export default function App() {
     if (!node || !node.content.trim()) return;
 
     // Find the node's DOM element to position the output to its right
-    const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
+    const el = document.querySelector(
+      `[data-node-id="${id}"]`,
+    ) as HTMLElement | null;
     let x = node.x + 220;
     let y = node.y;
     if (el) {
@@ -304,8 +377,12 @@ export default function App() {
       title={title}
       className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
         mode === m
-          ? isDark ? "bg-[#3c3c4a] text-[#f5f5f5]" : "bg-gray-100 text-gray-800"
-          : isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"
+          ? isDark
+            ? "bg-[#3c3c4a] text-[#f5f5f5]"
+            : "bg-gray-100 text-gray-800"
+          : isDark
+            ? "text-[#9b9ba8] hover:text-[#f5f5f5]"
+            : "text-gray-400 hover:text-gray-700"
       }`}
     >
       {label}
@@ -323,7 +400,10 @@ export default function App() {
         backgroundSize: "28px 28px",
       }}
       onWheel={handleWheel}
-      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
+      onMouseDown={(e) => {
+        isMouseDown.current = true;
+        handlePanStart(e);
+      }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
@@ -334,7 +414,9 @@ export default function App() {
       </div>
 
       {/* mode toolbar */}
-      <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
+      <div
+        className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}
+      >
         {toolbarBtn(
           "select",
           // arrow / cursor icon
@@ -390,7 +472,15 @@ export default function App() {
           select code + ctrl+enter to run
         </span>
         <button
-          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }))}
+          onClick={() =>
+            window.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                ctrlKey: true,
+                key: "Enter",
+                bubbles: true,
+              }),
+            )
+          }
           title="Run selected code"
           className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
             isDark
@@ -459,14 +549,18 @@ export default function App() {
       </div>
 
       {/* zoom controls */}
-      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
+      <div
+        className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}
+      >
         <button
           className={`text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors ${isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"}`}
           onClick={zoomOut}
         >
           −
         </button>
-        <span className={`text-xs font-mono w-10 text-center ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
+        <span
+          className={`text-xs font-mono w-10 text-center ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}
+        >
           {Math.round(scale * 100)}%
         </span>
         <button
