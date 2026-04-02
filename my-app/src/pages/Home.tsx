@@ -2,6 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
+import Particles from "@/components/Particles";
 
 type AuthMode = "login" | "register";
 
@@ -36,8 +37,21 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#121212]">
-      <div className="w-full max-w-sm px-6">
+    <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#121212] relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none">
+        <Particles
+          particleColors={["#ffffff"]}
+          particleCount={200}
+          particleSpread={10}
+          speed={0.1}
+          particleBaseSize={100}
+          moveParticlesOnHover
+          alphaParticles={false}
+          disableRotation={false}
+          pixelRatio={1}
+        />
+      </div>
+      <div className="w-full max-w-sm px-6 relative z-10">
 
         {/* branding */}
         <div className="mb-8 text-center">
