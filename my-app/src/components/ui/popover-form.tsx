@@ -112,7 +112,7 @@ export function PopoverForm({
 
 export function PopoverFormButton({
   loading,
-  text = "submit",
+  text = "create",
 }: {
   loading: boolean
   text: string
