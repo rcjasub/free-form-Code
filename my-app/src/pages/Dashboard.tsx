@@ -110,14 +110,14 @@ export default function Dashboard() {
       </div>
 
       {/* banner animation */}
-      <div className="w-full flex justify-end px-8">
+      {/* <div className="w-full flex justify-end px-8">
         <DotLottieReact
           src="https://lottie.host/36bf90e6-b370-4703-ab50-4a844f442b98/HVRvvvCfOy.lottie"
           loop
           autoplay
           style={{ width: 120, height: 120 }}
         />
-      </div>
+      </div> */}
 
       {/* content */}
       <div className="max-w-4xl mx-auto px-8 py-12">
