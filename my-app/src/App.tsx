@@ -67,7 +67,18 @@ export default function App() {
   useEffect(() => {
     if (!canvasId) return;
 
-    socket.emit("canvas:join", canvasId);
+    console.log("[socket] connected:", socket.connected);
+
+    const joinCanvas = () => {
+      socket.emit("canvas:join", canvasId);
+      console.log("[socket] joined canvas:", canvasId);
+    };
+
+    if (socket.connected) {
+      joinCanvas();
+    } else {
+      socket.once("connect", joinCanvas);
+    }
 
     // load blocks from DB on mount
     getAllBlocks(canvasId).then(({ data }) => {
@@ -83,6 +94,7 @@ export default function App() {
 
     // someone else created a block
     socket.on("block:created", (block) => {
+      console.log("[socket] received block:created", block);
       setNodes((prev) => [
         ...prev,
         { id: block.id, x: block.x, y: block.y, content: block.content },
@@ -100,11 +112,13 @@ export default function App() {
 
     // someone else typed in a block
     socket.on("block:updated", (data) => {
-      setNodes((prev) =>
-        prev.map((n) =>
+      console.log("[socket] received block:updated", data);
+      setNodes((prev) => {
+        console.log("[socket] current node ids", prev.map(n => n.id));
+        return prev.map((n) =>
           n.id === data.id ? { ...n, content: data.content } : n,
-        ),
-      );
+        );
+      });
     });
 
     // someone else deleted a block
@@ -114,6 +128,7 @@ export default function App() {
 
     // cleanup when you leave the page
     return () => {
+      socket.off("connect", joinCanvas);
       socket.off("block:created");
       socket.off("block:moved");
       socket.off("block:updated");
@@ -167,6 +182,7 @@ export default function App() {
       ...prev,
       { id: data.id, x: data.x, y: data.y, content: data.content },
     ]);
+    console.log("[socket] emitting block:created", data);
     socket.emit("block:created", canvasId, data);
   }
 
@@ -284,6 +300,7 @@ export default function App() {
     contentSaveTimer.current = setTimeout(() => {
       if (canvasId) {
         updateBlockContent(canvasId, id, content);
+        console.log("[socket] emitting block:updated", { id, content });
         socket.emit("block:updated", canvasId, { id, content });
       }
     }, 800);

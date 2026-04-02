@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState } from "react";
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
@@ -62,9 +62,11 @@ export default function FloatingNode({
   isDark,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<ReactCodeMirrorRef>(null);
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
+  const isFocused = useRef(false);
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
@@ -72,6 +74,18 @@ export default function FloatingNode({
   // Use initial content only — let CodeMirror own its state so the cursor
   // doesn't reset on every keystroke via the controlled-value feedback loop.
   const [initialContent] = useState(content);
+
+  // Sync content from socket updates without disrupting local typing
+  useEffect(() => {
+    if (isFocused.current) return; // don't overwrite while user is typing
+    const view = editorRef.current?.view;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === content) return;
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: content },
+    });
+  }, [content]);
 
   const theme = useMemo(() => makeTheme(isDark), [isDark]);
 
@@ -195,8 +209,11 @@ export default function FloatingNode({
       </div>
 
       <CodeMirror
+        ref={editorRef}
         value={initialContent}
         extensions={[javascript(), theme, EditorView.lineWrapping]}
+        onFocus={() => { isFocused.current = true; }}
+        onBlur={() => { isFocused.current = false; }}
         onChange={(val) => onChange(id, val)}
         onStatistics={(data) => {
           if (!containerRef.current) return;
