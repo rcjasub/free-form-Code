@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Trash2 } from "lucide-react";
 import axios from "axios";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { useNavigate } from "react-router-dom";
@@ -78,6 +79,17 @@ export default function Dashboard() {
     } catch {
       setError("Failed to create canvas");
       setFormState("idle");
+    }
+  }
+
+  async function deleteCanvas(id: string) {
+    try {
+      await axios.delete(`/api/canvases/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCanvases((prev) => prev.filter((c) => c.id !== id));
+    } catch {
+      setError("Failed to delete canvas");
     }
   }
 
@@ -190,10 +202,10 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {canvases.map((c) => (
-              <button
+              <div
                 key={c.id}
+                className="relative group p-4 rounded-xl border border-gray-100 dark:border-[#2e2e3a] bg-gray-50 dark:bg-[#1a1a22] hover:border-gray-300 dark:hover:border-[#4e4e5a] transition-colors cursor-pointer"
                 onClick={() => navigate(`/canvas/${c.id}`)}
-                className="text-left p-4 rounded-xl border border-gray-100 dark:border-[#2e2e3a] bg-gray-50 dark:bg-[#1a1a22] hover:border-gray-300 dark:hover:border-[#4e4e5a] transition-colors"
               >
                 <p className="text-sm font-medium text-gray-900 dark:text-white">
                   {c.name}
@@ -201,7 +213,13 @@ export default function Dashboard() {
                 <p className="text-xs text-gray-400 mt-1">
                   {new Date(c.created_at).toLocaleDateString()}
                 </p>
-              </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteCanvas(c.id); }}
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             ))}
           </div>
         )}
