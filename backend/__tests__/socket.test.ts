@@ -6,8 +6,8 @@ import { setUpSockets } from "../socket";
 
 let httpServer: ReturnType<typeof createServer>;
 let serverSocket: Server;
-let clientA: Socket;
-let clientB: Socket;
+let clientA: ReturnType<typeof ioc>;
+let clientB: ReturnType<typeof ioc>;
 
 beforeEach((done) => {
   httpServer = createServer();

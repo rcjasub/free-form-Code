@@ -1,4 +1,5 @@
-import { getCanvasById } from "../controllers/canvasController";
+import { getCanvasById, createCanva } from "../controllers/canvasController";
+
 import * as Canvas from "../models/canvas";
 
 jest.mock("../models/canvas");
@@ -51,5 +52,40 @@ describe("getCanvasById", () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+  });
+});
+
+describe("createCanva", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = {
+      params: { id: "1" },
+      user: { id: "user-1" },
+      body: { name: "My Canvas", is_public: false },
+    };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+  });
+
+  test("returns 201 and creates a canva", async () => {
+    const fakeCanvas = {
+      id: "1",
+      user_id: "2",
+      name: "My new Canvas",
+      share_id: "abc123",
+      is_public: true,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    mockCanvas.create.mockResolvedValue(fakeCanvas);
+    await createCanva(req, res);
+
+    expect(res.status).toHaveBeenLastCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(fakeCanvas);
   });
 });
