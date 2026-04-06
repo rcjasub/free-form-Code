@@ -6,8 +6,8 @@ import { setUpSockets } from "../socket";
 
 let httpServer: ReturnType<typeof createServer>;
 let serverSocket: Server;
-let clientA: Socket;
-let clientB: Socket;
+let clientA: ReturnType<typeof ioc>;
+let clientB: ReturnType<typeof ioc>;
 
 beforeEach((done) => {
   httpServer = createServer();
@@ -105,5 +105,28 @@ describe("socket events", () => {
     setTimeout(() => {
       clientA.emit("block:deleted", canvasId, blockId);
     }, 50);
+  });
+
+  test("block:created sender does not receive their own event", (done) => {
+    const canvasId = "canvas-1";
+    const block = { id: "block-1", type: "code" };
+
+    clientB.emit("canvas:join", canvasId);
+    clientA.emit("canvas:join", canvasId);
+
+    let clientAReceive = false;
+
+    clientA.on("block:created", () => {
+      clientAReceive = true;
+    });
+
+    setTimeout(() => {
+      clientA.emit("block:created", canvasId, block);
+    }, 50);
+
+    setTimeout(() => {
+      expect(clientAReceive).toBe(false); // ===
+      done();
+    }, 100);
   });
 });

@@ -73,7 +73,10 @@ export async function updateBlock(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function updateBlockContent(req: Request, res: Response): Promise<void> {
+export async function updateBlockContent(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const { blockId } = req.params;
   const { content } = req.body;
 
