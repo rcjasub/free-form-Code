@@ -55,4 +55,55 @@ describe("socket events", () => {
       clientA.emit("block:created", canvasId, block);
     }, 50);
   });
+
+  test("block:moved is received by clientB when clientA emits it", (done) => {
+    const canvasId = "canvas-1";
+    const block = { id: "block-1", x: 100, y: 200 };
+
+    clientB.emit("canvas:join", canvasId);
+    clientA.emit("canvas:join", canvasId);
+
+    clientB.on("block:moved", (receivedBlock: any) => {
+      expect(receivedBlock).toEqual(block);
+      done();
+    });
+
+    setTimeout(() => {
+      clientA.emit("block:moved", canvasId, block);
+    }, 50);
+  });
+
+  test("block:updated is received by clientB when clientA emits it", (done) => {
+    const canvasId = "canvas-1";
+    const block = { id: "block-1", content: "hello" };
+
+    clientB.emit("canvas:join", canvasId);
+    clientA.emit("canvas:join", canvasId);
+
+    clientB.on("block:updated", (receivedBlock: any) => {
+      expect(receivedBlock).toEqual(block);
+      done();
+    });
+
+    setTimeout(() => {
+      clientA.emit("block:updated", canvasId, block);
+    }, 50);
+  });
+
+  test("block:deleted is received by clientB when clientA emits it", (done) => {
+    const canvasId = "canvas-1";
+    const blockId = "block-1";
+
+    clientB.emit("canvas:join", canvasId);
+    clientA.emit("canvas:join", canvasId);
+
+    clientB.on("block:deleted", (receivedId: any) => {
+      expect(receivedId).toEqual(blockId);
+      done();
+    });
+
+    setTimeout(() => {
+      clientA.emit("block:deleted", canvasId, blockId);
+    }, 50);
+  });
 });
