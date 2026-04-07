@@ -16,7 +16,7 @@
     }
   },
   "include": [
-    "db/pool.query"
+    "**/*"
   ],
   "exclude": [
     "node_modules",

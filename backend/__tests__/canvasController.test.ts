@@ -1,4 +1,3 @@
-import { describe } from "node:test";
 import { getCanvasById, createCanva, getCanvasByShareId } from "../controllers/canvasController";
 
 import * as Canvas from "../models/canvas";
