@@ -50,7 +50,7 @@ export async function getCanvasByShareId(
   try {
     const canvas = await Canvas.getCanvasByShareId(id);
     if (!canvas) {
-      res.status(404).json({ error: "Canvas not found" });
+      res.status(404).json({ error: "Shared Canvas not found" });
       return;
     }
     res.status(200).json(canvas);
