@@ -8,15 +8,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    }
+    "types": ["jest", "node"]
   },
   "include": [
-    "db/pool.query"
+    "**/*.ts"
   ],
   "exclude": [
     "node_modules",
