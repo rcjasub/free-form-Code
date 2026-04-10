@@ -1,11 +1,15 @@
 import { Request, Response } from "express";
-import vm from "vm";
+import { codeQueue } from "../queue";
 
 export async function runCode(req: Request, res: Response): Promise<void> {
-  const { code, language = "javascript" } = req.body;
+  const { code, language = "javascript", socketId } = req.body;
 
   if (!code) {
     res.status(400).json({ error: "No code provided" });
+    return;
+  }
+  if (!socketId) {
+    res.status(400).json({ error: "No socketId provided" });
     return;
   }
   if (language !== "javascript") {
@@ -13,19 +17,6 @@ export async function runCode(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const logs: string[] = [];
-
-  const sandbox = {
-    console: {
-      log: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-      error: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-    },
-  };
-
-  try {
-    vm.runInNewContext(code, sandbox, { timeout: 3000 });
-    res.json({ output: logs.join("\n") || "(no output)" });
-  } catch (err) {
-    res.json({ output: (err as Error).message, error: true });
-  }
+  const job = await codeQueue.add("run", { code, socketId });
+  res.json({ jobId: job.id });
 }

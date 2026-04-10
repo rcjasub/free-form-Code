@@ -4,6 +4,7 @@ import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { setUpSockets } from "./socket";
+import { startWorker } from "./worker";
 
 import canvasRoutes from "./routes/canvas";
 import blockRoutes from "./routes/blocks";
@@ -27,8 +28,11 @@ const httpServer = createServer(app);
 // attach socket.io to the http server
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// register all socket event handlersn
+// register all socket event handlers
 setUpSockets(io);
+
+// start the BullMQ worker — passes io so it can emit results back to clients
+startWorker(io);
 
 // start the http server (not app.listen — socket.io needs control of the server)
 httpServer.listen(PORT, () => {
