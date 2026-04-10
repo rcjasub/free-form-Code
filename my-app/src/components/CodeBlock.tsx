@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import socket from "../lib/socket";
 
 interface Props {
   id: number;
@@ -36,19 +37,25 @@ export default function CodeBlock({ id, x, y, onDrag }: Props) {
 
   async function runCode() {
     setRunning(true);
+
+    socket.once("run:complete", ({ output, error }) => {
+      setOutput(output);
+      setIsError(!!error);
+      setRunning(false);
+    });
+
     try {
-      const res = await fetch("/api/run", {
+      await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language: "javascript" }),
+        body: JSON.stringify({
+          code,
+          language: "javascript",
+        }),
       });
-      const data = await res.json();
-      setOutput(data.output);
-      setIsError(!!data.error);
     } catch {
       setOutput("Failed to reach server");
       setIsError(true);
-    } finally {
       setRunning(false);
     }
   }

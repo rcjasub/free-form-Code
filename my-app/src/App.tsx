@@ -114,7 +114,10 @@ export default function App() {
     socket.on("block:updated", (data) => {
       console.log("[socket] received block:updated", data);
       setNodes((prev) => {
-        console.log("[socket] current node ids", prev.map(n => n.id));
+        console.log(
+          "[socket] current node ids",
+          prev.map((n) => n.id),
+        );
         return prev.map((n) =>
           n.id === data.id ? { ...n, content: data.content } : n,
         );
@@ -259,23 +262,23 @@ export default function App() {
 
       if (!code) return;
 
-      try {
-        const res = await fetch("/api/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, language: "javascript" }),
-        });
-        const data = await res.json();
+      socket.once("run:complete", ({ output, error }) => {
         setOutputs((prev) => [
           ...prev,
-          {
-            id: nextId.current++,
-            x,
-            y,
-            text: data.output,
-            isError: !!data.error,
-          },
+          { id: nextId.current++, x, y, text: output, isError: !!error },
         ]);
+      });
+
+      try {
+        await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code,
+            language: "javascript",
+            socketId: socket.id,
+          }),
+        });
       } catch {
         setOutputs((prev) => [
           ...prev,
@@ -350,23 +353,19 @@ export default function App() {
       y = (rect.top - offset.y) / scale;
     }
 
-    try {
-      const res = await fetch("/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: node.content, language: "javascript" }),
-      });
-      const data = await res.json();
+    socket.once("run:complete", ({ output, error }) => {
       setOutputs((prev) => [
         ...prev,
-        {
-          id: nextId.current++,
-          x,
-          y,
-          text: data.output,
-          isError: !!data.error,
-        },
+        { id: nextId.current++, x, y, text: output, isError: !!error },
       ]);
+    });
+
+    try {
+      await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
+      });
     } catch {
       setOutputs((prev) => [
         ...prev,
