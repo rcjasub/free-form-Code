@@ -2,6 +2,7 @@ import { Response } from "express";
 import { randomBytes } from "crypto";
 import * as Canvas from "../models/canvas";
 import { AuthRequest } from "../middleware/auth";
+import redis from "../redis";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
@@ -13,12 +14,20 @@ export async function getCanvasById(
 ): Promise<void> {
   const { id } = req.params;
 
+  const cached = await redis.get(`canvas:${id}`);
+  if (cached) {
+    res.status(200).json(JSON.parse(cached));
+    return;
+  }
+
   try {
     const canvas = await Canvas.getById(id);
     if (!canvas) {
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
+
+    await redis.set(`canvas:${id}`, JSON.stringify(canvas), "EX", 3600); // hour
     res.status(200).json(canvas);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -47,12 +56,20 @@ export async function getCanvasByShareId(
 ): Promise<void> {
   const { id } = req.params;
 
+  const cached = await redis.get(`share:${id}`);
+  if (cached) {
+    res.status(200).json(JSON.parse(cached));
+    return;
+  }
+
   try {
     const canvas = await Canvas.getCanvasByShareId(id);
     if (!canvas) {
       res.status(404).json({ error: "Shared Canvas not found" });
       return;
     }
+
+    await redis.set(`share:${id}`, JSON.stringify(canvas), "EX", 3600);
     res.status(200).json(canvas);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -90,6 +107,7 @@ export async function updateCanvasName(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
+    await redis.del(`canvas:${id}`);
     res.status(200).json(canvas);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -113,6 +131,8 @@ export async function deleteCanvas(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
+
+    await redis.del(`canvas:${id}`);
     res.status(200).json({ message: "Canvas Deleted Successfully" });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
