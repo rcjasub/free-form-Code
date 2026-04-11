@@ -1,10 +1,20 @@
 import { Request, Response } from "express";
 import * as Blocks from "../models/blocks";
+import redis from "../redis";
 
 export async function getAllBlocks(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+
+  const cached = await redis.get(`blocks:${id}`);
+  if (cached) {
+    res.status(200).json(JSON.parse(cached));
+    return;
+  }
+
   try {
     const allblocks = await Blocks.getBlocksByCanvasId(id);
+
+    await redis.set(`blocks:${id}`, JSON.stringify(allblocks), "EX", 3000);
     res.status(200).json(allblocks);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -24,6 +34,8 @@ export async function createBlock(req: Request, res: Response): Promise<void> {
       y,
       width,
     });
+    
+    await redis.del(`blocks:${canvasId}`);
     res.status(201).json(block);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -46,6 +58,7 @@ export async function deleteBlock(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json({ message: "Delete Block Successfully" });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -67,6 +80,8 @@ export async function updateBlock(req: Request, res: Response): Promise<void> {
       res.status(404).json({ error: "Block not found" });
       return;
     }
+
+    await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -86,6 +101,8 @@ export async function updateBlockContent(
       res.status(404).json({ error: "Block not found" });
       return;
     }
+
+    await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
