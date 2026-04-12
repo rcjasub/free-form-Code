@@ -89,20 +89,20 @@ export async function getUserCanvases(
   }
 }
 
-export async function updateCanvasName(
+export async function updateCanvas(
   req: AuthRequest,
   res: Response,
 ): Promise<void> {
   const { id } = req.params;
-  const { name } = req.body;
+  const { name, is_public } = req.body;
 
-  if (!name) {
-    res.status(400).json({ error: "name is required" });
+  if (name === undefined && is_public === undefined) {
+    res.status(400).json({ error: "name or is_public is required" });
     return;
   }
 
   try {
-    const canvas = await Canvas.updateCanvasName(id, name);
+    const canvas = await Canvas.updateCanvas(id, { name, is_public });
     if (!canvas) {
       res.status(404).json({ error: "Canvas not found" });
       return;
@@ -138,3 +138,4 @@ export async function deleteCanvas(
     res.status(500).json({ error: (err as Error).message });
   }
 }
+
