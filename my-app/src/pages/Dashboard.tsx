@@ -30,17 +30,11 @@ export default function Dashboard() {
   const [canvasName, setCanvasName] = useState("");
   const navigate = useNavigate();
 
-  const token = localStorage.getItem("token");
-
   useEffect(() => {
-    if (!token) {
-      navigate("/");
-      return;
-    }
     axios
-      .get("/api/canvases", { headers: { Authorization: `Bearer ${token}` } })
+      .get("/api/canvases", { withCredentials: true })
       .then(({ data }) => setCanvases(data))
-      .catch(() => setError("Failed to load canvases"))
+      .catch(() => navigate("/"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -67,7 +61,7 @@ export default function Dashboard() {
       const { data } = await axios.post(
         "/api/canvases",
         { name: canvasName.trim() },
-        { headers: { Authorization: `Bearer ${token}` } },
+        { withCredentials: true },
       );
       setFormState("success");
       setTimeout(() => {
@@ -84,17 +78,15 @@ export default function Dashboard() {
 
   async function deleteCanvas(id: string) {
     try {
-      await axios.delete(`/api/canvases/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await axios.delete(`/api/canvases/${id}`, { withCredentials: true });
       setCanvases((prev) => prev.filter((c) => c.id !== id));
     } catch {
       setError("Failed to delete canvas");
     }
   }
 
-  function signOut() {
-    localStorage.removeItem("token");
+  async function signOut() {
+    await axios.post("/api/auth/logout", {}, { withCredentials: true });
     navigate("/");
   }
 

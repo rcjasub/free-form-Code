@@ -20,15 +20,11 @@ export default function Home() {
 
     try {
       if (mode === "register") {
-        const { data } = await axios.post("/api/auth/register", { username, email, password });
-        localStorage.setItem("token", data.token);
-        const canvas = await axios.post("/api/canvases", { name: "My Canvas" }, {
-          headers: { Authorization: `Bearer ${data.token}` }
-        });
+        await axios.post("/api/auth/register", { username, email, password }, { withCredentials: true });
+        await axios.post("/api/canvases", { name: "My Canvas" }, { withCredentials: true });
         navigate("/dashboard");
       } else {
-        const { data } = await axios.post("/api/auth/login", { email, password });
-        localStorage.setItem("token", data.token);
+        await axios.post("/api/auth/login", { email, password }, { withCredentials: true });
         navigate("/dashboard");
       }
     } catch (err: any) {

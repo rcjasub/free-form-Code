@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "/api" });
+const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 export function getAllBlocks(canvasId: string) {
   return api.get(`/canvases/${canvasId}/blocks`);
