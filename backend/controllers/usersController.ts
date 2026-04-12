@@ -5,6 +5,13 @@ import * as Users from "../models/users";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+};
+
 export async function register(req: Request, res: Response): Promise<void> {
   const { username, email, password } = req.body;
 
@@ -16,14 +23,16 @@ export async function register(req: Request, res: Response): Promise<void> {
   try {
     const password_hash = await bcrypt.hash(password, 10);
     const user = await Users.createUser({ username, email, password_hash });
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "24h" });
-    res.status(201).json({ token, user: { id: user.id, username: user.username, email: user.email } });
+    const token = jwt.sign({ id: user.id, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: "24h" });
+    res.cookie("token", token, COOKIE_OPTIONS);
+    res.status(201).json({ user: { id: user.id, username: user.username, email: user.email } });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 }
 
 export async function logout(_req: Request, res: Response): Promise<void> {
+  res.clearCookie("token");
   res.status(200).json({ message: "Logged out successfully" });
 }
 
@@ -48,9 +57,24 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "24h" });
-    res.status(200).json({ token, user: { id: user.id, username: user.username, email: user.email } });
+    const token = jwt.sign({ id: user.id, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: "24h" });
+    res.cookie("token", token, COOKIE_OPTIONS);
+    res.status(200).json({ user: { id: user.id, username: user.username, email: user.email } });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+export async function me(req: Request, res: Response): Promise<void> {
+  const token = req.cookies?.token;
+  if (!token) {
+    res.status(200).json({ user: null });
+    return;
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string; username: string };
+    res.status(200).json({ user: { id: decoded.id, email: decoded.email, username: decoded.username } });
+  } catch {
+    res.status(200).json({ user: null });
   }
 }
