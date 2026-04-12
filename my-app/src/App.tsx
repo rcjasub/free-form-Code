@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
+import ShareDrawer from "./components/ShareDrawer";
 import socket from "./lib/socket";
 
 import {
@@ -45,7 +46,6 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const [shareId, setShareId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const { resolvedTheme } = useTheme();
   const lastSelection = useRef<{
     content: string;
@@ -388,17 +388,13 @@ export default function App() {
   }
 
   async function handleShare() {
-    if (!shareId || !canvasId) return;
+    if (!canvasId) return;
     await fetch(`/api/canvases/${canvasId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ is_public: true }),
     });
-    const url = `${window.location.origin}/canvas/share/${shareId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   const cursorClass =
@@ -529,22 +525,21 @@ export default function App() {
             <polygon points="5,3 19,12 5,21" />
           </svg>
         </button>
-        <button
-          onClick={handleShare}
-          title="Share canvas"
-          className={`h-8 flex items-center justify-center rounded transition-colors border px-2 text-xs ${
-            isDark
-              ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
-              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
-          }`}
-        >
-          {copied ? "Copied!" : (
+        <ShareDrawer shareId={shareId} canvasId={canvasId} onMakePublic={handleShare} isDark={isDark}>
+          <button
+            title="Share canvas"
+            className={`h-8 flex items-center justify-center rounded transition-colors border px-2 text-xs ${
+              isDark
+                ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
+                : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
+            }`}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
-          )}
-        </button>
+          </button>
+        </ShareDrawer>
         <ThemeToggleButton />
       </div>
 

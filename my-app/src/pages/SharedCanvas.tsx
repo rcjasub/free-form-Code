@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket from "@/lib/socket";
+import type { Mode } from "@/App";
 
 interface Node {
   id: string;
@@ -14,15 +15,23 @@ interface Node {
 
 export default function SharedCanvas() {
   const { shareId } = useParams<{ shareId: string }>();
+  const [searchParams] = useSearchParams();
+  const canEdit = searchParams.get("edit") === "true";
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [mode, setMode] = useState<Mode>("select");
+  const modeRef = useRef<Mode>("select");
+  const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { modeRef.current = mode; }, [mode]);
 
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -54,6 +63,7 @@ export default function SharedCanvas() {
       .then((canvas) => {
         if (!canvas) return;
         setCanvasName(canvas.name);
+        setCanvasId(canvas.id);
 
         // join socket room
         const joinCanvas = () => socket.emit("canvas:join", canvas.id);
@@ -98,6 +108,17 @@ export default function SharedCanvas() {
         e.preventDefault();
         spaceHeld.current = true;
         document.body.style.cursor = "grab";
+      }
+      if (canEdit) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        const isEditable = (e.target as HTMLElement)?.isContentEditable;
+        const inEditor = tag === "TEXTAREA" || tag === "INPUT" || isEditable;
+        if (!inEditor && !e.ctrlKey && !e.metaKey && !e.repeat) {
+          if (e.key === "v" || e.key === "V") setMode("select");
+          if (e.key === "h" || e.key === "H") setMode("hand");
+          if (e.key === "t" || e.key === "T") setMode("text");
+          if (e.key === "e" || e.key === "E") setMode("erase");
+        }
       }
     }
     function onKeyUp(e: KeyboardEvent) {
@@ -161,6 +182,57 @@ export default function SharedCanvas() {
     setScale(next);
   }
 
+  // edit mode handlers
+  function updateNode(id: string, content: string) {
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
+    if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
+    contentSaveTimer.current = setTimeout(() => {
+      if (canvasId) {
+        fetch(`/api/canvases/${canvasId}/blocks/${id}/content`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        socket.emit("block:updated", canvasId, { id, content });
+      }
+    }, 800);
+  }
+
+  function moveNode(id: string, x: number, y: number) {
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
+    if (canvasId) {
+      fetch(`/api/canvases/${canvasId}/blocks/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ x, y }),
+      });
+      socket.emit("block:moved", canvasId, { id, x, y });
+    }
+  }
+
+  function deleteNode(id: string) {
+    setNodes((prev) => prev.filter((n) => n.id !== id));
+    if (canvasId) {
+      fetch(`/api/canvases/${canvasId}/blocks/${id}`, { method: "DELETE" });
+      socket.emit("block:deleted", canvasId, id);
+    }
+  }
+
+  async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!canEdit || !canvasId || modeRef.current !== "text") return;
+    if (e.target !== canvasRef.current) return;
+    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
+    const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
+    });
+    const data = await res.json();
+    setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
+    socket.emit("block:created", canvasId, data);
+  }
+
   if (notFound) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#121212]">
@@ -189,9 +261,9 @@ export default function SharedCanvas() {
       onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
-      {/* top bar */}
+      {/* top-left: canvas info */}
       <div
-        className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 border rounded-lg shadow-sm px-3 py-1.5 ${
+        className={`absolute top-3 left-4 z-20 flex items-center gap-3 border rounded-lg shadow-sm px-3 py-1.5 ${
           isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"
         }`}
       >
@@ -201,6 +273,11 @@ export default function SharedCanvas() {
         <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? "bg-[#3c3c4a] text-[#9b9ba8]" : "bg-gray-100 text-gray-500"}`}>
           {username ? username : "Anonymous"}
         </span>
+        {canEdit && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
+            Editing
+          </span>
+        )}
         {!username && (
           <button
             onClick={() => navigate("/")}
@@ -211,6 +288,29 @@ export default function SharedCanvas() {
         )}
       </div>
 
+      {/* mode toolbar — only in edit mode */}
+      {canEdit && (
+        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
+          {(["select", "hand", "text", "erase"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              title={m.charAt(0).toUpperCase() + m.slice(1)}
+              className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+                mode === m
+                  ? isDark ? "bg-[#3c3c4a] text-[#f5f5f5]" : "bg-gray-100 text-gray-800"
+                  : isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"
+              }`}
+            >
+              {m === "select" && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>}
+              {m === "hand" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" /></svg>}
+              {m === "text" && <span className="text-xs font-bold leading-none">T</span>}
+              {m === "erase" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" /><path d="M6.5 17.5l4-4" /></svg>}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* top-right */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
         <ThemeToggleButton />
@@ -219,11 +319,12 @@ export default function SharedCanvas() {
       {/* canvas */}
       <div
         ref={canvasRef}
-        className="w-full h-full"
+        className={`w-full h-full ${canEdit && mode === "text" ? "cursor-crosshair" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
         }}
+        onClick={handleCanvasClick}
       >
         {nodes.map((node) => (
           <FloatingNode
@@ -232,12 +333,12 @@ export default function SharedCanvas() {
             x={node.x}
             y={node.y}
             content={node.content}
-            onChange={() => {}}
-            onMove={() => {}}
+            onChange={canEdit ? updateNode : () => {}}
+            onMove={canEdit ? moveNode : () => {}}
             onSaveSelection={() => {}}
-            onDelete={() => {}}
+            onDelete={canEdit ? deleteNode : () => {}}
             onRun={() => {}}
-            mode="select"
+            mode={canEdit ? mode : "select"}
             isMouseDown={isMouseDown}
             isDark={isDark}
           />
