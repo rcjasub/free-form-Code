@@ -1,18 +1,30 @@
 import { useState, useEffect } from "react";
+
+const LogoutIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+);
+
+function SignOutButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2e2e3a] hover:text-gray-900 dark:hover:text-white transition-all"
+    >
+      <LogoutIcon size={16} />
+      Sign out
+    </button>
+  );
+}
 import { Trash2, Search } from "lucide-react";
 import axios from "axios";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { useNavigate } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
-import {
-  PopoverForm,
-  PopoverFormButton,
-  PopoverFormCutOutLeftIcon,
-  PopoverFormCutOutRightIcon,
-  PopoverFormSeparator,
-  PopoverFormSuccess,
-} from "@/components/ui/popover-form";
 
 type FormState = "idle" | "loading" | "success";
 
@@ -128,12 +140,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <ThemeToggleButton />
-          <button
-            onClick={signOut}
-            className="text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-          >
-            Sign out
-          </button>
+          <SignOutButton onClick={signOut} />
         </div>
       </div>
 
@@ -166,50 +173,67 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <PopoverForm
-              title="New canvas"
-              open={open}
-              setOpen={setOpen}
-              width="300px"
-              height="144px"
-              showCloseButton={formState !== "success"}
-              showSuccess={formState === "success"}
-              openChild={
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    submitCanvas();
-                  }}
-                >
-                  <div className="relative">
-                    <input
-                      autoFocus
-                      placeholder="Canvas name"
-                      value={canvasName}
-                      onChange={(e) => setCanvasName(e.target.value)}
-                      className="w-full rounded-t-lg p-3 text-sm outline-none bg-white dark:bg-[#1a1a22] text-gray-900 dark:text-white placeholder:text-gray-400"
-                      required
-                    />
+          <button
+            onClick={() => setOpen(true)}
+            className="flex h-9 items-center gap-1.5 px-3 rounded-lg border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#1a1a22] text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-[#5c5c6a] transition-colors"
+          >
+            <span className="text-base leading-none">+</span> New canvas
+          </button>
+
+          {/* modal */}
+          {open && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center"
+              onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+            >
+              {/* backdrop */}
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+
+              {/* dialog */}
+              <div className="relative w-full max-w-sm mx-4 rounded-xl border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#1a1a22] shadow-xl">
+                {formState === "success" ? (
+                  <div className="flex flex-col items-center justify-center py-10 gap-2">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M27.6 16C27.6 22.4 22.4 27.6 16 27.6C9.6 27.6 4.4 22.4 4.4 16C4.4 9.6 9.6 4.4 16 4.4C22.4 4.4 27.6 9.6 27.6 16Z" fill="#2090FF" fillOpacity="0.16"/>
+                      <path d="M12.1 17l2.9 2.9 4.9-6.8" stroke="#2090FF" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Canvas created</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Opening your new canvas...</p>
                   </div>
-                  <div className="relative flex h-12 items-center px-[10px]">
-                    <PopoverFormSeparator />
-                    <div className="absolute left-0 top-0 -translate-x-[1.5px] -translate-y-1/2">
-                      <PopoverFormCutOutLeftIcon />
+                ) : (
+                  <form onSubmit={(e) => { e.preventDefault(); submitCanvas(); }}>
+                    <div className="px-5 pt-5 pb-4">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">New canvas</h3>
+                      <input
+                        autoFocus
+                        placeholder="Canvas name"
+                        value={canvasName}
+                        onChange={(e) => setCanvasName(e.target.value)}
+                        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a]"
+                        required
+                      />
                     </div>
-                    <div className="absolute right-0 top-0 translate-x-[1.5px] -translate-y-1/2 rotate-180">
-                      <PopoverFormCutOutRightIcon />
+                    <div className="flex items-center justify-end gap-2 px-5 pb-4">
+                      <button
+                        type="button"
+                        onClick={() => { setOpen(false); setCanvasName(""); }}
+                        className="px-3 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={formState === "loading"}
+                        className="px-4 py-1.5 text-sm font-medium rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 transition-opacity disabled:opacity-50"
+                      >
+                        {formState === "loading" ? "Creating..." : "Create"}
+                      </button>
                     </div>
-                    <PopoverFormButton loading={formState === "loading"} />
-                  </div>
-                </form>
-              }
-              successChild={
-                <PopoverFormSuccess
-                  title="Canvas created"
-                  description="Opening your new canvas..."
-                />
-              }
-            />
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <p className="text-xs text-red-500 mb-4">{error}</p>}

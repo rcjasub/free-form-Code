@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
@@ -35,6 +35,7 @@ interface Output {
 
 export default function App() {
   const { canvasId } = useParams<{ canvasId: string }>();
+  const navigate = useNavigate();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
@@ -452,8 +453,11 @@ export default function App() {
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
-      <div className="absolute top-4 left-4 z-10 pointer-events-none">
-        <span className="text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300">
+      <div className="absolute top-4 left-4 z-10">
+        <span
+          onClick={() => navigate("/dashboard")}
+          className="text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300 cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+        >
           free-form
         </span>
       </div>
