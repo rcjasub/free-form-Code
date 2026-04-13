@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 
 export const useThemeToggle = () => {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -34,7 +35,7 @@ export const useThemeToggle = () => {
       setTheme(next);
       return;
     }
-    document.startViewTransition(() => setTheme(next));
+    document.startViewTransition(() => flushSync(() => setTheme(next)));
   }, [theme, setTheme]);
 
   return { isDark, toggleTheme };

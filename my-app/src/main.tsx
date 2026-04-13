@@ -8,7 +8,7 @@ import Dashboard from './pages/Dashboard.tsx'
 import SharedCanvas from './pages/SharedCanvas.tsx'
 
 createRoot(document.getElementById('root')!).render(
-  <ThemeProvider attribute="class" defaultTheme="light">
+  <ThemeProvider attribute="class" defaultTheme="dark">
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />

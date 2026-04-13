@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { useParams } from "react-router-dom";
 import { useTheme } from "next-themes";
+import { useParams } from "react-router-dom";
 import FloatingNode from "./components/FloatingNode";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
@@ -410,12 +410,8 @@ export default function App() {
       title={title}
       className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
         mode === m
-          ? isDark
-            ? "bg-[#3c3c4a] text-[#f5f5f5]"
-            : "bg-gray-100 text-gray-800"
-          : isDark
-            ? "text-[#9b9ba8] hover:text-[#f5f5f5]"
-            : "text-gray-400 hover:text-gray-700"
+          ? "bg-gray-100 text-gray-800 dark:bg-[#3c3c4a] dark:text-[#f5f5f5]"
+          : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
       }`}
     >
       {label}
@@ -441,14 +437,14 @@ export default function App() {
     >
       {/* branding */}
       <div className="absolute top-4 left-4 z-10 pointer-events-none">
-        <span className="text-xs font-semibold text-gray-300 tracking-widest uppercase">
+        <span className="text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300">
           free-form
         </span>
       </div>
 
       {/* mode toolbar */}
       <div
-        className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}
+        className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]"
       >
         {toolbarBtn(
           "select",
@@ -501,7 +497,7 @@ export default function App() {
 
       {/* top-right: run hint + dark/light toggle */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
-        <span className="text-xs text-gray-300 font-mono pointer-events-none">
+        <span className="text-xs font-mono pointer-events-none text-gray-500 dark:text-gray-300">
           select code + ctrl+enter to run
         </span>
         <button
@@ -515,11 +511,7 @@ export default function App() {
             )
           }
           title="Run selected code"
-          className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
-            isDark
-              ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
-              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
-          }`}
+          className="w-8 h-8 flex items-center justify-center rounded transition-colors border bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5,3 19,12 5,21" />
@@ -528,11 +520,7 @@ export default function App() {
         <ShareDrawer shareId={shareId} canvasId={canvasId} onMakePublic={handleShare} isDark={isDark}>
           <button
             title="Share canvas"
-            className={`h-8 flex items-center justify-center rounded transition-colors border px-2 text-xs ${
-              isDark
-                ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
-                : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
-            }`}
+            className="h-8 flex items-center justify-center rounded transition-colors border px-2 text-xs bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -598,21 +586,21 @@ export default function App() {
 
       {/* zoom controls */}
       <div
-        className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]"
       >
         <button
-          className={`text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors ${isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"}`}
+          className="text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           onClick={zoomOut}
         >
           −
         </button>
         <span
-          className={`text-xs font-mono w-10 text-center ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}
+          className="text-xs font-mono w-10 text-center text-gray-400 dark:text-[#9b9ba8]"
         >
           {Math.round(scale * 100)}%
         </span>
         <button
-          className={`text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors ${isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"}`}
+          className="text-sm font-mono w-6 h-6 flex items-center justify-center transition-colors text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           onClick={zoomIn}
         >
           +

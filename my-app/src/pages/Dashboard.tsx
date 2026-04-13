@@ -101,13 +101,13 @@ export default function Dashboard() {
             autoplay
             style={{ width: 120, height: 120 }}
           />
-          <h1 className="text-base font-semibold text-gray-900 dark:text-white">
+          <h1 className="text-[56px] font-semibold text-gray-900 dark:text-white">
             <TextRoll>free-form</TextRoll>
           </h1>
         </div>
         <button
           onClick={signOut}
-          className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          className="text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
         >
           Sign out
         </button>
@@ -178,7 +178,7 @@ export default function Dashboard() {
         {error && <p className="text-xs text-red-500 mb-4">{error}</p>}
 
         {loading ? (
-          <p className="text-sm text-gray-400">Loading...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
         ) : canvases.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <DotLottieReact
@@ -187,7 +187,7 @@ export default function Dashboard() {
               autoplay
               style={{ width: 200, height: 200 }}
             />
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               No canvases yet. Create one to get started.
             </p>
           </div>
@@ -202,7 +202,7 @@ export default function Dashboard() {
                 <p className="text-sm font-medium text-gray-900 dark:text-white">
                   {c.name}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   {new Date(c.created_at).toLocaleDateString()}
                 </p>
                 <button
