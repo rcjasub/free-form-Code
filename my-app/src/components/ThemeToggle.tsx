@@ -47,7 +47,7 @@ export function ThemeToggleButton({ className = "" }: { className?: string }) {
   return (
     <button
       type="button"
-      className={`size-8 cursor-pointer rounded-full p-0 transition-all duration-300 active:scale-95 ${isDark ? "bg-black text-white" : "bg-white text-black"} ${className}`}
+      className={`size-8 cursor-pointer rounded-lg p-0 transition-all duration-300 active:scale-95 bg-white text-gray-800 dark:bg-[#121212] dark:text-[#f5f5f5] ${className}`}
       onClick={toggleTheme}
       aria-label="Toggle theme"
       style={{ viewTransitionName: "theme-toggle" }}

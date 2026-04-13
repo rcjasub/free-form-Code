@@ -13,6 +13,8 @@ interface Props {
   onMove: (id: string, x: number, y: number) => void;
   onSaveSelection: (content: string, el: HTMLElement) => void;
   onDelete: (id: string) => void;
+  onMarkErase: (id: string) => void;
+  pendingErase: boolean;
   onRun: (id: string) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
@@ -56,6 +58,8 @@ export default function FloatingNode({
   onMove,
   onSaveSelection,
   onDelete,
+  onMarkErase,
+  pendingErase,
   onRun,
   mode,
   isMouseDown,
@@ -169,12 +173,13 @@ export default function FloatingNode({
       ref={containerRef}
       data-node-id={id}
       className="absolute group outline-none"
-      style={{ left: x, top: y }}
+      style={{ left: x, top: y, opacity: pendingErase ? 0.3 : 1, transition: "opacity 0.15s" }}
       onMouseDown={(e) => {
+        if (mode === "erase") { e.stopPropagation(); onMarkErase(id); return; }
         if (mode !== "hand") e.stopPropagation();
       }}
       onMouseEnter={() => {
-        if (mode === "erase" && isMouseDown.current) onDelete(id);
+        if (mode === "erase" && isMouseDown.current) onMarkErase(id);
       }}
     >
       {/* drag handle — visible on hover in select mode */}

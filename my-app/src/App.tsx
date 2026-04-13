@@ -46,6 +46,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const [shareId, setShareId] = useState<string | null>(null);
+  const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const { resolvedTheme } = useTheme();
   const lastSelection = useRef<{
     content: string;
@@ -54,6 +55,17 @@ export default function App() {
   const spaceHeld = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const isMouseDown = useRef(false);
+
+  // flush pending erase on mouseup
+  useEffect(() => {
+    function onMouseUp() {
+      if (pendingErase.size === 0) return;
+      pendingErase.forEach(id => deleteNode(id));
+      setPendingErase(new Set());
+    }
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, [pendingErase]);
 
   // keep refs in sync
   useEffect(() => {
@@ -397,6 +409,11 @@ export default function App() {
     });
   }
 
+  const isDark = resolvedTheme === "dark";
+
+  const eraserSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${isDark ? '#f5f5f5' : '#374151'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5"/><path d="M6.5 17.5l4-4"/></svg>`;
+  const eraserCursor = `url('data:image/svg+xml;base64,${btoa(eraserSvg)}') 4 20, auto`;
+
   const cursorClass =
     mode === "hand"
       ? "cursor-grab"
@@ -418,8 +435,6 @@ export default function App() {
     </button>
   );
 
-  const isDark = resolvedTheme === "dark";
-
   return (
     <div
       className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
@@ -427,6 +442,7 @@ export default function App() {
         backgroundColor: isDark ? "#121212" : "#ffffff",
         backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
         backgroundSize: "28px 28px",
+        cursor: mode === "erase" ? eraserCursor : undefined,
       }}
       onWheel={handleWheel}
       onMouseDown={(e) => {
@@ -560,6 +576,8 @@ export default function App() {
             onMove={moveNode}
             onSaveSelection={saveSelection}
             onDelete={deleteNode}
+            onMarkErase={(id) => setPendingErase(prev => new Set([...prev, id]))}
+            pendingErase={pendingErase.has(node.id)}
             onRun={handleRunNode}
             mode={mode}
             isMouseDown={isMouseDown}
