@@ -6,6 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --canvas-bg: #ffffff;
+  --canvas-dot: #d1d5db;
   --text: #374151;
   --text-h: #08060d;
   --bg: #fff;
@@ -98,6 +100,15 @@
 }
 
 
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-in {
+  opacity: 0;
+  animation: card-in 0.3s ease forwards;
+}
+
 #root {
   width: 100%;
   height: 100%;
@@ -185,6 +196,8 @@ html {
 }
 
 .dark {
+  --canvas-bg: #121212;
+  --canvas-dot: #2c2c2c;
   --text: #9ca3af;
   --text-h: #f3f4f6;
   --bg: #16171d;
