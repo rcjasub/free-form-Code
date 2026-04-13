@@ -31,7 +31,7 @@ export function PopoverForm({
   return (
     <div
       key={title}
-      className="flex min-h-[300px] w-full items-center justify-center"
+      className="relative flex items-center justify-center"
     >
       <motion.button
         layoutId={`${title}-wrapper`}
@@ -45,7 +45,7 @@ export function PopoverForm({
         {open && (
           <motion.div
             layoutId={`${title}-wrapper`}
-            className="absolute p-1 overflow-hidden bg-muted shadow-[0_0_0_1px_rgba(0,0,0,0.08),0px_1px_2px_rgba(0,0,0,0.04)] outline-none"
+            className="absolute right-0 top-full mt-2 p-1 overflow-hidden bg-muted shadow-[0_0_0_1px_rgba(0,0,0,0.08),0px_1px_2px_rgba(0,0,0,0.04)] outline-none z-50"
             ref={ref}
             style={{ borderRadius: 10, width, height }}
           >
