@@ -26,7 +26,6 @@ function makeTheme(isDark: boolean) {
       fontSize: "14px",
       fontFamily: "monospace",
       minWidth: "180px",
-      maxWidth: "480px",
       outline: "none !important",
     },
     ".cm-content": {
@@ -40,6 +39,7 @@ function makeTheme(isDark: boolean) {
     ".cm-editor.cm-focused": { outline: "none !important" },
     ".cm-line": { padding: "0", lineHeight: "1.625" },
     ".cm-gutters": { display: "none" },
+    ".cm-scroller": { overflow: "hidden !important" },
     ".cm-cursor": { borderLeftColor: isDark ? "#f5f5f5" : "#1f2937", borderLeftWidth: "2px" },
     ".cm-selectionBackground, ::selection": {
       background: isDark ? "#264f78 !important" : "#bfdbfe !important",
