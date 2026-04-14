@@ -1,5 +1,5 @@
 import { describe } from "node:test";
-import { getCanvasById, createCanva, getCanvasByShareId, getUserCanvases, updateCanvasName, deleteCanvas } from "../controllers/canvasController";
+import { getCanvasById, createCanva, getCanvasByShareId, getUserCanvases, updateCanvas, deleteCanvas } from "../controllers/canvasController";
 
 import * as Canvas from "../models/canvas";
 
@@ -187,7 +187,7 @@ describe("getUserCanvases", () => {
   });
 });
 
-describe("updateCanvasName", () => {
+describe("updateCanvas", () => {
   let req: any;
   let res: any;
 
@@ -202,9 +202,9 @@ describe("updateCanvasName", () => {
   test("returns 200 and updated canvas", async () => {
     const fakeCanvas = { id: "1", user_id: "user-1", name: "New Name", share_id: "abc", is_public: false, created_at: new Date(), updated_at: new Date() };
 
-    mockCanvas.updateCanvasName.mockResolvedValue(fakeCanvas);
+    mockCanvas.updateCanvas.mockResolvedValue(fakeCanvas);
 
-    await updateCanvasName(req, res);
+    await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(fakeCanvas);
@@ -213,25 +213,25 @@ describe("updateCanvasName", () => {
   test("returns 400 when name is missing", async () => {
     req.body = {};
 
-    await updateCanvasName(req, res);
+    await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: "name is required" });
   });
 
   test("returns 404 when canvas not found", async () => {
-    mockCanvas.updateCanvasName.mockResolvedValue(null as any);
+    mockCanvas.updateCanvas.mockResolvedValue(null as any);
 
-    await updateCanvasName(req, res);
+    await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: "Canvas not found" });
   });
 
   test("returns 500 on database error", async () => {
-    mockCanvas.updateCanvasName.mockRejectedValue(new Error("db error"));
+    mockCanvas.updateCanvas.mockRejectedValue(new Error("db error"));
 
-    await updateCanvasName(req, res);
+    await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: "db error" });
