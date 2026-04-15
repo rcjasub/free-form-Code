@@ -4,6 +4,18 @@
 
 Running this project locally requires installing Node, Postgres, and Redis separately, running `npm install` in two folders, setting the correct env vars, and starting each service in the right order. One wrong version or missing env var and nothing works.
 
+## How Docker works
+
+```
+Dockerfile  →  (docker build)  →  Image  →  (docker run)  →  Container
+```
+
+- **Dockerfile** — the instructions you write telling Docker how to build your app
+- **Image** — the built result, a frozen snapshot sitting on disk
+- **Container** — a live, running instance of that image
+
+The same image can be run as many containers simultaneously. `docker compose up` automates the build and run steps for all services at once.
+
 ## The solution: containers
 
 Docker packages each piece of the app into a self-contained **container** — a lightweight, isolated environment that has everything it needs to run. Docker Compose defines all the containers in one file and starts them together with a single command.
