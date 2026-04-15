@@ -2,7 +2,7 @@
 
 ## The problem
 
-When a user clicks Run, the server executes their code. Without any protection, if 100 users click Run at the same time, the server tries to run 100 code executions simultaneously — maxing out CPU and RAM until it slows to a crawl or crashes.
+When a user clicks Run, the server executes the submitted code. Without any protection, if 100 users click Run at the same time, the server tries to run 100 code executions simultaneously — maxing out CPU and RAM until it slows to a crawl or crashes.
 
 ## The solution: a job queue
 
