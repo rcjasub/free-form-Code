@@ -400,14 +400,20 @@ export default function App() {
     }
   }
 
-  async function handleShare() {
-    if (!canvasId) return;
-    await fetch(`/api/canvases/${canvasId}`, {
+  async function handleShare(): Promise<string | null> {
+    if (!canvasId) return null;
+    const res = await fetch(`/api/canvases/${canvasId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ is_public: true }),
     });
+    const data = await res.json();
+    if (data.share_id) {
+      setShareId(data.share_id);
+      return data.share_id;
+    }
+    return null;
   }
 
   const isDark = resolvedTheme === "dark";

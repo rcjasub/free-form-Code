@@ -337,6 +337,8 @@ export default function SharedCanvas() {
             onMove={canEdit ? moveNode : () => {}}
             onSaveSelection={() => {}}
             onDelete={canEdit ? deleteNode : () => {}}
+            onMarkErase={() => {}}
+            pendingErase={false}
             onRun={() => {}}
             mode={canEdit ? mode : "select"}
             isMouseDown={isMouseDown}

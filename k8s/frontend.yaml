@@ -1,0 +1,72 @@
+# Deployment — runs 1 frontend pod using the locally built image
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: free-form-frontend
+          imagePullPolicy: Never   # use the locally built image, don't try to pull from Docker Hub
+          ports:
+            - containerPort: 80
+
+---
+
+# Service — exposes the frontend internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+
+# Ingress — routes external traffic into the cluster
+# Replaces the proxy rules in nginx.conf from the Docker Compose setup
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: free-form-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 4000
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 4000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

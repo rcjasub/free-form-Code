@@ -5,21 +5,31 @@ import { Eye, Pencil, Check, Link2, X } from "lucide-react";
 interface ShareDrawerProps {
   shareId: string | null;
   canvasId: string | undefined;
-  onMakePublic: () => Promise<void>;
+  onMakePublic: () => Promise<string | null>;
   isDark: boolean;
   children: React.ReactNode;
 }
 
-export default function ShareDrawer({ shareId, onMakePublic, isDark, children }: ShareDrawerProps) {
+export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDrawerProps) {
   const [open, setOpen] = useState(false);
   const [copiedView, setCopiedView] = useState(false);
   const [copiedEdit, setCopiedEdit] = useState(false);
 
   async function copyLink(mode: "view" | "edit") {
-    await onMakePublic();
-    const base = `${window.location.origin}/canvas/share/${shareId}`;
+    const latestShareId = await onMakePublic();
+    if (!latestShareId) return;
+    const base = `${window.location.origin}/canvas/share/${latestShareId}`;
     const url = mode === "edit" ? `${base}?edit=true` : base;
-    navigator.clipboard.writeText(url);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    } else {
+      const el = document.createElement("textarea");
+      el.value = url;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
     if (mode === "view") {
       setCopiedView(true);
       setTimeout(() => setCopiedView(false), 2000);
@@ -81,7 +91,7 @@ export default function ShareDrawer({ shareId, onMakePublic, isDark, children }:
 
               <div className="flex flex-col gap-3">
                 {/* view only */}
-                <button className={optionClass} onClick={() => copyLink("view")} disabled={!shareId}>
+                <button className={optionClass} onClick={() => copyLink("view")}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${isDark ? "bg-[#2e2e3a]" : "bg-gray-100"}`}>
                       <Eye className={`w-4 h-4 ${isDark ? "text-[#9b9ba8]" : "text-gray-500"}`} />
@@ -103,7 +113,7 @@ export default function ShareDrawer({ shareId, onMakePublic, isDark, children }:
                 </button>
 
                 {/* can edit */}
-                <button className={optionClass} onClick={() => copyLink("edit")} disabled={!shareId}>
+                <button className={optionClass} onClick={() => copyLink("edit")}>
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${isDark ? "bg-[#2e2e3a]" : "bg-gray-100"}`}>
                       <Pencil className={`w-4 h-4 ${isDark ? "text-[#9b9ba8]" : "text-gray-500"}`} />
