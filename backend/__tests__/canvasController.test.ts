@@ -4,6 +4,14 @@ import { getCanvasById, createCanva, getCanvasByShareId, getUserCanvases, update
 import * as Canvas from "../models/canvas";
 
 jest.mock("../models/canvas");
+jest.mock("../redis", () => {
+  const mock = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue("OK"),
+    del: jest.fn().mockResolvedValue(1),
+  };
+  return { __esModule: true, default: mock, ...mock };
+});
 const mockCanvas = Canvas as jest.Mocked<typeof Canvas>;
 
 describe("getCanvasById", () => {
@@ -216,7 +224,7 @@ describe("updateCanvas", () => {
     await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: "name is required" });
+    expect(res.json).toHaveBeenCalledWith({ error: "name or is_public is required" });
   });
 
   test("returns 404 when canvas not found", async () => {
