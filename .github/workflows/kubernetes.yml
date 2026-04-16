@@ -1,10 +1,10 @@
-name: CI
+name: Kubernetes CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "Kubernetes" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "Kubernetes" ]
 
 jobs:
   # ── Backend ───────────────────────────────────────────────────────────────
@@ -87,3 +87,18 @@ jobs:
       - name: Type check & build
         run: npm run build
         working-directory: my-app
+
+  # ── Docker ────────────────────────────────────────────────────────────────
+  docker:
+    name: Docker — build images
+    runs-on: ubuntu-latest
+    needs: [ backend, frontend ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t free-form-backend ./backend
+
+      - name: Build frontend image
+        run: docker build -t free-form-frontend ./my-app
