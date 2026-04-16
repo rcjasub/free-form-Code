@@ -12,8 +12,6 @@
 
 import { Fingerprint } from "lucide-react";
 import { motion } from "motion/react";
-import Image from "next/image";
-import Link from "next/link";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -129,7 +127,7 @@ export default function SmoothDrawer({
 
   return (
     <Drawer>
-      <DrawerTrigger render={<Button variant="outline" />}>Open Drawer</DrawerTrigger>
+      <DrawerTrigger asChild><Button variant="outline">Open Drawer</Button></DrawerTrigger>
       <DrawerContent className="mx-auto max-w-fit rounded-2xl p-6 shadow-xl">
         <motion.div
           animate="visible"
@@ -142,7 +140,7 @@ export default function SmoothDrawer({
               <DrawerTitle className="flex items-center gap-2.5 font-semibold text-2xl tracking-tighter">
                 <motion.div variants={itemVariants as any}>
                   <div className="rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-200 p-1.5 shadow-inner dark:from-zinc-800 dark:to-zinc-900">
-                    <Image alt="Logo" height={32} src="/logo.svg" width={32} />
+                    <img alt="Logo" height={32} src="/logo.svg" width={32} />
                   </div>
                 </motion.div>
                 <motion.span variants={itemVariants as any}>
@@ -164,7 +162,7 @@ export default function SmoothDrawer({
           <motion.div variants={itemVariants as any}>
             <DrawerFooter className="flex flex-col gap-3 px-0">
               <div className="w-full">
-                <Link
+                <a
                   className="group relative inline-flex h-11 w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 font-semibold text-sm text-white tracking-wide shadow-lg shadow-rose-500/20 transition-all duration-500 hover:from-rose-600 hover:to-pink-600 hover:shadow-rose-500/30 hover:shadow-xl dark:from-rose-600 dark:to-pink-600 dark:hover:from-rose-500 dark:hover:to-pink-500"
                   href="https://kokonutui.pro/#pricing"
                   target="_blank"
@@ -202,9 +200,9 @@ export default function SmoothDrawer({
                       <Fingerprint className="h-4 w-4" />
                     </motion.div>
                   </motion.div>
-                </Link>
+                </a>
               </div>
-              <DrawerClose render={<Button className="h-11 w-full rounded-xl border-zinc-200 font-semibold text-sm tracking-tighter transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800/80" onClick={handleSecondaryClick} variant="outline" />}>{secondaryButtonText}</DrawerClose>
+              <DrawerClose asChild><Button className="h-11 w-full rounded-xl border-zinc-200 font-semibold text-sm tracking-tighter transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800/80" onClick={handleSecondaryClick} variant="outline">{secondaryButtonText}</Button></DrawerClose>
             </DrawerFooter>
           </motion.div>
         </motion.div>
