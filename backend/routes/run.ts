@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { runCode } from "../controllers/runController";
 import rateLimit from "express-rate-limit";
+import { authenticate } from "../middleware/auth";
 
 const runLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -10,6 +11,6 @@ const runLimiter = rateLimit({
 
 const router = Router();
 
-router.post("/", runLimiter, runCode);
+router.post("/", authenticate, runLimiter, runCode);
 
 export default router;

@@ -1,5 +1,9 @@
 import "dotenv/config";
+
+if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET environment variable must be set");
+
 import express from "express";
+import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { createServer } from "http";
@@ -16,6 +20,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.set("trust proxy", 1);
+app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
@@ -29,7 +34,9 @@ app.use("/api/run", runRoutes);
 const httpServer = createServer(app);
 
 // attach socket.io to the http server
-const io = new Server(httpServer, { cors: { origin: "*" } });
+const io = new Server(httpServer, {
+  cors: { origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true },
+});
 
 // register all socket event handlers
 setUpSockets(io);
