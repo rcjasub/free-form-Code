@@ -1,6 +1,21 @@
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
+import { parse } from "cookie";
 
 export function setUpSockets(io: Server) {
+  io.use((socket, next) => {
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (!cookieHeader) return next(new Error("Authentication required"));
+    const token = parse(cookieHeader).token;
+    if (!token) return next(new Error("Authentication required"));
+    try {
+      jwt.verify(token, process.env.JWT_SECRET!);
+      next();
+    } catch {
+      next(new Error("Invalid or expired token"));
+    }
+  });
+
   io.on("connection", (socket) => {
 
     socket.on("canvas:join", (canvasId) => {

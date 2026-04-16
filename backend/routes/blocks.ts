@@ -6,9 +6,12 @@ import {
   updateBlock,
   updateBlockContent,
 } from "../controllers/blocksController";
+import { authenticate } from "../middleware/auth";
 
 // mergeParams: true allows this router to access :id from the parent route in server.ts
 const router = Router({ mergeParams: true });
+
+router.use(authenticate);
 
 router.get("/", getAllBlocks);
 router.post("/", createBlock);

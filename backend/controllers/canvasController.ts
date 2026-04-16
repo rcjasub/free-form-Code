@@ -16,7 +16,12 @@ export async function getCanvasById(
 
   const cached = await redis.get(`canvas:${id}`);
   if (cached) {
-    res.status(200).json(JSON.parse(cached));
+    const canvas = JSON.parse(cached);
+    if (canvas.user_id !== req.user!.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    res.status(200).json(canvas);
     return;
   }
 
@@ -24,6 +29,10 @@ export async function getCanvasById(
     const canvas = await Canvas.getById(id);
     if (!canvas) {
       res.status(404).json({ error: "Canvas not found" });
+      return;
+    }
+    if (canvas.user_id !== req.user!.id) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
 
@@ -102,11 +111,16 @@ export async function updateCanvas(
   }
 
   try {
-    const canvas = await Canvas.updateCanvas(id, { name, is_public });
-    if (!canvas) {
+    const existing = await Canvas.getById(id);
+    if (!existing) {
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
+    if (existing.user_id !== req.user!.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const canvas = await Canvas.updateCanvas(id, { name, is_public });
     await redis.del(`canvas:${id}`);
     res.status(200).json(canvas);
   } catch (err) {
@@ -126,12 +140,16 @@ export async function deleteCanvas(
   }
 
   try {
-    const canvas = await Canvas.deleteCanvas(id);
-    if (!canvas) {
+    const existing = await Canvas.getById(id);
+    if (!existing) {
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
-
+    if (existing.user_id !== req.user!.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    await Canvas.deleteCanvas(id);
     await redis.del(`canvas:${id}`);
     res.status(200).json({ message: "Canvas Deleted Successfully" });
   } catch (err) {
