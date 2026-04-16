@@ -22,12 +22,13 @@ spec:
 
 ---
 
-# Service — exposes the frontend internally
+# Service — exposes the frontend internally, Ingress handles external traffic
 apiVersion: v1
 kind: Service
 metadata:
   name: frontend
 spec:
+  type: ClusterIP
   selector:
     app: frontend
   ports:
