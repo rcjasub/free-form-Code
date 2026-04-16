@@ -114,6 +114,30 @@ eval $(minikube docker-env)          # point Docker CLI at minikube's internal D
 docker build -t free-form-backend ./backend   # build image into minikube
 ```
 
+## First-time database setup
+
+The postgres pod starts empty — the schema must be applied manually on first run:
+
+```bash
+# copy the schema file into the pod
+kubectl cp backend/db/schema.sql $(kubectl get pod -l app=postgres -o name | sed 's/pod\///'):/schema.sql
+
+# run it against the database
+kubectl exec -it $(kubectl get pod -l app=postgres -o name) -- psql -U postgres -d freeformcode -f /schema.sql
+```
+
+This only needs to be done once. Data persists across pod restarts via the PersistentVolumeClaim, but is lost if the PVC is deleted.
+
+## Trust proxy
+
+The backend runs behind the Kubernetes Ingress which adds an `X-Forwarded-For` header to every request. Express must be told to trust this header, otherwise `express-rate-limit` will throw a validation error:
+
+```ts
+app.set("trust proxy", 1);
+```
+
+Without this, rate limiting and IP-based features will not work correctly behind any reverse proxy (Ingress, nginx, load balancer).
+
 ## Applying config
 
 ```bash

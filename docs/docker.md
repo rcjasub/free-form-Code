@@ -47,7 +47,7 @@ The project runs four containers:
 | Container  | Image              | Port | Purpose                 |
 |------------|--------------------|------|-------------------------|
 | frontend   | nginx:alpine       | 80   | Serves the React app    |
-| backend    | node:20-alpine     | 4000 | Express API + Socket.IO |
+| backend    | node:22-alpine     | 4000 | Express API + Socket.IO |
 | postgres   | postgres:16-alpine | 5432 | Primary database        |
 | redis      | redis:alpine       | 6379 | Job queue + cache       |
 
