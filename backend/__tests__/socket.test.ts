@@ -3,6 +3,11 @@ import { Server } from "socket.io";
 import ioc from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import { setUpSockets } from "../socket";
+import jwt from "jsonwebtoken";
+
+process.env.JWT_SECRET = "test-secret";
+const testToken = jwt.sign({ id: "user-1", email: "test@test.com" }, "test-secret");
+const authCookie = `token=${testToken}`;
 
 let httpServer: ReturnType<typeof createServer>;
 let serverSocket: Server;
@@ -17,8 +22,8 @@ beforeEach((done) => {
   httpServer.listen(() => {
     const port = (httpServer.address() as any).port;
 
-    clientA = ioc(`http://localhost:${port}`);
-    clientB = ioc(`http://localhost:${port}`);
+    clientA = ioc(`http://localhost:${port}`, { extraHeaders: { cookie: authCookie } });
+    clientB = ioc(`http://localhost:${port}`, { extraHeaders: { cookie: authCookie } });
 
     let connected = 0;
     const onConnect = () => {

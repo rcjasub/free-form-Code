@@ -200,7 +200,7 @@ describe("updateCanvas", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { id: "1" }, body: { name: "New Name" } };
+    req = { params: { id: "1" }, body: { name: "New Name" }, user: { id: "user-1" } };
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
@@ -210,6 +210,7 @@ describe("updateCanvas", () => {
   test("returns 200 and updated canvas", async () => {
     const fakeCanvas = { id: "1", user_id: "user-1", name: "New Name", share_id: "abc", is_public: false, created_at: new Date(), updated_at: new Date() };
 
+    mockCanvas.getById.mockResolvedValue(fakeCanvas);
     mockCanvas.updateCanvas.mockResolvedValue(fakeCanvas);
 
     await updateCanvas(req, res);
@@ -228,7 +229,7 @@ describe("updateCanvas", () => {
   });
 
   test("returns 404 when canvas not found", async () => {
-    mockCanvas.updateCanvas.mockResolvedValue(null as any);
+    mockCanvas.getById.mockResolvedValue(null);
 
     await updateCanvas(req, res);
 
@@ -237,7 +238,7 @@ describe("updateCanvas", () => {
   });
 
   test("returns 500 on database error", async () => {
-    mockCanvas.updateCanvas.mockRejectedValue(new Error("db error"));
+    mockCanvas.getById.mockRejectedValue(new Error("db error"));
 
     await updateCanvas(req, res);
 
@@ -251,7 +252,7 @@ describe("deleteCanvas", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { id: "1" } };
+    req = { params: { id: "1" }, user: { id: "user-1" } };
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
@@ -261,6 +262,7 @@ describe("deleteCanvas", () => {
   test("returns 200 on successful delete", async () => {
     const fakeCanvas = { id: "1", user_id: "user-1", name: "Canvas", share_id: "abc", is_public: false, created_at: new Date(), updated_at: new Date() };
 
+    mockCanvas.getById.mockResolvedValue(fakeCanvas);
     mockCanvas.deleteCanvas.mockResolvedValue(fakeCanvas);
 
     await deleteCanvas(req, res);
@@ -270,7 +272,7 @@ describe("deleteCanvas", () => {
   });
 
   test("returns 404 when canvas not found", async () => {
-    mockCanvas.deleteCanvas.mockResolvedValue(null as any);
+    mockCanvas.getById.mockResolvedValue(null);
 
     await deleteCanvas(req, res);
 
@@ -279,7 +281,7 @@ describe("deleteCanvas", () => {
   });
 
   test("returns 500 on database error", async () => {
-    mockCanvas.deleteCanvas.mockRejectedValue(new Error("db error"));
+    mockCanvas.getById.mockRejectedValue(new Error("db error"));
 
     await deleteCanvas(req, res);
 
