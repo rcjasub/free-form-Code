@@ -2,9 +2,18 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
+import OutputBubble from "@/components/OutputBubble";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket from "@/lib/socket";
 import type { Mode } from "@/App";
+
+interface Output {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  isError: boolean;
+}
 
 interface Node {
   id: string;
@@ -22,6 +31,8 @@ export default function SharedCanvas() {
   const isDark = resolvedTheme === "dark";
 
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [outputs, setOutputs] = useState<Output[]>([]);
+  const nextId = useRef(1);
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
@@ -218,6 +229,41 @@ export default function SharedCanvas() {
     }
   }
 
+  async function handleRunNode(id: string) {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || !node.content.trim()) return;
+
+    const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
+    let x = node.x + 220;
+    let y = node.y;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      x = (rect.right + 20 - offset.x) / scale;
+      y = (rect.top - offset.y) / scale;
+    }
+
+    socket.once("run:complete", ({ output, error }) => {
+      setOutputs((prev) => [
+        ...prev,
+        { id: nextId.current++, x, y, text: output, isError: !!error },
+      ]);
+    });
+
+    try {
+      await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
+      });
+    } catch {
+      setOutputs((prev) => [
+        ...prev,
+        { id: nextId.current++, x, y, text: "Failed to reach server", isError: true },
+      ]);
+    }
+  }
+
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
     if (e.target !== canvasRef.current) return;
@@ -339,10 +385,24 @@ export default function SharedCanvas() {
             onDelete={canEdit ? deleteNode : () => {}}
             onMarkErase={() => {}}
             pendingErase={false}
-            onRun={() => {}}
+            onRun={canEdit ? handleRunNode : () => {}}
             mode={canEdit ? mode : "select"}
             isMouseDown={isMouseDown}
             isDark={isDark}
+          />
+        ))}
+
+        {outputs.map((out) => (
+          <OutputBubble
+            key={out.id}
+            id={out.id}
+            x={out.x}
+            y={out.y}
+            text={out.text}
+            isError={out.isError}
+            onDelete={(id) => setOutputs((prev) => prev.filter((o) => o.id !== id))}
+            onMove={(id, x, y) => setOutputs((prev) => prev.map((o) => o.id === id ? { ...o, x, y } : o))}
+            mode={mode}
           />
         ))}
       </div>

@@ -384,6 +384,7 @@ export default function App() {
       await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
       });
     } catch {
