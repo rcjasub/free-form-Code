@@ -280,7 +280,7 @@ export default function App() {
         y = rect?.top ?? 100;
       }
 
-      if (!code) return;
+      if (!code || !socket.id) return;
 
       socket.once("run:complete", ({ output, error }) => {
         setOutputs((prev) => [
@@ -293,6 +293,7 @@ export default function App() {
         await fetch("/api/run", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             code,
             language: "javascript",
@@ -359,7 +360,7 @@ export default function App() {
 
   async function handleRunNode(id: string) {
     const node = nodes.find((n) => n.id === id);
-    if (!node || !node.content.trim()) return;
+    if (!node || !node.content.trim() || !socket.id) return;
 
     // Find the node's DOM element to position the output to its right
     const el = document.querySelector(

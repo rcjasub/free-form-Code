@@ -231,7 +231,7 @@ export default function SharedCanvas() {
 
   async function handleRunNode(id: string) {
     const node = nodes.find((n) => n.id === id);
-    if (!node || !node.content.trim()) return;
+    if (!node || !node.content.trim() || !socket.id) return;
 
     const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
     let x = node.x + 220;
@@ -403,6 +403,8 @@ export default function SharedCanvas() {
             onDelete={(id) => setOutputs((prev) => prev.filter((o) => o.id !== id))}
             onMove={(id, x, y) => setOutputs((prev) => prev.map((o) => o.id === id ? { ...o, x, y } : o))}
             mode={mode}
+            isMouseDown={isMouseDown}
+            isDark={isDark}
           />
         ))}
       </div>
