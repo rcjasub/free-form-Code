@@ -202,6 +202,7 @@ export default function SharedCanvas() {
         fetch(`/api/canvases/${canvasId}/blocks/${id}/content`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ content }),
         });
         socket.emit("block:updated", canvasId, { id, content });
@@ -215,6 +216,7 @@ export default function SharedCanvas() {
       fetch(`/api/canvases/${canvasId}/blocks/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ x, y }),
       });
       socket.emit("block:moved", canvasId, { id, x, y });
@@ -224,7 +226,7 @@ export default function SharedCanvas() {
   function deleteNode(id: string) {
     setNodes((prev) => prev.filter((n) => n.id !== id));
     if (canvasId) {
-      fetch(`/api/canvases/${canvasId}/blocks/${id}`, { method: "DELETE" });
+      fetch(`/api/canvases/${canvasId}/blocks/${id}`, { method: "DELETE", credentials: "include" });
       socket.emit("block:deleted", canvasId, id);
     }
   }
@@ -272,6 +274,7 @@ export default function SharedCanvas() {
     const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
     });
     const data = await res.json();
