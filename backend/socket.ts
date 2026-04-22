@@ -52,9 +52,10 @@ export function setUpSockets(io: Server) {
   io.on("connection", (socket: SocketWithUser) => {
     let currentCanvas: string | null = null;
 
-    socket.on("canvas:join", (canvasId) => {
+    socket.on("canvas:join", (canvasId, ack?: () => void) => {
       socket.join(canvasId);
       currentCanvas = canvasId;
+      if (typeof ack === "function") ack();
     });
 
     socket.on("block:created", (canvasId, block) => {
