@@ -4,7 +4,7 @@ import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
 import OutputBubble from "@/components/OutputBubble";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
-import socket from "@/lib/socket";
+import socket, { guestName } from "@/lib/guestSocket";
 import type { Mode } from "@/App";
 
 interface Output {
@@ -20,6 +20,20 @@ interface Node {
   x: number;
   y: number;
   content: string;
+}
+
+interface RemoteCursor {
+  userId: string;
+  username: string;
+  x: number;
+  y: number;
+}
+
+const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+function getCursorColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
 }
 
 export default function SharedCanvas() {
@@ -41,6 +55,9 @@ export default function SharedCanvas() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
+  const lastCursorEmit = useRef(0);
+  const canvasIdRef = useRef<string | null>(null);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
@@ -62,7 +79,7 @@ export default function SharedCanvas() {
       .then(({ user }) => setUsername(user?.username ?? null));
   }, []);
 
-  // load canvas + blocks
+  // load canvas metadata + blocks
   useEffect(() => {
     if (!shareId) return;
 
@@ -74,43 +91,64 @@ export default function SharedCanvas() {
       .then((canvas) => {
         if (!canvas) return;
         setCanvasName(canvas.name);
-        setCanvasId(canvas.id);
+        const id = String(canvas.id);
+        canvasIdRef.current = id;
+        setCanvasId(id);
 
-        // join socket room
-        const joinCanvas = () => socket.emit("canvas:join", canvas.id);
-        if (socket.connected) joinCanvas();
-        else socket.once("connect", joinCanvas);
-
-        // load blocks
         return fetch(`/api/canvases/${canvas.id}/blocks`)
           .then((r) => r.json())
           .then((blocks) => {
             setNodes(blocks.map((b: any) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
             setLoading(false);
-
-            // live updates from owner
-            socket.on("block:created", (block) => {
-              setNodes((prev) => [...prev, { id: block.id, x: block.x, y: block.y, content: block.content }]);
-            });
-            socket.on("block:moved", (data) => {
-              setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, x: data.x, y: data.y } : n));
-            });
-            socket.on("block:updated", (data) => {
-              setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, content: data.content } : n));
-            });
-            socket.on("block:deleted", (blockId) => {
-              setNodes((prev) => prev.filter((n) => n.id !== blockId));
-            });
           });
       });
+  }, [shareId]);
+
+  // socket: join room + wire all real-time events
+  useEffect(() => {
+    if (!canvasId) return;
+
+    const joinCanvas = () => socket.emit("canvas:join", canvasId);
+    if (socket.connected) joinCanvas();
+    else socket.once("connect", joinCanvas);
+
+    socket.on("block:created", (block) => {
+      setNodes((prev) => [...prev, { id: block.id, x: block.x, y: block.y, content: block.content }]);
+    });
+    socket.on("block:moved", (data) => {
+      setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, x: data.x, y: data.y } : n));
+    });
+    socket.on("block:updated", (data) => {
+      setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, content: data.content } : n));
+    });
+    socket.on("block:deleted", (blockId) => {
+      setNodes((prev) => prev.filter((n) => n.id !== blockId));
+    });
+    socket.on("cursor:move", (data: RemoteCursor) => {
+      setRemoteCursors((prev) => {
+        const next = new Map(prev);
+        next.set(data.userId, data);
+        return next;
+      });
+    });
+    socket.on("cursor:leave", ({ userId }: { userId: string }) => {
+      setRemoteCursors((prev) => {
+        const next = new Map(prev);
+        next.delete(userId);
+        return next;
+      });
+    });
 
     return () => {
+      socket.off("connect", joinCanvas);
       socket.off("block:created");
       socket.off("block:moved");
       socket.off("block:updated");
       socket.off("block:deleted");
+      socket.off("cursor:move");
+      socket.off("cursor:leave");
     };
-  }, [shareId]);
+  }, [canvasId]);
 
   // pan + zoom
   useEffect(() => {
@@ -266,6 +304,17 @@ export default function SharedCanvas() {
     }
   }
 
+  function handleMouseMove(e: React.MouseEvent) {
+    const id = canvasIdRef.current;
+    if (!id) return;
+    const now = Date.now();
+    if (now - lastCursorEmit.current < 50) return;
+    lastCursorEmit.current = now;
+    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
+    socket.emit("cursor:move", id, { x, y });
+  }
+
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
     if (e.target !== canvasRef.current) return;
@@ -307,6 +356,7 @@ export default function SharedCanvas() {
         backgroundSize: "28px 28px",
       }}
       onWheel={handleWheel}
+      onMouseMove={handleMouseMove}
       onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
@@ -320,7 +370,7 @@ export default function SharedCanvas() {
           {canvasName}
         </span>
         <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? "bg-[#3c3c4a] text-[#9b9ba8]" : "bg-gray-100 text-gray-500"}`}>
-          {username ? username : "Anonymous"}
+          {guestName}
         </span>
         {canEdit && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
@@ -410,6 +460,29 @@ export default function SharedCanvas() {
             isDark={isDark}
           />
         ))}
+
+        {Array.from(remoteCursors.values())
+          .filter((cursor) => cursor.userId !== socket.id)
+          .map((cursor) => {
+            const color = getCursorColor(cursor.userId);
+            return (
+              <div
+                key={cursor.userId}
+                className="absolute pointer-events-none"
+                style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
+              >
+                <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
+                  <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
+                </svg>
+                <span
+                  className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
+                  style={{ backgroundColor: color, color: "#fff" }}
+                >
+                  {cursor.username}
+                </span>
+              </div>
+            );
+          })}
       </div>
 
       {/* zoom controls */}
