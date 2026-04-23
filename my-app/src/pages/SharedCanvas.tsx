@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
@@ -35,6 +35,41 @@ function getCursorColor(userId: string): string {
   for (let i = 0; i < userId.length; i++) hash = userId.charCodeAt(i) + ((hash << 5) - hash);
   return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
 }
+
+const RemoteCursors = React.memo(function RemoteCursors({
+  cursors,
+  mySocketId,
+}: {
+  cursors: Map<string, RemoteCursor>;
+  mySocketId: string | undefined;
+}) {
+  return (
+    <>
+      {Array.from(cursors.values())
+        .filter((c) => c.userId !== mySocketId)
+        .map((cursor) => {
+          const color = getCursorColor(cursor.userId);
+          return (
+            <div
+              key={cursor.userId}
+              className="absolute pointer-events-none"
+              style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
+                <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
+              </svg>
+              <span
+                className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
+                style={{ backgroundColor: color, color: "#fff" }}
+              >
+                {cursor.username}
+              </span>
+            </div>
+          );
+        })}
+    </>
+  );
+});
 
 export default function SharedCanvas() {
   const { shareId } = useParams<{ shareId: string }>();
@@ -161,7 +196,7 @@ export default function SharedCanvas() {
     };
   }, [canvasId]);
 
-  // pan + zoom
+  // pan + zoom keys
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === "Space" && !e.repeat) {
@@ -203,7 +238,8 @@ export default function SharedCanvas() {
   function handlePanStart(e: React.MouseEvent) {
     const isMiddle = e.button === 1;
     const isSpaceDrag = e.button === 0 && spaceHeld.current;
-    if (!isMiddle && !isSpaceDrag) return;
+    const isHandMode = e.button === 0 && modeRef.current === "hand";
+    if (!isMiddle && !isSpaceDrag && !isHandMode) return;
     e.preventDefault();
     document.body.style.cursor = "grabbing";
     const startX = e.clientX - offsetRef.current.x;
@@ -212,7 +248,8 @@ export default function SharedCanvas() {
       setOffset({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
-      document.body.style.cursor = spaceHeld.current ? "grab" : "";
+      const m = modeRef.current;
+      document.body.style.cursor = spaceHeld.current || m === "hand" ? "grab" : "";
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -242,45 +279,51 @@ export default function SharedCanvas() {
     setScale(next);
   }
 
-  // edit mode handlers
-  function updateNode(id: string, content: string) {
+  const updateNode = useCallback((id: string, content: string) => {
+    if (!canEdit) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
-      if (canvasId) {
-        fetch(`/api/canvases/${canvasId}/blocks/${id}/content`, {
+      const cid = canvasIdRef.current;
+      if (cid) {
+        fetch(`/api/canvases/${cid}/blocks/${id}/content`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ content }),
         });
-        socket.emit("block:updated", canvasId, { id, content });
+        socket.emit("block:updated", cid, { id, content });
       }
     }, 800);
-  }
+  }, [canEdit]);
 
-  function moveNode(id: string, x: number, y: number) {
+  const moveNode = useCallback((id: string, x: number, y: number) => {
+    if (!canEdit) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
-    if (canvasId) {
-      fetch(`/api/canvases/${canvasId}/blocks/${id}`, {
+    const cid = canvasIdRef.current;
+    if (cid) {
+      fetch(`/api/canvases/${cid}/blocks/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ x, y }),
       });
-      socket.emit("block:moved", canvasId, { id, x, y });
+      socket.emit("block:moved", cid, { id, x, y });
     }
-  }
+  }, [canEdit]);
 
-  function deleteNode(id: string) {
+  const deleteNode = useCallback((id: string) => {
+    if (!canEdit) return;
     setNodes((prev) => prev.filter((n) => n.id !== id));
-    if (canvasId) {
-      fetch(`/api/canvases/${canvasId}/blocks/${id}`, { method: "DELETE", credentials: "include" });
-      socket.emit("block:deleted", canvasId, id);
+    const cid = canvasIdRef.current;
+    if (cid) {
+      fetch(`/api/canvases/${cid}/blocks/${id}`, { method: "DELETE", credentials: "include" });
+      socket.emit("block:deleted", cid, id);
     }
-  }
+  }, [canEdit]);
 
-  async function handleRunNode(id: string) {
+  const handleRunNode = useCallback(async (id: string) => {
+    if (!canEdit) return;
     const node = nodes.find((n) => n.id === id);
     if (!node || !node.content.trim() || !socket.id) return;
 
@@ -289,8 +332,8 @@ export default function SharedCanvas() {
     let y = node.y;
     if (el) {
       const rect = el.getBoundingClientRect();
-      x = (rect.right + 20 - offset.x) / scale;
-      y = (rect.top - offset.y) / scale;
+      x = (rect.right + 20 - offsetRef.current.x) / scaleRef.current;
+      y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
     socket.once("run:complete", ({ output, error }) => {
@@ -313,7 +356,22 @@ export default function SharedCanvas() {
         { id: nextId.current++, x, y, text: "Failed to reach server", isError: true },
       ]);
     }
-  }
+  }, [canEdit, nodes]);
+
+  const handleMarkErase = useCallback((id: string) => {
+    if (!canEdit) return;
+    setPendingErase((prev) => new Set([...prev, id]));
+  }, [canEdit]);
+
+  const saveSelection = useCallback(() => {}, []);
+
+  const dismissOutput = useCallback((id: number) => {
+    setOutputs((prev) => prev.filter((o) => o.id !== id));
+  }, []);
+
+  const moveOutput = useCallback((id: number, x: number, y: number) => {
+    setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
+  }, []);
 
   function handleMouseMove(e: React.MouseEvent) {
     const id = canvasIdRef.current;
@@ -443,13 +501,13 @@ export default function SharedCanvas() {
             x={node.x}
             y={node.y}
             content={node.content}
-            onChange={canEdit ? updateNode : () => {}}
-            onMove={canEdit ? moveNode : () => {}}
-            onSaveSelection={() => {}}
-            onDelete={canEdit ? deleteNode : () => {}}
-            onMarkErase={(id) => setPendingErase(prev => new Set([...prev, id]))}
+            onChange={updateNode}
+            onMove={moveNode}
+            onSaveSelection={saveSelection}
+            onDelete={deleteNode}
+            onMarkErase={handleMarkErase}
             pendingErase={pendingErase.has(node.id)}
-            onRun={canEdit ? handleRunNode : () => {}}
+            onRun={handleRunNode}
             mode={canEdit ? mode : "select"}
             isMouseDown={isMouseDown}
             isDark={isDark}
@@ -464,36 +522,15 @@ export default function SharedCanvas() {
             y={out.y}
             text={out.text}
             isError={out.isError}
-            onDelete={(id) => setOutputs((prev) => prev.filter((o) => o.id !== id))}
-            onMove={(id, x, y) => setOutputs((prev) => prev.map((o) => o.id === id ? { ...o, x, y } : o))}
+            onDelete={dismissOutput}
+            onMove={moveOutput}
             mode={mode}
             isMouseDown={isMouseDown}
             isDark={isDark}
           />
         ))}
 
-        {Array.from(remoteCursors.values())
-          .filter((cursor) => cursor.userId !== socket.id)
-          .map((cursor) => {
-            const color = getCursorColor(cursor.userId);
-            return (
-              <div
-                key={cursor.userId}
-                className="absolute pointer-events-none"
-                style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
-              >
-                <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
-                  <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
-                </svg>
-                <span
-                  className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
-                  style={{ backgroundColor: color, color: "#fff" }}
-                >
-                  {cursor.username}
-                </span>
-              </div>
-            );
-          })}
+        <RemoteCursors cursors={remoteCursors} mySocketId={socket.id} />
       </div>
 
       {/* zoom controls */}
