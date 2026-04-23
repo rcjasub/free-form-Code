@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState } from "react";
+import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
@@ -42,14 +43,18 @@ function makeTheme(isDark: boolean) {
     ".cm-line": { padding: "0", lineHeight: "1.625" },
     ".cm-gutters": { display: "none" },
     ".cm-scroller": { overflow: "hidden !important" },
-    ".cm-cursor": { borderLeftColor: isDark ? "#f5f5f5" : "#1f2937", borderLeftWidth: "2px" },
+    ".cm-cursor": {
+      borderLeftColor: isDark ? "#f5f5f5" : "#1f2937",
+      borderLeftWidth: "2px",
+    },
     ".cm-selectionBackground, ::selection": {
       background: isDark ? "#264f78 !important" : "#bfdbfe !important",
     },
   });
 }
 
-export default function FloatingNode({
+// React memo: is a wrapper that tells React "only re-render this component if its props actually changed"
+export default React.memo(function FloatingNode({
   id,
   x,
   y,
@@ -173,9 +178,18 @@ export default function FloatingNode({
       ref={containerRef}
       data-node-id={id}
       className="absolute group outline-none"
-      style={{ left: x, top: y, opacity: pendingErase ? 0.3 : 1, transition: "opacity 0.15s" }}
+      style={{
+        left: x,
+        top: y,
+        opacity: pendingErase ? 0.3 : 1,
+        transition: "opacity 0.15s",
+      }}
       onMouseDown={(e) => {
-        if (mode === "erase") { e.stopPropagation(); onMarkErase(id); return; }
+        if (mode === "erase") {
+          e.stopPropagation();
+          onMarkErase(id);
+          return;
+        }
         if (mode !== "hand") e.stopPropagation();
       }}
       onMouseEnter={() => {
@@ -188,14 +202,14 @@ export default function FloatingNode({
           className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragHandleMouseDown}
         >
-          <div className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`} />
+          <div
+            className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`}
+          />
         </div>
       )}
 
       {/* hand mode overlay */}
-      {mode === "hand" && (
-        <div className="absolute inset-0 z-10 cursor-grab" />
-      )}
+      {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
 
       {/* play button */}
       <div
@@ -217,8 +231,12 @@ export default function FloatingNode({
         ref={editorRef}
         value={initialContent}
         extensions={[javascript(), theme, EditorView.lineWrapping]}
-        onFocus={() => { isFocused.current = true; }}
-        onBlur={() => { isFocused.current = false; }}
+        onFocus={() => {
+          isFocused.current = true;
+        }}
+        onBlur={() => {
+          isFocused.current = false;
+        }}
         onChange={(val) => onChange(id, val)}
         onStatistics={(data) => {
           if (!containerRef.current) return;
@@ -243,4 +261,4 @@ export default function FloatingNode({
       />
     </div>
   );
-}
+});

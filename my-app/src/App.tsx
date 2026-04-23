@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useParams, useNavigate } from "react-router-dom";
 import FloatingNode from "./components/FloatingNode";
@@ -6,6 +6,7 @@ import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import ShareDrawer from "./components/ShareDrawer";
 import socket from "./lib/socket";
+import { useCallback } from "react";
 
 import {
   getAllBlocks,
@@ -46,6 +47,43 @@ function getCursorColor(userId: string): string {
   for (let i = 0; i < userId.length; i++) hash = userId.charCodeAt(i) + ((hash << 5) - hash);
   return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
 }
+
+// Separate memoized component so cursor updates only re-render this subtree,
+// not the FloatingNodes above it.
+const RemoteCursors = React.memo(function RemoteCursors({
+  cursors,
+  mySocketId,
+}: {
+  cursors: Map<string, RemoteCursor>;
+  mySocketId: string | undefined;
+}) {
+  return (
+    <>
+      {Array.from(cursors.values())
+        .filter((c) => c.userId !== mySocketId)
+        .map((cursor) => {
+          const color = getCursorColor(cursor.userId);
+          return (
+            <div
+              key={cursor.userId}
+              className="absolute pointer-events-none"
+              style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
+                <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
+              </svg>
+              <span
+                className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
+                style={{ backgroundColor: color, color: "#fff" }}
+              >
+                {cursor.username}
+              </span>
+            </div>
+          );
+        })}
+    </>
+  );
+});
 
 export default function App() {
   const { canvasId } = useParams<{ canvasId: string }>();
@@ -352,7 +390,12 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function updateNode(id: string, content: string) {
+  // useCallback keeps the same function reference between renders.
+  // Without it, App re-rendering (e.g. from a cursor:move) would create a new
+  // function every time → FloatingNode's React.memo would see a changed prop
+  // and re-render even though the node data didn't change.
+  // With useCallback: same canvasId → same function reference → memo skips re-render.
+  const updateNode = useCallback((id: string, content: string) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
@@ -362,19 +405,28 @@ export default function App() {
         socket.emit("block:updated", canvasId, { id, content });
       }
     }, 800);
-  }
+  }, [canvasId]);
 
-  function moveNode(id: string, x: number, y: number) {
+  const moveNode = useCallback((id: string, x: number, y: number) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     if (canvasId) {
       updateBlockPosition(canvasId, id, x, y);
       socket.emit("block:moved", canvasId, { id, x, y });
     }
-  }
+  }, [canvasId]);
 
-  function saveSelection(content: string, el: HTMLElement) {
+  const deleteNode = useCallback((id: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== id));
+    if (canvasId) {
+      deleteBlock(canvasId, id);
+      socket.emit("block:deleted", canvasId, id);
+    }
+  }, [canvasId]);
+
+  // saveSelection only writes to a ref — no canvasId dependency, always stable.
+  const saveSelection = useCallback((content: string, el: HTMLElement) => {
     lastSelection.current = { content, el };
-  }
+  }, []);
 
   function dismissOutput(id: number) {
     setOutputs((prev) => prev.filter((o) => o.id !== id));
@@ -384,19 +436,12 @@ export default function App() {
     setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
   }
 
-  function deleteNode(id: string) {
-    setNodes((prev) => prev.filter((n) => n.id !== id));
-    if (canvasId) {
-      deleteBlock(canvasId, id);
-      socket.emit("block:deleted", canvasId, id);
-    }
-  }
-
-  async function handleRunNode(id: string) {
+  // nodes is the only real dependency — offset/scale are read from refs
+  // so the function only recreates when blocks actually change, not on cursor moves.
+  const handleRunNode = useCallback(async (id: string) => {
     const node = nodes.find((n) => n.id === id);
     if (!node || !node.content.trim() || !socket.id) return;
 
-    // Find the node's DOM element to position the output to its right
     const el = document.querySelector(
       `[data-node-id="${id}"]`,
     ) as HTMLElement | null;
@@ -404,8 +449,8 @@ export default function App() {
     let y = node.y;
     if (el) {
       const rect = el.getBoundingClientRect();
-      x = (rect.right + 20 - offset.x) / scale;
-      y = (rect.top - offset.y) / scale;
+      x = (rect.right + 20 - offsetRef.current.x) / scaleRef.current;
+      y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
     socket.once("run:complete", ({ output, error }) => {
@@ -425,16 +470,15 @@ export default function App() {
     } catch {
       setOutputs((prev) => [
         ...prev,
-        {
-          id: nextId.current++,
-          x,
-          y,
-          text: "Failed to reach server",
-          isError: true,
-        },
+        { id: nextId.current++, x, y, text: "Failed to reach server", isError: true },
       ]);
     }
-  }
+  }, [nodes]);
+
+  // inline lambda in JSX would be a new reference every render — extracted so memo works
+  const handleMarkErase = useCallback((id: string) => {
+    setPendingErase((prev) => new Set([...prev, id]));
+  }, []);
 
   function handleMouseMove(e: React.MouseEvent) {
     if (!canvasId) return;
@@ -633,7 +677,7 @@ export default function App() {
             onMove={moveNode}
             onSaveSelection={saveSelection}
             onDelete={deleteNode}
-            onMarkErase={(id) => setPendingErase(prev => new Set([...prev, id]))}
+            onMarkErase={handleMarkErase}
             pendingErase={pendingErase.has(node.id)}
             onRun={handleRunNode}
             mode={mode}
@@ -658,28 +702,7 @@ export default function App() {
           />
         ))}
 
-        {Array.from(remoteCursors.values())
-          .filter((cursor) => cursor.userId !== socket.id)
-          .map((cursor) => {
-            const color = getCursorColor(cursor.userId);
-            return (
-              <div
-                key={cursor.userId}
-                className="absolute pointer-events-none"
-                style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
-              >
-                <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
-                  <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
-                </svg>
-                <span
-                  className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
-                  style={{ backgroundColor: color, color: "#fff" }}
-                >
-                  {cursor.username}
-                </span>
-              </div>
-            );
-          })}
+        <RemoteCursors cursors={remoteCursors} mySocketId={socket.id} />
       </div>
 
       {/* zoom controls */}

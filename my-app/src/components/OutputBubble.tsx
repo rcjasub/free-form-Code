@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import React from "react";
 import type { Mode } from "../App";
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
   isDark: boolean;
 }
 
-export default function OutputBubble({
+export default React.memo(function OutputBubble({
   id,
   x,
   y,
@@ -144,4 +145,4 @@ export default function OutputBubble({
       <span className="pr-3">{text}</span>
     </div>
   );
-}
+})
