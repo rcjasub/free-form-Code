@@ -55,6 +55,7 @@ export default function SharedCanvas() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
   const lastCursorEmit = useRef(0);
   const canvasIdRef = useRef<string | null>(null);
@@ -71,6 +72,16 @@ export default function SharedCanvas() {
 
   useEffect(() => { offsetRef.current = offset; }, [offset]);
   useEffect(() => { scaleRef.current = scale; }, [scale]);
+
+  useEffect(() => {
+    function onMouseUp() {
+      if (pendingErase.size === 0) return;
+      pendingErase.forEach(id => deleteNode(id));
+      setPendingErase(new Set());
+    }
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, [pendingErase]);
 
   // check if user is logged in
   useEffect(() => {
@@ -436,8 +447,8 @@ export default function SharedCanvas() {
             onMove={canEdit ? moveNode : () => {}}
             onSaveSelection={() => {}}
             onDelete={canEdit ? deleteNode : () => {}}
-            onMarkErase={() => {}}
-            pendingErase={false}
+            onMarkErase={(id) => setPendingErase(prev => new Set([...prev, id]))}
+            pendingErase={pendingErase.has(node.id)}
             onRun={canEdit ? handleRunNode : () => {}}
             mode={canEdit ? mode : "select"}
             isMouseDown={isMouseDown}
