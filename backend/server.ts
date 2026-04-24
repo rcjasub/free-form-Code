@@ -21,7 +21,12 @@ const PORT = process.env.PORT || 3001;
 
 app.set("trust proxy", 1);
 app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://free-form-code-production.up.railway.app",
+  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
+];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -35,7 +40,7 @@ const httpServer = createServer(app);
 
 // attach socket.io to the http server
 const io = new Server(httpServer, {
-  cors: { origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true },
+  cors: { origin: allowedOrigins, credentials: true },
 });
 
 // register all socket event handlers
