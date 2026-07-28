@@ -50,6 +50,17 @@ export function setUpSockets(io: Server) {
   });
 
   io.on("connection", (socket: SocketWithUser) => {
+    // io.use always runs before "connection" fires, so socket.user is set
+    // by every path through the middleware above — but the type keeps it
+    // optional, and that gap would otherwise force a non-null assertion at
+    // every use site below. Guard once here and bind to a local const so
+    // TypeScript can actually prove it's defined for the rest of this scope.
+    if (!socket.user) {
+      socket.disconnect(true);
+      return;
+    }
+    const user = socket.user;
+
     let currentCanvas: string | null = null;
 
     socket.on("canvas:join", (canvasId, ack?: () => void) => {
@@ -77,7 +88,7 @@ export function setUpSockets(io: Server) {
     socket.on("cursor:move", (canvasId, { x, y }) => {
       socket.to(canvasId).emit("cursor:move", {
         userId: socket.id,
-        username: socket.user!.username,
+        username: user.username,
         x,
         y,
       });
