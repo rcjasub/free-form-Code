@@ -2,10 +2,22 @@ import { Response } from "express";
 import { randomBytes } from "crypto";
 import * as Canvas from "../models/canvas";
 import { AuthRequest } from "../middleware/auth";
+import { handleServerError } from "../utils/errors";
 import redis from "../redis";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
+}
+
+function isOwnedBy(canvas: Canvas.Canvas, userId: string): boolean {
+  return canvas.user_id === userId;
+}
+
+async function invalidateCanvasCache(canvas: Canvas.Canvas): Promise<void> {
+  await Promise.all([
+    redis.del(`canvas:${canvas.id}`),
+    redis.del(`share:${canvas.share_id}`),
+  ]);
 }
 
 export async function getCanvasById(
@@ -31,7 +43,7 @@ export async function getCanvasById(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
-    if (canvas.user_id !== req.user!.id) {
+    if (!isOwnedBy(canvas, req.user!.id)) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -39,11 +51,11 @@ export async function getCanvasById(
     await redis.set(`canvas:${id}`, JSON.stringify(canvas), "EX", 3600); // hour
     res.status(200).json(canvas);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
-export async function createCanva(
+export async function createCanvas(
   req: AuthRequest,
   res: Response,
 ): Promise<void> {
@@ -55,7 +67,7 @@ export async function createCanva(
     const canvas = await Canvas.create({ user_id, name, share_id, is_public });
     res.status(201).json(canvas);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -81,7 +93,7 @@ export async function getCanvasByShareId(
     await redis.set(`share:${id}`, JSON.stringify(canvas), "EX", 3600);
     res.status(200).json(canvas);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -94,7 +106,7 @@ export async function getUserCanvases(
     const canvases = await Canvas.getByUserId(user_id);
     res.status(200).json(canvases);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -116,15 +128,15 @@ export async function updateCanvas(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
-    if (existing.user_id !== req.user!.id) {
+    if (!isOwnedBy(existing, req.user!.id)) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
     const canvas = await Canvas.updateCanvas(id, { name, is_public });
-    await redis.del(`canvas:${id}`);
+    await invalidateCanvasCache(existing);
     res.status(200).json(canvas);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -145,15 +157,14 @@ export async function deleteCanvas(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
-    if (existing.user_id !== req.user!.id) {
+    if (!isOwnedBy(existing, req.user!.id)) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
     await Canvas.deleteCanvas(id);
-    await redis.del(`canvas:${id}`);
+    await invalidateCanvasCache(existing);
     res.status(200).json({ message: "Canvas Deleted Successfully" });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
-

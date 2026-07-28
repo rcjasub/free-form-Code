@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import * as Blocks from "../models/blocks";
+import { handleServerError } from "../utils/errors";
 import redis from "../redis";
 
 export async function getAllBlocks(req: Request, res: Response): Promise<void> {
@@ -17,7 +18,7 @@ export async function getAllBlocks(req: Request, res: Response): Promise<void> {
     await redis.set(`blocks:${id}`, JSON.stringify(allblocks), "EX", 3000);
     res.status(200).json(allblocks);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -38,7 +39,7 @@ export async function createBlock(req: Request, res: Response): Promise<void> {
     await redis.del(`blocks:${canvasId}`);
     res.status(201).json(block);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -61,7 +62,7 @@ export async function deleteBlock(req: Request, res: Response): Promise<void> {
     await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json({ message: "Delete Block Successfully" });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -84,7 +85,7 @@ export async function updateBlock(req: Request, res: Response): Promise<void> {
     await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 
@@ -105,6 +106,6 @@ export async function updateBlockContent(
     await redis.del(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import * as Users from "../models/users";
+import { handleServerError } from "../utils/errors";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -27,7 +28,11 @@ export async function register(req: Request, res: Response): Promise<void> {
     res.cookie("token", token, COOKIE_OPTIONS);
     res.status(201).json({ user: { id: user.id, username: user.username, email: user.email } });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    if ((err as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "Username or email already in use" });
+      return;
+    }
+    handleServerError(res, err);
   }
 }
 
@@ -61,7 +66,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     res.cookie("token", token, COOKIE_OPTIONS);
     res.status(200).json({ user: { id: user.id, username: user.username, email: user.email } });
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    handleServerError(res, err);
   }
 }
 

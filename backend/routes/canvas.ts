@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createCanva,
+  createCanvas,
   getUserCanvases,
   getCanvasById,
   getCanvasByShareId,
@@ -16,7 +16,7 @@ const router = Router();
 router.get("/share/:id", getCanvasByShareId);
 router.get("/", authenticate, getUserCanvases);
 router.get("/:id", authenticate, getCanvasById);
-router.post("/", authenticate, validate(createSchema), createCanva);
+router.post("/", authenticate, validate(createSchema), createCanvas);
 router.put("/:id", authenticate, validate(updateSchema), updateCanvas);
 router.delete("/:id", authenticate, deleteCanvas);
 

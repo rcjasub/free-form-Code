@@ -1,5 +1,5 @@
 import { describe } from "node:test";
-import { getCanvasById, createCanva, getCanvasByShareId, getUserCanvases, updateCanvas, deleteCanvas } from "../controllers/canvasController";
+import { getCanvasById, createCanvas, getCanvasByShareId, getUserCanvases, updateCanvas, deleteCanvas } from "../controllers/canvasController";
 
 import * as Canvas from "../models/canvas";
 
@@ -60,11 +60,11 @@ describe("getCanvasById", () => {
     await getCanvasById(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
 
-describe("createCanva", () => {
+describe("createCanvas", () => {
   let req: any;
   let res: any;
 
@@ -92,7 +92,7 @@ describe("createCanva", () => {
     };
 
     mockCanvas.create.mockResolvedValue(fakeCanvas);
-    await createCanva(req, res);
+    await createCanvas(req, res);
 
     expect(res.status).toHaveBeenLastCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(fakeCanvas);
@@ -101,10 +101,10 @@ describe("createCanva", () => {
   test("returns 500 on database error", async () => {
     mockCanvas.create.mockRejectedValue(new Error("db error"));
 
-    await createCanva(req, res);
+    await createCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
 
@@ -155,7 +155,7 @@ describe("getCanvasByShareId", () => {
     await getCanvasByShareId(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
 
@@ -191,7 +191,7 @@ describe("getUserCanvases", () => {
     await getUserCanvases(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
 
@@ -243,7 +243,7 @@ describe("updateCanvas", () => {
     await updateCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
 
@@ -286,6 +286,6 @@ describe("deleteCanvas", () => {
     await deleteCanvas(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: "db error" });
+    expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
   });
 });
