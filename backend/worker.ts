@@ -1,8 +1,9 @@
 import { Worker } from "bullmq";
+import { Server } from "socket.io";
 import vm from "vm";
 import redis from "./redis";
 
-export function startWorker(io: any) {
+export function startWorker(io: Server) {
   new Worker(
     "code-execution",
     async (job) => {

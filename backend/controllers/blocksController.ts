@@ -1,9 +1,10 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import * as Blocks from "../models/blocks";
+import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
 import redis from "../redis";
 
-export async function getAllBlocks(req: Request, res: Response): Promise<void> {
+export async function getAllBlocks(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
   const cached = await redis.get(`blocks:${id}`);
@@ -22,7 +23,7 @@ export async function getAllBlocks(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function createBlock(req: Request, res: Response): Promise<void> {
+export async function createBlock(req: AuthRequest, res: Response): Promise<void> {
   const { id: canvasId } = req.params;
   const { type, content, x, y, width } = req.body;
 
@@ -43,7 +44,7 @@ export async function createBlock(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function deleteBlock(req: Request, res: Response): Promise<void> {
+export async function deleteBlock(req: AuthRequest, res: Response): Promise<void> {
   const { blockId } = req.params;
 
   if (!blockId) {
@@ -66,7 +67,7 @@ export async function deleteBlock(req: Request, res: Response): Promise<void> {
   }
 }
 
-export async function updateBlock(req: Request, res: Response): Promise<void> {
+export async function updateBlock(req: AuthRequest, res: Response): Promise<void> {
   const { blockId } = req.params;
   const { x, y } = req.body;
 
@@ -90,7 +91,7 @@ export async function updateBlock(req: Request, res: Response): Promise<void> {
 }
 
 export async function updateBlockContent(
-  req: Request,
+  req: AuthRequest,
   res: Response,
 ): Promise<void> {
   const { blockId } = req.params;

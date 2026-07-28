@@ -92,6 +92,7 @@ export default function App() {
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -409,10 +410,16 @@ export default function App() {
 
   const moveNode = useCallback((id: string, x: number, y: number) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
-    if (canvasId) {
+    if (!canvasId) return;
+    // socket emit stays immediate so other viewers see live drag movement;
+    // only the DB write is debounced, since dragging fires this on every
+    // mousemove (tens of times/sec) and only the settled position needs
+    // to be persisted.
+    socket.emit("block:moved", canvasId, { id, x, y });
+    clearTimeout(moveSaveTimers.current[id]);
+    moveSaveTimers.current[id] = setTimeout(() => {
       updateBlockPosition(canvasId, id, x, y);
-      socket.emit("block:moved", canvasId, { id, x, y });
-    }
+    }, 300);
   }, [canvasId]);
 
   const deleteNode = useCallback((id: string) => {

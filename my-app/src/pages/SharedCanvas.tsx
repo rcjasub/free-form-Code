@@ -90,6 +90,7 @@ export default function SharedCanvas() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
   const lastCursorEmit = useRef(0);
@@ -301,15 +302,21 @@ export default function SharedCanvas() {
     if (!canEdit) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     const cid = canvasIdRef.current;
-    if (cid) {
+    if (!cid) return;
+    // socket emit stays immediate so other viewers see live drag movement;
+    // only the DB write is debounced, since dragging fires this on every
+    // mousemove (tens of times/sec) and only the settled position needs
+    // to be persisted.
+    socket.emit("block:moved", cid, { id, x, y });
+    clearTimeout(moveSaveTimers.current[id]);
+    moveSaveTimers.current[id] = setTimeout(() => {
       fetch(`/api/canvases/${cid}/blocks/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ x, y }),
       });
-      socket.emit("block:moved", cid, { id, x, y });
-    }
+    }, 300);
   }, [canEdit]);
 
   const deleteNode = useCallback((id: string) => {
