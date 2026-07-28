@@ -12,7 +12,7 @@ interface Props {
   content: string;
   onChange: (id: string, content: string) => void;
   onMove: (id: string, x: number, y: number) => void;
-  onSaveSelection: (content: string, el: HTMLElement) => void;
+  onSaveSelection?: (content: string, el: HTMLElement) => void;
   onDelete: (id: string) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
@@ -242,7 +242,7 @@ export default React.memo(function FloatingNode({
           if (!containerRef.current) return;
           const selected = data.selectionCode.trim();
           const toSave = selected || content.trim();
-          if (toSave) onSaveSelection(toSave, containerRef.current);
+          if (toSave) onSaveSelection?.(toSave, containerRef.current);
         }}
         basicSetup={{
           lineNumbers: false,

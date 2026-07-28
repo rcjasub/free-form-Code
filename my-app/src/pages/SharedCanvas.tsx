@@ -22,12 +22,25 @@ interface Node {
   content: string;
 }
 
+// shape of a block as returned by GET /canvases/:id/blocks — only the
+// fields this file actually reads off it.
+interface ApiBlock {
+  id: string;
+  x: number;
+  y: number;
+  content: string;
+}
+
 interface RemoteCursor {
   userId: string;
   username: string;
   x: number;
   y: number;
 }
+
+// Outputs only ever leave the array via manual dismiss — without a cap, a
+// user running many nodes accumulates output bubbles forever.
+const MAX_OUTPUTS = 20;
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 function getCursorColor(userId: string): string {
@@ -82,6 +95,12 @@ export default function SharedCanvas() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
+  // Position context for runs that have been submitted but haven't gotten
+  // a run:complete back yet. The BullMQ worker processes the code-execution
+  // queue with concurrency 1, so results arrive in the same order jobs were
+  // submitted — a FIFO queue here correctly pairs each result with the run
+  // that triggered it, even if multiple runs are in flight at once.
+  const pendingRuns = useRef<{ x: number; y: number }[]>([]);
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
@@ -145,7 +164,7 @@ export default function SharedCanvas() {
         return fetch(`/api/canvases/${canvas.id}/blocks`)
           .then((r) => r.json())
           .then((blocks) => {
-            setNodes(blocks.map((b: any) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
+            setNodes(blocks.map((b: ApiBlock) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
             setLoading(false);
           });
       });
@@ -196,6 +215,26 @@ export default function SharedCanvas() {
       socket.off("cursor:leave");
     };
   }, [canvasId]);
+
+  // Single persistent run:complete listener, registered once for the life
+  // of the component instead of a fresh socket.once() per run — a fresh
+  // listener per run either leaked (never fired if the component unmounted
+  // mid-execution) or, if a second run started before the first's result
+  // came back, could fire both listeners against the same event and
+  // misattribute output B's result to run A's position.
+  useEffect(() => {
+    function onRunComplete({ output, error }: { output: string; error?: boolean }) {
+      const ctx = pendingRuns.current.shift();
+      if (!ctx) return; // no run we're tracking expected this
+      setOutputs((prev) =>
+        [...prev, { id: nextId.current++, x: ctx.x, y: ctx.y, text: output, isError: !!error }].slice(
+          -MAX_OUTPUTS,
+        ),
+      );
+    }
+    socket.on("run:complete", onRunComplete);
+    return () => { socket.off("run:complete", onRunComplete); };
+  }, []);
 
   // pan + zoom keys
   useEffect(() => {
@@ -280,6 +319,12 @@ export default function SharedCanvas() {
     setScale(next);
   }
 
+  // updateNode/moveNode/deleteNode below are optimistic-only: local state
+  // updates immediately, the network write fires after with no rollback
+  // and no error surfaced to the user if it fails (fetch errors are
+  // swallowed). Acceptable for now, but a real gap — a failed write here
+  // leaves the client's view permanently out of sync with the DB until
+  // the next reload.
   const updateNode = useCallback((id: string, content: string) => {
     if (!canEdit) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
@@ -343,12 +388,8 @@ export default function SharedCanvas() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    socket.once("run:complete", ({ output, error }) => {
-      setOutputs((prev) => [
-        ...prev,
-        { id: nextId.current++, x, y, text: output, isError: !!error },
-      ]);
-    });
+    const ctx = { x, y };
+    pendingRuns.current.push(ctx);
 
     try {
       await fetch("/api/run", {
@@ -358,10 +399,16 @@ export default function SharedCanvas() {
         body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
       });
     } catch {
-      setOutputs((prev) => [
-        ...prev,
-        { id: nextId.current++, x, y, text: "Failed to reach server", isError: true },
-      ]);
+      // request never reached the server, so no run:complete will ever
+      // arrive for it — drop it from the queue by reference so it doesn't
+      // desync the FIFO pairing for whatever run is next.
+      const idx = pendingRuns.current.indexOf(ctx);
+      if (idx !== -1) pendingRuns.current.splice(idx, 1);
+      setOutputs((prev) =>
+        [...prev, { id: nextId.current++, x, y, text: "Failed to reach server", isError: true }].slice(
+          -MAX_OUTPUTS,
+        ),
+      );
     }
   }, [canEdit, nodes]);
 
@@ -369,8 +416,6 @@ export default function SharedCanvas() {
     if (!canEdit) return;
     setPendingErase((prev) => new Set([...prev, id]));
   }, [canEdit]);
-
-  const saveSelection = useCallback(() => {}, []);
 
   const dismissOutput = useCallback((id: number) => {
     setOutputs((prev) => prev.filter((o) => o.id !== id));
@@ -510,7 +555,6 @@ export default function SharedCanvas() {
             content={node.content}
             onChange={updateNode}
             onMove={moveNode}
-            onSaveSelection={saveSelection}
             onDelete={deleteNode}
             onMarkErase={handleMarkErase}
             pendingErase={pendingErase.has(node.id)}
