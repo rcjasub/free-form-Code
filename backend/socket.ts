@@ -1,6 +1,14 @@
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { parse } from "cookie";
+import * as Canvas from "./models/canvas";
+import {
+  blockCreatedEventSchema,
+  blockMovedEventSchema,
+  blockUpdatedEventSchema,
+  blockDeletedEventSchema,
+  cursorMoveEventSchema,
+} from "./schemas/socketEvents.schema";
 
 interface JwtPayload {
   id: string;
@@ -63,34 +71,79 @@ export function setUpSockets(io: Server) {
 
     let currentCanvas: string | null = null;
 
-    socket.on("canvas:join", (canvasId, ack?: () => void) => {
-      socket.join(canvasId);
-      currentCanvas = canvasId;
-      if (typeof ack === "function") ack();
-    });
+    socket.on(
+      "canvas:join",
+      async (canvasId, ack?: (result: { ok: boolean; error?: string }) => void) => {
+        // Rooms are just Socket.IO's join() call — nothing stopped a socket
+        // from joining any canvasId before this check, which meant anyone
+        // could silently watch a private canvas's live cursors and block
+        // events without ever touching the (now-guarded) REST routes.
+        try {
+          const canvas = await Canvas.getById(canvasId);
+          if (!canvas) {
+            ack?.({ ok: false, error: "Canvas not found" });
+            return;
+          }
+          if (canvas.user_id !== user.id && !canvas.is_public) {
+            ack?.({ ok: false, error: "Forbidden" });
+            return;
+          }
+          socket.join(canvasId);
+          currentCanvas = canvasId;
+          ack?.({ ok: true });
+        } catch {
+          ack?.({ ok: false, error: "Internal error" });
+        }
+      },
+    );
+
+    // Room targeting trusts currentCanvas (set by a successful canvas:join
+    // above), not the canvasId argument the client sends per-event —
+    // socket.to(room) doesn't require the sender to actually be in that
+    // room, so trusting a client-supplied id here would let a socket skip
+    // canvas:join entirely and broadcast straight into a canvas it was
+    // never authorized to join.
+    function inJoinedCanvas(canvasId: string): boolean {
+      return currentCanvas !== null && canvasId === currentCanvas;
+    }
 
     socket.on("block:created", (canvasId, block) => {
-      socket.to(canvasId).emit("block:created", block);
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = blockCreatedEventSchema.safeParse(block);
+      if (!parsed.success) return;
+      socket.to(canvasId).emit("block:created", parsed.data);
     });
 
     socket.on("block:moved", (canvasId, data) => {
-      socket.to(canvasId).emit("block:moved", data);
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = blockMovedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      socket.to(canvasId).emit("block:moved", parsed.data);
     });
 
     socket.on("block:updated", (canvasId, data) => {
-      socket.to(canvasId).emit("block:updated", data);
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = blockUpdatedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      socket.to(canvasId).emit("block:updated", parsed.data);
     });
 
     socket.on("block:deleted", (canvasId, blockId) => {
-      socket.to(canvasId).emit("block:deleted", blockId);
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = blockDeletedEventSchema.safeParse(blockId);
+      if (!parsed.success) return;
+      socket.to(canvasId).emit("block:deleted", parsed.data);
     });
 
-    socket.on("cursor:move", (canvasId, { x, y }) => {
+    socket.on("cursor:move", (canvasId, data) => {
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = cursorMoveEventSchema.safeParse(data);
+      if (!parsed.success) return;
       socket.to(canvasId).emit("cursor:move", {
         userId: socket.id,
         username: user.username,
-        x,
-        y,
+        x: parsed.data.x,
+        y: parsed.data.y,
       });
     });
 

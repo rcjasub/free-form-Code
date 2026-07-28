@@ -4,10 +4,24 @@ import ioc from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import { setUpSockets } from "../socket";
 import jwt from "jsonwebtoken";
+import * as Canvas from "../models/canvas";
+
+jest.mock("../models/canvas");
+const mockCanvas = Canvas as jest.Mocked<typeof Canvas>;
 
 process.env.JWT_SECRET = "test-secret";
 const testToken = jwt.sign({ id: "user-1", username: "testuser" }, "test-secret");
 const authCookie = `token=${testToken}`;
+
+const ownedCanvas = {
+  id: "canvas-1",
+  user_id: "user-1",
+  name: "Test canvas",
+  share_id: "share-1",
+  is_public: false,
+  created_at: new Date(),
+  updated_at: new Date(),
+};
 
 let httpServer: ReturnType<typeof createServer>;
 let serverSocket: Server;
@@ -22,6 +36,8 @@ function bothJoined(canvasId: string, cb: () => void) {
 }
 
 beforeEach((done) => {
+  mockCanvas.getById.mockResolvedValue(ownedCanvas);
+
   httpServer = createServer();
   serverSocket = new Server(httpServer);
   setUpSockets(serverSocket);
@@ -49,7 +65,7 @@ afterEach((done) => {
 describe("socket events", () => {
   test("block:created is received by clientB when clientA emits it", (done) => {
     const canvasId = "canvas-1";
-    const block = { id: "block-1", type: "code" };
+    const block = { id: "block-1", type: "code", x: 100, y: 100, content: "" };
 
     clientB.on("block:created", (receivedBlock: any) => {
       expect(receivedBlock).toEqual(block);
@@ -105,7 +121,7 @@ describe("socket events", () => {
 
   test("block:created sender does not receive their own event", (done) => {
     const canvasId = "canvas-1";
-    const block = { id: "block-1", type: "code" };
+    const block = { id: "block-1", type: "code", x: 100, y: 100, content: "" };
     let clientAReceived = false;
 
     clientA.on("block:created", () => { clientAReceived = true; });
@@ -116,6 +132,59 @@ describe("socket events", () => {
         expect(clientAReceived).toBe(false);
         done();
       }, 100);
+    });
+  });
+});
+
+describe("canvas:join authorization", () => {
+  test("acks ok:true and receives room broadcasts when the socket owns the canvas", (done) => {
+    clientA.emit("canvas:join", "canvas-1", (result: { ok: boolean }) => {
+      expect(result.ok).toBe(true);
+      done();
+    });
+  });
+
+  test("acks ok:false and does not join the room for someone else's private canvas", (done) => {
+    // Only clientA's join (the first getById call) sees the "not mine"
+    // canvas; clientB's join right after falls back to the beforeEach
+    // default (ownedCanvas) and should succeed normally.
+    mockCanvas.getById.mockResolvedValueOnce({
+      id: "canvas-1",
+      user_id: "someone-else",
+      name: "Not yours",
+      share_id: "share-1",
+      is_public: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    let clientAReceived = false;
+    clientA.on("block:created", () => { clientAReceived = true; });
+
+    clientA.emit("canvas:join", "canvas-1", (joinResult: { ok: boolean; error?: string }) => {
+      expect(joinResult.ok).toBe(false);
+      expect(joinResult.error).toBe("Forbidden");
+
+      // clientB legitimately joins the same room id and broadcasts;
+      // clientA never actually joined (rejected above), so it must not
+      // receive this even though it asked for the same canvasId.
+      clientB.emit("canvas:join", "canvas-1", () => {
+        clientB.emit("block:created", "canvas-1", { id: "block-1", x: 0, y: 0, content: "" });
+        setTimeout(() => {
+          expect(clientAReceived).toBe(false);
+          done();
+        }, 100);
+      });
+    });
+  });
+
+  test("acks ok:false when the canvas doesn't exist", (done) => {
+    mockCanvas.getById.mockResolvedValue(null);
+
+    clientA.emit("canvas:join", "canvas-1", (result: { ok: boolean; error?: string }) => {
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe("Canvas not found");
+      done();
     });
   });
 });
