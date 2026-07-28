@@ -23,7 +23,7 @@ export interface createBlockParams {
 
 export async function getBlocksByCanvasId(canvasId: string): Promise<Block[]> {
   const result = await pool.query<Block>(
-    "SELECT * FROM blocks WHERE canvas_id = $1",
+    "SELECT * FROM blocks WHERE canvas_id = $1 ORDER BY created_at ASC",
     [canvasId],
   );
   return result.rows; //unwrapping
