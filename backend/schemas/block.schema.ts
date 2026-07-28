@@ -1,3 +1,4 @@
+
 import {z} from "zod";
 
 export const createSchema = z.object({
@@ -8,10 +9,12 @@ export const createSchema = z.object({
     width: z.number().positive().default(300),
 });
 
+// width isn't included here: updateBlock only persists x/y (see
+// blocksController.updateBlock + models/blocks.updateBlockPosition),
+// and nothing in the app resizes a block after creation yet.
 export const updateBlockSchema = z.object({
     x: z.number(),
     y: z.number(),
-    width: z.number().positive(),
 }).partial();
 
 export const updateBlockContentSchema = z.object({
