@@ -3,6 +3,7 @@ import { useTheme } from "next-themes";
 import { Pencil, Shapes } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
+import { strokePath } from "./lib/smoothPath";
 import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
 import OutputBubble from "./components/OutputBubble";
@@ -787,8 +788,8 @@ export default function App() {
             className="absolute inset-0 pointer-events-none"
             style={{ overflow: "visible" }}
           >
-            <polyline
-              points={liveStroke.map((p) => `${p.x},${p.y}`).join(" ")}
+            <path
+              d={strokePath(liveStroke)}
               fill="none"
               stroke={isDark ? "#f5f5f5" : "#1f2937"}
               strokeWidth={2}
