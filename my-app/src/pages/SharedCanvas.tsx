@@ -7,7 +7,8 @@ import OutputBubble from "@/components/OutputBubble";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket, { guestName } from "@/lib/guestSocket";
 import type { Mode } from "@/App";
-import { Pencil } from "lucide-react";
+import { Pencil, Shapes } from "lucide-react";
+import { detectShape } from "@/lib/shapeDetection";
 
 interface Output {
   id: number;
@@ -122,6 +123,7 @@ export default function SharedCanvas() {
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
   const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
+  const [snapShapes, setSnapShapes] = useState(false);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
@@ -452,8 +454,9 @@ export default function SharedCanvas() {
     socket.emit("cursor:move", id, { x, y });
   }
 
-  async function finalizeDrawing(points: Point[]) {
-    if (points.length < 2 || !canvasId) return;
+  async function finalizeDrawing(rawPoints: Point[]) {
+    if (rawPoints.length < 2 || !canvasId) return;
+    const points = snapShapes ? detectShape(rawPoints) ?? rawPoints : rawPoints;
     const minX = Math.min(...points.map((p) => p.x));
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
@@ -606,6 +609,21 @@ export default function SharedCanvas() {
 
       {/* top-right */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
+        {canEdit && (
+          <button
+            onClick={() => setSnapShapes((v) => !v)}
+            title="Snap drawings to perfect shapes"
+            className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
+              snapShapes
+                ? "bg-blue-500 border-blue-500 text-white"
+                : isDark
+                  ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
+                  : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
+            }`}
+          >
+            <Shapes size={14} />
+          </button>
+        )}
         <ThemeToggleButton />
       </div>
 
