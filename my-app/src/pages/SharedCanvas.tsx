@@ -138,6 +138,7 @@ export default function SharedCanvas() {
   const spaceHeld = useRef(false);
   const isMouseDown = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { offsetRef.current = offset; }, [offset]);
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -175,7 +176,7 @@ export default function SharedCanvas() {
         canvasIdRef.current = id;
         setCanvasId(id);
 
-        return fetch(`/api/canvases/${canvas.id}/blocks`)
+        return fetch(`/api/canvases/${canvas.id}/blocks`, { credentials: "include" })
           .then((r) => r.json())
           .then((blocks) => {
             setNodes(blocks.map((b: ApiBlock) => blockToNode(b)));
@@ -474,8 +475,18 @@ export default function SharedCanvas() {
     socket.emit("block:created", canvasId, data);
   }
 
+  // The canvas layer is only ever sized to the viewport, then visually
+  // shifted with translate/scale to pan and zoom — it never grows, so
+  // panning far or zooming out leaves parts of the screen outside its box
+  // entirely. A click there lands on the root background instead, so both
+  // spots have to count as "empty canvas" or actions silently stop working
+  // the moment you're not near the origin.
+  function isCanvasBackground(e: React.MouseEvent) {
+    return e.target === canvasRef.current || e.target === rootRef.current;
+  }
+
   function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (!canEdit || modeRef.current !== "draw" || e.target !== canvasRef.current) return;
+    if (!canEdit || modeRef.current !== "draw" || !isCanvasBackground(e)) return;
     const points: Point[] = [
       { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
     ];
@@ -497,7 +508,7 @@ export default function SharedCanvas() {
 
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
-    if (e.target !== canvasRef.current) return;
+    if (!isCanvasBackground(e)) return;
     const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
     const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
     const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
@@ -529,6 +540,7 @@ export default function SharedCanvas() {
 
   return (
     <div
+      ref={rootRef}
       className={`relative w-screen h-screen overflow-hidden select-none cursor-default`}
       style={{
         backgroundColor: isDark ? "#121212" : "#ffffff",
@@ -537,7 +549,8 @@ export default function SharedCanvas() {
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
-      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
+      onClick={handleCanvasClick}
+      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); handleDrawMouseDown(e); }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* top-left: canvas info */}
@@ -604,8 +617,6 @@ export default function SharedCanvas() {
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
         }}
-        onClick={handleCanvasClick}
-        onMouseDown={handleDrawMouseDown}
       >
         {nodes.map((node) =>
           node.type === "draw" ? (

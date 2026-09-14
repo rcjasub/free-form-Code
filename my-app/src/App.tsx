@@ -124,6 +124,7 @@ export default function App() {
   } | null>(null);
   const spaceHeld = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const isMouseDown = useRef(false);
 
   // flush pending erase on mouseup
@@ -290,8 +291,18 @@ export default function App() {
     socket.emit("block:created", canvasId, data);
   }
 
+  // The canvas layer is only ever sized to the viewport, then visually
+  // shifted with translate/scale to pan and zoom — it never grows, so
+  // panning far or zooming out leaves parts of the screen outside its box
+  // entirely. A click there lands on the root background instead, so both
+  // spots have to count as "empty canvas" or actions silently stop working
+  // the moment you're not near the origin.
+  function isCanvasBackground(e: React.MouseEvent) {
+    return e.target === canvasRef.current || e.target === rootRef.current;
+  }
+
   function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (mode !== "draw" || e.target !== canvasRef.current) return;
+    if (mode !== "draw" || !isCanvasBackground(e)) return;
     const points: Point[] = [
       { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
     ];
@@ -313,7 +324,7 @@ export default function App() {
 
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "text") return;
-    if (e.target !== canvasRef.current) return;
+    if (!isCanvasBackground(e)) return;
     if (!canvasId) return;
     const x = (e.clientX - offset.x) / scale;
     const y = (e.clientY - offset.y) / scale;
@@ -585,6 +596,7 @@ export default function App() {
 
   return (
     <div
+      ref={rootRef}
       className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
       style={{
         backgroundColor: isDark ? "#121212" : "#ffffff",
@@ -594,9 +606,11 @@ export default function App() {
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
+      onClick={handleCanvasClick}
       onMouseDown={(e) => {
         isMouseDown.current = true;
         handlePanStart(e);
+        handleDrawMouseDown(e);
       }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
@@ -708,8 +722,6 @@ export default function App() {
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
         }}
-        onClick={handleCanvasClick}
-        onMouseDown={handleDrawMouseDown}
       >
         {nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

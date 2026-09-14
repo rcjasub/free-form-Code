@@ -116,7 +116,7 @@ export default React.memo(function OutputBubble({
           ? isDark ? "bg-[#2d1515] text-red-400 border-[#5c2a2a]" : "bg-red-50 text-red-700 border-red-200"
           : isDark ? "bg-[#232329] text-green-400 border-[#3c3c4a]" : "bg-gray-900 text-green-400 border-gray-700"
       }`}
-      style={{ left: x, top: y }}
+      style={{ left: x, top: y, pointerEvents: mode === "draw" ? "none" : undefined }}
       onMouseDown={(e) => {
         if (mode !== "hand") e.stopPropagation();
       }}

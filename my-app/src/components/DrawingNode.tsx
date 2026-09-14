@@ -75,6 +75,12 @@ export default React.memo(function DrawingNode({
         height,
         opacity: pendingErase ? 0.3 : 1,
         transition: "opacity 0.15s",
+        // In draw mode this bounding box shouldn't intercept clicks — it's
+        // usually much bigger than the visible stroke (e.g. a diagonal
+        // line's box is a full rectangle), so without this a new stroke
+        // starting anywhere inside a previous one's box would silently die
+        // here instead of reaching the canvas below.
+        pointerEvents: mode === "draw" ? "none" : undefined,
       }}
       onMouseDown={(e) => {
         if (mode === "erase") {
