@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import React from "react";
 import type { Mode } from "../App";
+import { strokePath } from "../lib/smoothPath";
 
 export interface Point {
   x: number;
@@ -46,7 +47,7 @@ export default React.memo(function DrawingNode({
 
   const width = Math.max(...points.map((p) => p.x), 1);
   const height = Math.max(...points.map((p) => p.y), 1);
-  const pointsAttr = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const pathData = strokePath(points);
 
   function handleDragMouseDown(e: React.MouseEvent) {
     const startX = e.clientX;
@@ -110,8 +111,8 @@ export default React.memo(function DrawingNode({
         height={height}
         style={{ overflow: "visible", cursor: mode === "select" ? "grab" : undefined }}
       >
-        <polyline
-          points={pointsAttr}
+        <path
+          d={pathData}
           fill="none"
           stroke={isDark ? "#f5f5f5" : "#1f2937"}
           strokeWidth={2}

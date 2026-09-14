@@ -9,6 +9,7 @@ import socket, { guestName } from "@/lib/guestSocket";
 import type { Mode } from "@/App";
 import { Pencil, Shapes } from "lucide-react";
 import { detectShape } from "@/lib/shapeDetection";
+import { strokePath } from "@/lib/smoothPath";
 
 interface Output {
   id: number;
@@ -674,8 +675,8 @@ export default function SharedCanvas() {
 
         {liveStroke && liveStroke.length > 1 && (
           <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>
-            <polyline
-              points={liveStroke.map((p) => `${p.x},${p.y}`).join(" ")}
+            <path
+              d={strokePath(liveStroke)}
               fill="none"
               stroke={isDark ? "#f5f5f5" : "#1f2937"}
               strokeWidth={2}
