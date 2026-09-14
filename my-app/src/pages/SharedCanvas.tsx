@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
+import RemoteCursorMarker from "@/components/RemoteCursorMarker";
 import OutputBubble from "@/components/OutputBubble";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket, { guestName } from "@/lib/guestSocket";
@@ -75,26 +76,15 @@ const RemoteCursors = React.memo(function RemoteCursors({
     <>
       {Array.from(cursors.values())
         .filter((c) => c.userId !== mySocketId)
-        .map((cursor) => {
-          const color = getCursorColor(cursor.userId);
-          return (
-            <div
-              key={cursor.userId}
-              className="absolute pointer-events-none"
-              style={{ left: cursor.x, top: cursor.y, zIndex: 9999 }}
-            >
-              <svg width="16" height="16" viewBox="0 0 14 14" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}>
-                <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" fill={color} stroke="white" strokeWidth="0.5" />
-              </svg>
-              <span
-                className="absolute left-4 top-0 text-[10px] font-medium px-1 py-0.5 rounded whitespace-nowrap"
-                style={{ backgroundColor: color, color: "#fff" }}
-              >
-                {cursor.username}
-              </span>
-            </div>
-          );
-        })}
+        .map((cursor) => (
+          <RemoteCursorMarker
+            key={cursor.userId}
+            x={cursor.x}
+            y={cursor.y}
+            username={cursor.username}
+            color={getCursorColor(cursor.userId)}
+          />
+        ))}
     </>
   );
 });
