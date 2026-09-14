@@ -1,4 +1,5 @@
 import pool from "../db";
+import { Pool, PoolClient } from "pg";
 
 export interface User {
   id: string;
@@ -14,9 +15,12 @@ export interface CreateUserParams {
   password_hash: string;
 }
 
-export async function createUser(params: CreateUserParams): Promise<User> {
+export async function createUser(
+  params: CreateUserParams,
+  db: Pool | PoolClient = pool,
+): Promise<User> {
   const { username, email, password_hash } = params;
-  const result = await pool.query<User>(
+  const result = await db.query<User>(
     "INSERT INTO users (username, email, password_hash) VALUES($1, $2, $3) RETURNING *",
     [username, email, password_hash],
   );

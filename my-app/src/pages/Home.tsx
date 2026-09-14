@@ -21,14 +21,22 @@ export default function Home() {
     try {
       if (mode === "register") {
         await axios.post("/api/auth/register", { username, email, password }, { withCredentials: true });
-        await axios.post("/api/canvases", { name: "My Canvas" }, { withCredentials: true });
         navigate("/dashboard");
       } else {
         await axios.post("/api/auth/login", { email, password }, { withCredentials: true });
         navigate("/dashboard");
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Something went wrong");
+      const data = err.response?.data;
+      if (data?.error) {
+        setError(data.error);
+      } else if (data?.errors?.length) {
+        setError(data.errors.map((e: { message: string }) => e.message).join(", "));
+      } else if (!err.response) {
+        setError("Could not reach the server. Please check your connection and try again.");
+      } else {
+        setError("Something went wrong");
+      }
     }
   }
 

@@ -5,9 +5,9 @@ import { validate } from "../middleware/validate";
 import { registerSchema, loginSchema } from "../schemas/user.schema";
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per 15 min per IP
-  message: { error: "Too many attempts, try again in 15 minutes" },
+  windowMs: 2 * 60 * 1000, // 2 minutes
+  max: 10, // 10 attempts per 2 min per IP
+  message: { error: "Too many attempts, try again in 2 minutes" },
 });
 
 const router = Router();

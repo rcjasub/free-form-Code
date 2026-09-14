@@ -1,8 +1,15 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { randomBytes } from "crypto";
 import * as Users from "../models/users";
+import * as Canvas from "../models/canvas";
+import pool from "../db";
 import { handleServerError } from "../utils/errors";
+
+function generateShareId(length = 12): string {
+  return randomBytes(length).toString("base64url").slice(0, length);
+}
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -21,18 +28,29 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     const password_hash = await bcrypt.hash(password, 10);
-    const user = await Users.createUser({ username, email, password_hash });
+    const user = await Users.createUser({ username, email, password_hash }, client);
+    await Canvas.create(
+      { user_id: user.id, name: "My Canvas", share_id: generateShareId(), is_public: false },
+      client,
+    );
+    await client.query("COMMIT");
+
     const token = jwt.sign({ id: user.id, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: "24h" });
     res.cookie("token", token, COOKIE_OPTIONS);
     res.status(201).json({ user: { id: user.id, username: user.username, email: user.email } });
   } catch (err) {
+    await client.query("ROLLBACK");
     if ((err as { code?: string }).code === "23505") {
       res.status(409).json({ error: "Username or email already in use" });
       return;
     }
     handleServerError(res, err);
+  } finally {
+    client.release();
   }
 }
 

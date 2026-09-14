@@ -1,4 +1,5 @@
 import pool from "../db";
+import { Pool, PoolClient } from "pg";
 
 export interface Canvas {
   id: string;
@@ -17,9 +18,12 @@ export interface CreateCanvasParams {
   is_public: boolean;
 }
 
-export async function create(params: CreateCanvasParams): Promise<Canvas> {
+export async function create(
+  params: CreateCanvasParams,
+  db: Pool | PoolClient = pool,
+): Promise<Canvas> {
   const { user_id, name, share_id, is_public } = params;
-  const result = await pool.query<Canvas>(
+  const result = await db.query<Canvas>(
     `INSERT INTO canvases (user_id, name, share_id, is_public)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
