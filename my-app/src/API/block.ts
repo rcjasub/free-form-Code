@@ -16,6 +16,16 @@ export function createBlock(canvasId: string, x: number, y: number) {
   });
 }
 
+export function createDrawingBlock(canvasId: string, x: number, y: number, width: number, content: string) {
+  return api.post(`/canvases/${canvasId}/blocks`, {
+    type: "draw",
+    content,
+    x,
+    y,
+    width,
+  });
+}
+
 export function updateBlockPosition(canvasId: string, blockId: string, x: number, y: number) {
   return api.put(`/canvases/${canvasId}/blocks/${blockId}`, { x, y });
 }

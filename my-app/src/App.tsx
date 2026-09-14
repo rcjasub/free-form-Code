@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { Pencil } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import FloatingNode from "./components/FloatingNode";
+import DrawingNode, { type Point } from "./components/DrawingNode";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import ShareDrawer from "./components/ShareDrawer";
@@ -11,19 +13,22 @@ import { useCallback } from "react";
 import {
   getAllBlocks,
   createBlock,
+  createDrawingBlock,
   updateBlockPosition,
   deleteBlock,
   updateBlockContent,
 } from "./API/block";
 import "./App.css";
 
-export type Mode = "select" | "hand" | "text" | "erase";
+export type Mode = "select" | "hand" | "text" | "erase" | "draw";
 
 interface Node {
   id: string;
   x: number;
   y: number;
   content: string;
+  type?: string;
+  points?: Point[];
 }
 
 interface Output {
@@ -39,6 +44,14 @@ interface RemoteCursor {
   username: string;
   x: number;
   y: number;
+}
+
+// draw blocks store their stroke as a JSON-encoded points array in `content`
+function blockToNode(b: any): Node {
+  if (b.type === "draw") {
+    return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
+  }
+  return { id: b.id, x: b.x, y: b.y, content: b.content };
 }
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
@@ -99,6 +112,7 @@ export default function App() {
   const scaleRef = useRef(1);
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
+  const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
   const [shareId, setShareId] = useState<string | null>(null);
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
@@ -157,23 +171,13 @@ export default function App() {
 
     // load blocks from DB on mount
     getAllBlocks(canvasId).then(({ data }) => {
-      setNodes(
-        data.map((b: any) => ({
-          id: b.id,
-          x: b.x,
-          y: b.y,
-          content: b.content,
-        })),
-      );
+      setNodes(data.map(blockToNode));
     });
 
     // someone else created a block
     socket.on("block:created", (block) => {
       console.log("[socket] received block:created", block);
-      setNodes((prev) => [
-        ...prev,
-        { id: block.id, x: block.x, y: block.y, content: block.content },
-      ]);
+      setNodes((prev) => [...prev, blockToNode(block)]);
     });
 
     // someone else moved a block
@@ -250,6 +254,7 @@ export default function App() {
         if (e.key === "h" || e.key === "H") setMode("hand");
         if (e.key === "t" || e.key === "T") setMode("text");
         if (e.key === "e" || e.key === "E") setMode("erase");
+        if (e.key === "d" || e.key === "D") setMode("draw");
       }
     }
 
@@ -266,6 +271,45 @@ export default function App() {
       window.removeEventListener("keyup", onKeyUp);
     };
   }, []);
+
+  async function finalizeDrawing(points: Point[]) {
+    if (points.length < 2 || !canvasId) return;
+    const minX = Math.min(...points.map((p) => p.x));
+    const minY = Math.min(...points.map((p) => p.y));
+    const maxX = Math.max(...points.map((p) => p.x));
+    const relPoints = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
+    const { data } = await createDrawingBlock(
+      canvasId,
+      minX,
+      minY,
+      Math.max(maxX - minX, 1),
+      JSON.stringify(relPoints),
+    );
+    const node = blockToNode(data);
+    setNodes((prev) => [...prev, node]);
+    socket.emit("block:created", canvasId, data);
+  }
+
+  function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (mode !== "draw" || e.target !== canvasRef.current) return;
+    const points: Point[] = [
+      { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
+    ];
+    setLiveStroke(points);
+
+    function onMouseMove(mv: MouseEvent) {
+      points.push({ x: (mv.clientX - offsetRef.current.x) / scaleRef.current, y: (mv.clientY - offsetRef.current.y) / scaleRef.current });
+      setLiveStroke([...points]);
+    }
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      setLiveStroke(null);
+      finalizeDrawing(points);
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
 
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "text") return;
@@ -521,7 +565,7 @@ export default function App() {
   const cursorClass =
     mode === "hand"
       ? "cursor-grab"
-      : mode === "text"
+      : mode === "text" || mode === "draw"
         ? "cursor-crosshair"
         : "cursor-default";
 
@@ -617,6 +661,7 @@ export default function App() {
           </svg>,
           "Erase (E)",
         )}
+        {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
       </div>
 
       {/* top-right: run hint + dark/light toggle */}
@@ -664,6 +709,7 @@ export default function App() {
           transformOrigin: "0 0",
         }}
         onClick={handleCanvasClick}
+        onMouseDown={handleDrawMouseDown}
       >
         {nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -673,25 +719,58 @@ export default function App() {
           </div>
         )}
 
-        {nodes.map((node) => (
-          <FloatingNode
-            key={node.id}
-            id={node.id}
-            x={node.x}
-            y={node.y}
-            content={node.content}
-            onChange={updateNode}
-            onMove={moveNode}
-            onSaveSelection={saveSelection}
-            onDelete={deleteNode}
-            onMarkErase={handleMarkErase}
-            pendingErase={pendingErase.has(node.id)}
-            onRun={handleRunNode}
-            mode={mode}
-            isMouseDown={isMouseDown}
-            isDark={isDark}
-          />
-        ))}
+        {nodes.map((node) =>
+          node.type === "draw" ? (
+            <DrawingNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              points={node.points ?? []}
+              onMove={moveNode}
+              onDelete={deleteNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              mode={mode}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ) : (
+            <FloatingNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              content={node.content}
+              onChange={updateNode}
+              onMove={moveNode}
+              onSaveSelection={saveSelection}
+              onDelete={deleteNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              onRun={handleRunNode}
+              mode={mode}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ),
+        )}
+
+        {liveStroke && liveStroke.length > 1 && (
+          <svg
+            className="absolute inset-0 pointer-events-none"
+            style={{ overflow: "visible" }}
+          >
+            <polyline
+              points={liveStroke.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke={isDark ? "#f5f5f5" : "#1f2937"}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
 
         {outputs.map((out) => (
           <OutputBubble

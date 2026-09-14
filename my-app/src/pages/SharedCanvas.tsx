@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
+import DrawingNode, { type Point } from "@/components/DrawingNode";
 import OutputBubble from "@/components/OutputBubble";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket, { guestName } from "@/lib/guestSocket";
 import type { Mode } from "@/App";
+import { Pencil } from "lucide-react";
 
 interface Output {
   id: number;
@@ -20,6 +22,8 @@ interface Node {
   x: number;
   y: number;
   content: string;
+  type?: string;
+  points?: Point[];
 }
 
 // shape of a block as returned by GET /canvases/:id/blocks — only the
@@ -29,6 +33,15 @@ interface ApiBlock {
   x: number;
   y: number;
   content: string;
+  type?: string;
+}
+
+// draw blocks store their stroke as a JSON-encoded points array in `content`
+function blockToNode(b: ApiBlock): Node {
+  if (b.type === "draw") {
+    return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
+  }
+  return { id: b.id, x: b.x, y: b.y, content: b.content };
 }
 
 interface RemoteCursor {
@@ -108,6 +121,7 @@ export default function SharedCanvas() {
   const [notFound, setNotFound] = useState(false);
   const [mode, setMode] = useState<Mode>("select");
   const modeRef = useRef<Mode>("select");
+  const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
@@ -164,7 +178,7 @@ export default function SharedCanvas() {
         return fetch(`/api/canvases/${canvas.id}/blocks`)
           .then((r) => r.json())
           .then((blocks) => {
-            setNodes(blocks.map((b: ApiBlock) => ({ id: b.id, x: b.x, y: b.y, content: b.content })));
+            setNodes(blocks.map((b: ApiBlock) => blockToNode(b)));
             setLoading(false);
           });
       });
@@ -179,7 +193,7 @@ export default function SharedCanvas() {
     else socket.once("connect", joinCanvas);
 
     socket.on("block:created", (block) => {
-      setNodes((prev) => [...prev, { id: block.id, x: block.x, y: block.y, content: block.content }]);
+      setNodes((prev) => [...prev, blockToNode(block)]);
     });
     socket.on("block:moved", (data) => {
       setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, x: data.x, y: data.y } : n));
@@ -253,6 +267,7 @@ export default function SharedCanvas() {
           if (e.key === "h" || e.key === "H") setMode("hand");
           if (e.key === "t" || e.key === "T") setMode("text");
           if (e.key === "e" || e.key === "E") setMode("erase");
+          if (e.key === "d" || e.key === "D") setMode("draw");
         }
       }
     }
@@ -436,6 +451,50 @@ export default function SharedCanvas() {
     socket.emit("cursor:move", id, { x, y });
   }
 
+  async function finalizeDrawing(points: Point[]) {
+    if (points.length < 2 || !canvasId) return;
+    const minX = Math.min(...points.map((p) => p.x));
+    const minY = Math.min(...points.map((p) => p.y));
+    const maxX = Math.max(...points.map((p) => p.x));
+    const relPoints = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
+    const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        type: "draw",
+        content: JSON.stringify(relPoints),
+        x: minX,
+        y: minY,
+        width: Math.max(maxX - minX, 1),
+      }),
+    });
+    const data = await res.json();
+    setNodes((prev) => [...prev, blockToNode(data)]);
+    socket.emit("block:created", canvasId, data);
+  }
+
+  function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (!canEdit || modeRef.current !== "draw" || e.target !== canvasRef.current) return;
+    const points: Point[] = [
+      { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
+    ];
+    setLiveStroke(points);
+
+    function onMouseMove(mv: MouseEvent) {
+      points.push({ x: (mv.clientX - offsetRef.current.x) / scaleRef.current, y: (mv.clientY - offsetRef.current.y) / scaleRef.current });
+      setLiveStroke([...points]);
+    }
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      setLiveStroke(null);
+      finalizeDrawing(points);
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
     if (e.target !== canvasRef.current) return;
@@ -511,7 +570,7 @@ export default function SharedCanvas() {
       {/* mode toolbar — only in edit mode */}
       {canEdit && (
         <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
-          {(["select", "hand", "text", "erase"] as Mode[]).map((m) => (
+          {(["select", "hand", "text", "erase", "draw"] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -526,6 +585,7 @@ export default function SharedCanvas() {
               {m === "hand" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" /></svg>}
               {m === "text" && <span className="text-xs font-bold leading-none">T</span>}
               {m === "erase" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" /><path d="M6.5 17.5l4-4" /></svg>}
+              {m === "draw" && <Pencil size={14} />}
             </button>
           ))}
         </div>
@@ -539,31 +599,62 @@ export default function SharedCanvas() {
       {/* canvas */}
       <div
         ref={canvasRef}
-        className={`w-full h-full ${canEdit && mode === "text" ? "cursor-crosshair" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
+        className={`w-full h-full ${canEdit && (mode === "text" || mode === "draw") ? "cursor-crosshair" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
         }}
         onClick={handleCanvasClick}
+        onMouseDown={handleDrawMouseDown}
       >
-        {nodes.map((node) => (
-          <FloatingNode
-            key={node.id}
-            id={node.id}
-            x={node.x}
-            y={node.y}
-            content={node.content}
-            onChange={updateNode}
-            onMove={moveNode}
-            onDelete={deleteNode}
-            onMarkErase={handleMarkErase}
-            pendingErase={pendingErase.has(node.id)}
-            onRun={handleRunNode}
-            mode={canEdit ? mode : "select"}
-            isMouseDown={isMouseDown}
-            isDark={isDark}
-          />
-        ))}
+        {nodes.map((node) =>
+          node.type === "draw" ? (
+            <DrawingNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              points={node.points ?? []}
+              onMove={moveNode}
+              onDelete={deleteNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              mode={canEdit ? mode : "select"}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ) : (
+            <FloatingNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              content={node.content}
+              onChange={updateNode}
+              onMove={moveNode}
+              onDelete={deleteNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              onRun={handleRunNode}
+              mode={canEdit ? mode : "select"}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ),
+        )}
+
+        {liveStroke && liveStroke.length > 1 && (
+          <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>
+            <polyline
+              points={liveStroke.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke={isDark ? "#f5f5f5" : "#1f2937"}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
 
         {outputs.map((out) => (
           <OutputBubble

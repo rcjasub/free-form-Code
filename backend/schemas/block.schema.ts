@@ -2,7 +2,7 @@
 import {z} from "zod";
 
 export const createSchema = z.object({
-    type: z.enum(["text", "code"]),
+    type: z.enum(["text", "code", "draw"]),
     content: z.string().default(""),
     x: z.number().default(100),
     y: z.number().default(100),

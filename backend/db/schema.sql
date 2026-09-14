@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS canvases (
 CREATE TABLE IF NOT EXISTS blocks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   canvas_id  UUID REFERENCES canvases(id) ON DELETE CASCADE,
-  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text' or 'code'
+  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text', 'code', or 'draw'
   content    TEXT NOT NULL DEFAULT '',
   x          FLOAT NOT NULL DEFAULT 100,
   y          FLOAT NOT NULL DEFAULT 100,
