@@ -8,6 +8,9 @@ export interface Point {
   y: number;
 }
 
+// See FloatingNode.tsx for why dragging is throttled this way.
+const DRAG_SYNC_INTERVAL_MS = 40;
+
 interface Props {
   id: string;
   x: number;
@@ -38,6 +41,7 @@ export default React.memo(function DrawingNode({
   isMouseDown,
   isDark,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
@@ -53,13 +57,26 @@ export default React.memo(function DrawingNode({
     const startX = e.clientX;
     const startY = e.clientY;
     const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    let lastSync = 0;
+    let latest = { x: xRef.current, y: yRef.current };
 
     function onMouseMove(mv: MouseEvent) {
-      onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      if (containerRef.current) {
+        containerRef.current.style.left = `${latest.x}px`;
+        containerRef.current.style.top = `${latest.y}px`;
+      }
+
+      const now = performance.now();
+      if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
+        lastSync = now;
+        onMoveRef.current(id, latest.x, latest.y);
+      }
     }
     function onMouseUp() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      onMoveRef.current(id, latest.x, latest.y);
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -67,6 +84,7 @@ export default React.memo(function DrawingNode({
 
   return (
     <div
+      ref={containerRef}
       data-node-id={id}
       className="absolute group outline-none"
       style={{
