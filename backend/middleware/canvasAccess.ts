@@ -19,7 +19,7 @@ export async function requireCanvasAccess(
       res.status(404).json({ error: "Canvas not found" });
       return;
     }
-    if (canvas.user_id !== req.user!.id && !canvas.is_public) {
+    if (canvas.user_id !== req.user?.id && !canvas.is_public) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

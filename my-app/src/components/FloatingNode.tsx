@@ -183,6 +183,11 @@ export default React.memo(function FloatingNode({
         top: y,
         opacity: pendingErase ? 0.3 : 1,
         transition: "opacity 0.15s",
+        // In draw mode, existing blocks shouldn't intercept clicks or steal
+        // the crosshair cursor (e.g. via CodeMirror's own text cursor, or
+        // the delete button's cursor-pointer) — let strokes start and pass
+        // straight through, the same as over empty canvas.
+        pointerEvents: mode === "draw" ? "none" : undefined,
       }}
       onMouseDown={(e) => {
         if (mode === "erase") {
