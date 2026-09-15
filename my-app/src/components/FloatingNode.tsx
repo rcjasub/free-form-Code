@@ -5,6 +5,14 @@ import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
 
+// While dragging, the pointer's visual position is applied straight to the
+// DOM every frame (cheap, no re-render), while onMove — which updates React
+// state, emits over the socket, and (debounced) persists to the DB — only
+// fires at this rate. Without it, a busy canvas with many blocks and
+// several connected viewers turns one drag into a flood of state updates
+// and socket traffic on every client, which is what actually causes the lag.
+const DRAG_SYNC_INTERVAL_MS = 40;
+
 interface Props {
   id: string;
   x: number;
@@ -111,6 +119,8 @@ export default React.memo(function FloatingNode({
       const startY = e.clientY;
       const offset = { x: startX - xRef.current, y: startY - yRef.current };
       let isDragging = false;
+      let lastSync = 0;
+      let latest = { x: xRef.current, y: yRef.current };
 
       function onMouseMove(mv: MouseEvent) {
         if (!isDragging) {
@@ -118,14 +128,25 @@ export default React.memo(function FloatingNode({
           const dy = mv.clientY - startY;
           if (Math.sqrt(dx * dx + dy * dy) > 5) isDragging = true;
         }
-        if (isDragging) {
-          onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+        if (!isDragging) return;
+
+        latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+        if (el) {
+          el.style.left = `${latest.x}px`;
+          el.style.top = `${latest.y}px`;
+        }
+
+        const now = performance.now();
+        if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
+          lastSync = now;
+          onMoveRef.current(id, latest.x, latest.y);
         }
       }
 
       function onMouseUp() {
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
+        if (isDragging) onMoveRef.current(id, latest.x, latest.y);
       }
 
       window.addEventListener("mousemove", onMouseMove);
@@ -152,6 +173,8 @@ export default React.memo(function FloatingNode({
     const startY = e.clientY;
     const offset = { x: startX - xRef.current, y: startY - yRef.current };
     let isDragging = false;
+    let lastSync = 0;
+    let latest = { x: xRef.current, y: yRef.current };
 
     function onMouseMove(mv: MouseEvent) {
       if (!isDragging) {
@@ -159,14 +182,25 @@ export default React.memo(function FloatingNode({
         const dy = mv.clientY - startY;
         if (Math.sqrt(dx * dx + dy * dy) > 3) isDragging = true;
       }
-      if (isDragging) {
-        onMoveRef.current(id, mv.clientX - offset.x, mv.clientY - offset.y);
+      if (!isDragging) return;
+
+      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      if (containerRef.current) {
+        containerRef.current.style.left = `${latest.x}px`;
+        containerRef.current.style.top = `${latest.y}px`;
+      }
+
+      const now = performance.now();
+      if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
+        lastSync = now;
+        onMoveRef.current(id, latest.x, latest.y);
       }
     }
 
     function onMouseUp() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      if (isDragging) onMoveRef.current(id, latest.x, latest.y);
     }
 
     window.addEventListener("mousemove", onMouseMove);
