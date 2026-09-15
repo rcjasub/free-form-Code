@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS canvases (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_blocks_canvas_id ON blocks(canvas_id);
+
+CREATE INDEX IF NOT EXISTS idx_canvases_user_id ON canvases(user_id);
+
 -- blocks (the free-form content saved on a canvas)
 CREATE TABLE IF NOT EXISTS blocks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
