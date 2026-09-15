@@ -130,6 +130,8 @@ export default function SharedCanvas() {
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
   const lastCursorEmit = useRef(0);
   const canvasIdRef = useRef<string | null>(null);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const errorToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
@@ -337,6 +339,28 @@ export default function SharedCanvas() {
     setScale(next);
   }
 
+  function showError(message: string) {
+    setErrorToast(message);
+    if (errorToastTimer.current) clearTimeout(errorToastTimer.current);
+    errorToastTimer.current = setTimeout(() => setErrorToast(null), 4000);
+  }
+
+  // Fetch with a bounded timeout — a hung backend (e.g. a downstream
+  // dependency like Redis stuck instead of failing fast) would otherwise
+  // leave an awaited fetch pending forever, silently dropping whatever the
+  // user just did with no error and no way to retry.
+  async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = 10000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(input, { ...init, signal: controller.signal });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      return res;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // updateNode/moveNode/deleteNode below are optimistic-only: local state
   // updates immediately, the network write fires after with no rollback
   // and no error surfaced to the user if it fails (fetch errors are
@@ -461,21 +485,25 @@ export default function SharedCanvas() {
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
     const relPoints = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
-    const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        type: "draw",
-        content: JSON.stringify(relPoints),
-        x: minX,
-        y: minY,
-        width: Math.max(maxX - minX, 1),
-      }),
-    });
-    const data = await res.json();
-    setNodes((prev) => [...prev, blockToNode(data)]);
-    socket.emit("block:created", canvasId, data);
+    try {
+      const res = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          type: "draw",
+          content: JSON.stringify(relPoints),
+          x: minX,
+          y: minY,
+          width: Math.max(maxX - minX, 1),
+        }),
+      });
+      const data = await res.json();
+      setNodes((prev) => [...prev, blockToNode(data)]);
+      socket.emit("block:created", canvasId, data);
+    } catch {
+      showError("Couldn't save your drawing — check your connection and try again.");
+    }
   }
 
   // The canvas layer is only ever sized to the viewport, then visually
@@ -514,15 +542,19 @@ export default function SharedCanvas() {
     if (!isCanvasBackground(e)) return;
     const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
     const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
-    const res = await fetch(`/api/canvases/${canvasId}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
-    });
-    const data = await res.json();
-    setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
-    socket.emit("block:created", canvasId, data);
+    try {
+      const res = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
+      });
+      const data = await res.json();
+      setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
+      socket.emit("block:created", canvasId, data);
+    } catch {
+      showError("Couldn't create the block — check your connection and try again.");
+    }
   }
 
   if (notFound) {
@@ -582,6 +614,17 @@ export default function SharedCanvas() {
           </button>
         )}
       </div>
+
+      {/* transient error toast */}
+      {errorToast && (
+        <div
+          className={`absolute bottom-16 left-1/2 -translate-x-1/2 z-30 text-xs px-3 py-2 rounded-lg shadow-sm border ${
+            isDark ? "bg-[#3a1f1f] border-[#5c2c2c] text-[#f5b5b5]" : "bg-red-50 border-red-200 text-red-600"
+          }`}
+        >
+          {errorToast}
+        </div>
+      )}
 
       {/* mode toolbar — only in edit mode */}
       {canEdit && (

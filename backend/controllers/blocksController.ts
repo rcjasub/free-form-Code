@@ -2,12 +2,16 @@ import { Response } from "express";
 import * as Blocks from "../models/blocks";
 import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
-import redis from "../redis";
+import { cacheGet, cacheSet, cacheDel } from "../redis";
 
 export async function getAllBlocks(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
-  const cached = await redis.get(`blocks:${id}`);
+  // Redis is a cache, not the source of truth — if it's unreachable or
+  // slow, fall through to Postgres instead of failing (or hanging) the
+  // request. cacheGet/cacheSet below swallow their own errors for the
+  // same reason.
+  const cached = await cacheGet(`blocks:${id}`);
   if (cached) {
     res.status(200).json(JSON.parse(cached));
     return;
@@ -16,7 +20,7 @@ export async function getAllBlocks(req: AuthRequest, res: Response): Promise<voi
   try {
     const allblocks = await Blocks.getBlocksByCanvasId(id);
 
-    await redis.set(`blocks:${id}`, JSON.stringify(allblocks), "EX", 3000);
+    await cacheSet(`blocks:${id}`, JSON.stringify(allblocks));
     res.status(200).json(allblocks);
   } catch (err) {
     handleServerError(res, err);
@@ -37,7 +41,7 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
       width,
     });
     
-    await redis.del(`blocks:${canvasId}`);
+    await cacheDel(`blocks:${canvasId}`);
     res.status(201).json(block);
   } catch (err) {
     handleServerError(res, err);
@@ -60,7 +64,7 @@ export async function deleteBlock(req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    await redis.del(`blocks:${block.canvas_id}`);
+    await cacheDel(`blocks:${block.canvas_id}`);
     res.status(200).json({ message: "Delete Block Successfully" });
   } catch (err) {
     handleServerError(res, err);
@@ -83,7 +87,7 @@ export async function updateBlock(req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    await redis.del(`blocks:${block.canvas_id}`);
+    await cacheDel(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
     handleServerError(res, err);
@@ -104,7 +108,7 @@ export async function updateBlockContent(
       return;
     }
 
-    await redis.del(`blocks:${block.canvas_id}`);
+    await cacheDel(`blocks:${block.canvas_id}`);
     res.status(200).json(block);
   } catch (err) {
     handleServerError(res, err);
