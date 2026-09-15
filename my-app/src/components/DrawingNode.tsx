@@ -82,6 +82,20 @@ export default React.memo(function DrawingNode({
     window.addEventListener("mouseup", onMouseUp);
   }
 
+  function handlePathMouseDown(e: React.MouseEvent) {
+    if (mode === "erase") {
+      e.stopPropagation();
+      onMarkErase(id);
+      return;
+    }
+    if (mode !== "hand") e.stopPropagation();
+    if (mode === "select") handleDragMouseDown(e);
+  }
+
+  function handlePathMouseEnter() {
+    if (mode === "erase" && isMouseDown.current) onMarkErase(id);
+  }
+
   return (
     <div
       ref={containerRef}
@@ -94,31 +108,23 @@ export default React.memo(function DrawingNode({
         height,
         opacity: pendingErase ? 0.3 : 1,
         transition: "opacity 0.15s",
-        // In draw mode this bounding box shouldn't intercept clicks — it's
-        // usually much bigger than the visible stroke (e.g. a diagonal
-        // line's box is a full rectangle), so without this a new stroke
-        // starting anywhere inside a previous one's box would silently die
-        // here instead of reaching the canvas below.
-        pointerEvents: mode === "draw" ? "none" : undefined,
-      }}
-      onMouseDown={(e) => {
-        if (mode === "erase") {
-          e.stopPropagation();
-          onMarkErase(id);
-          return;
-        }
-        if (mode !== "hand") e.stopPropagation();
-        if (mode === "select") handleDragMouseDown(e);
-      }}
-      onMouseEnter={() => {
-        if (mode === "erase" && isMouseDown.current) onMarkErase(id);
+        // The bounding box is usually much bigger than the visible stroke
+        // (e.g. a diagonal line's box is a full rectangle). If this div were
+        // hit-testable across that whole box, hovering the "empty" corner of
+        // one drawing's box in erase/select mode would swallow the pointer
+        // event before it could ever reach whatever's actually underneath —
+        // including a neighboring node sitting in that same dead space.
+        // Only the stroke's own hit-path below (sized to the ink, not the
+        // box) should be hit-testable.
+        pointerEvents: "none",
       }}
     >
-      {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
+      {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" style={{ pointerEvents: "auto" }} />}
 
       {/* delete button */}
       <div
         className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 text-gray-400"
+        style={{ pointerEvents: "auto" }}
         onClick={() => onDelete(id)}
       >
         ✕
@@ -127,8 +133,24 @@ export default React.memo(function DrawingNode({
       <svg
         width={width}
         height={height}
-        style={{ overflow: "visible", cursor: mode === "select" ? "grab" : undefined }}
+        style={{ overflow: "visible" }}
       >
+        {/* Invisible, wide copy of the stroke used purely for hit-testing —
+            keeps clicks/hover/erase scoped to "near the line" instead of
+            "anywhere in its bounding rectangle." */}
+        {mode !== "draw" && (
+          <path
+            d={pathData}
+            fill="none"
+            stroke="transparent"
+            strokeWidth={16}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: "stroke", cursor: mode === "select" ? "grab" : undefined }}
+            onMouseDown={handlePathMouseDown}
+            onMouseEnter={handlePathMouseEnter}
+          />
+        )}
         <path
           d={pathData}
           fill="none"
@@ -136,6 +158,7 @@ export default React.memo(function DrawingNode({
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
+          style={{ pointerEvents: "none" }}
         />
       </svg>
     </div>
