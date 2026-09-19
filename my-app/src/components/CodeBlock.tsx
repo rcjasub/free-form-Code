@@ -8,6 +8,7 @@ interface Props {
   onDrag: (id: number, x: number, y: number) => void;
 }
 
+//codeBLock
 export default function CodeBlock({ id, x, y, onDrag }: Props) {
   const [code, setCode] = useState('console.log("Hello from block!")');
   const [output, setOutput] = useState("");
