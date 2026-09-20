@@ -15,6 +15,17 @@ redis.on("error", (err) => {
 
 export default redis;
 
+// BullMQ issues long-blocking commands while waiting for jobs, so it needs
+// its own connection without commandTimeout — the cache client's 2s timeout
+// would cut those blocking calls off mid-wait.
+export const bullConnection = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
+  maxRetriesPerRequest: null,
+});
+
+bullConnection.on("error", (err) => {
+  console.error("Redis (BullMQ) error:", err.message);
+});
+
 // Best-effort cache helpers: every call swallows its own errors (a timed-out
 // or unreachable Redis) so a cache miss/failure just means "go read Postgres
 // instead," never a failed or hung request.

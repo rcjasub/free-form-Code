@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { Server } from "socket.io";
 import vm from "vm";
-import redis from "./redis";
+import { bullConnection } from "./redis";
 
 export function startWorker(io: Server) {
   new Worker(
@@ -29,6 +29,6 @@ export function startWorker(io: Server) {
         });
       }
     },
-    { connection: redis },
+    { connection: bullConnection },
   );
 }

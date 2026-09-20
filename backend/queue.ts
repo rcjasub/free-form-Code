@@ -1,4 +1,4 @@
 import { Queue } from "bullmq";
-import redis from "./redis";
+import { bullConnection } from "./redis";
 
-export const codeQueue = new Queue("code-execution", { connection: redis });
+export const codeQueue = new Queue("code-execution", { connection: bullConnection });
