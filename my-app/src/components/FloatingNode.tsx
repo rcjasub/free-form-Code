@@ -4,6 +4,9 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/languages";
+import AnimatedDropdown from "./ui/animated-dropdown";
+
+const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
 
 // While dragging, the pointer's visual position is applied straight to the
 // DOM every frame (cheap, no re-render), while onMove — which updates React
@@ -271,20 +274,17 @@ export default React.memo(function FloatingNode({
           code gets written); always faintly visible, brighter on hover */}
       {(mode === "select" || mode === "text") && (
         <div
-          className={`absolute -bottom-5 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          // fully opaque while the menu is open, or it would inherit the fade
+          className={`absolute -bottom-5 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
-            <select
+            <AnimatedDropdown
+              options={LANGUAGE_DROPDOWN_OPTIONS}
               value={language}
-              onChange={(e) => onLanguageChange(id, e.target.value as Language)}
-              className={`bg-transparent cursor-pointer outline-none ${isDark ? "[&>option]:bg-[#232329]" : ""}`}
-            >
-              {LANGUAGE_OPTIONS.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
+              onChange={(lang) => onLanguageChange(id, lang)}
+              ariaLabel="Block language"
+              menuClassName="text-xs"
+            />
           ) : (
             languageOption(language).label
           )}
