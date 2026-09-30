@@ -24,7 +24,6 @@ interface Props {
   onLanguageChange?: (id: string, language: Language) => void;
   onMove: (id: string, x: number, y: number) => void;
   onSaveSelection?: (content: string, el: HTMLElement) => void;
-  onDelete: (id: string) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
   onRun: (id: string) => void;
@@ -38,7 +37,6 @@ function makeTheme(isDark: boolean) {
     "&": {
       background: "transparent !important",
       fontSize: "14px",
-      fontFamily: "monospace",
       minWidth: "180px",
       outline: "none !important",
     },
@@ -53,7 +51,12 @@ function makeTheme(isDark: boolean) {
     ".cm-editor.cm-focused": { outline: "none !important" },
     ".cm-line": { padding: "0", lineHeight: "1.625" },
     ".cm-gutters": { display: "none" },
-    ".cm-scroller": { overflow: "hidden !important" },
+    // The font goes here, not on "&": CodeMirror's base theme sets
+    // fontFamily: monospace on .cm-scroller, which would override it.
+    ".cm-scroller": {
+      overflow: "hidden !important",
+      fontFamily: "var(--font-canvas)", // Excalifont — see index.css
+    },
     ".cm-cursor": {
       borderLeftColor: isDark ? "#f5f5f5" : "#1f2937",
       borderLeftWidth: "2px",
@@ -75,7 +78,6 @@ export default React.memo(function FloatingNode({
   onLanguageChange,
   onMove,
   onSaveSelection,
-  onDelete,
   onMarkErase,
   pendingErase,
   onRun,
@@ -226,7 +228,7 @@ export default React.memo(function FloatingNode({
         transition: "opacity 0.15s",
         // In draw mode, existing blocks shouldn't intercept clicks or steal
         // the crosshair cursor (e.g. via CodeMirror's own text cursor, or
-        // the delete button's cursor-pointer) — let strokes start and pass
+        // the run button's cursor-pointer) — let strokes start and pass
         // straight through, the same as over empty canvas.
         pointerEvents: mode === "draw" ? "none" : undefined,
       }}
@@ -265,10 +267,11 @@ export default React.memo(function FloatingNode({
         ▶
       </div>
 
-      {/* language picker — below the block, visible on hover in select mode */}
-      {mode === "select" && (
+      {/* language picker — below the block in select and text mode (where
+          code gets written); always faintly visible, brighter on hover */}
+      {(mode === "select" || mode === "text") && (
         <div
-          className={`absolute -bottom-5 left-0 text-[10px] font-mono opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          className={`absolute -bottom-5 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
             <select
@@ -287,14 +290,6 @@ export default React.memo(function FloatingNode({
           )}
         </div>
       )}
-
-      {/* delete button */}
-      <div
-        className={`absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
-        onClick={() => onDelete(id)}
-      >
-        ✕
-      </div>
 
       <CodeMirror
         ref={editorRef}

@@ -17,7 +17,6 @@ interface Props {
   y: number;
   points: Point[];
   onMove: (id: string, x: number, y: number) => void;
-  onDelete: (id: string) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
   mode: Mode;
@@ -34,7 +33,6 @@ export default React.memo(function DrawingNode({
   y,
   points,
   onMove,
-  onDelete,
   onMarkErase,
   pendingErase,
   mode,
@@ -120,15 +118,6 @@ export default React.memo(function DrawingNode({
       }}
     >
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" style={{ pointerEvents: "auto" }} />}
-
-      {/* delete button */}
-      <div
-        className="absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 text-gray-400"
-        style={{ pointerEvents: "auto" }}
-        onClick={() => onDelete(id)}
-      >
-        ✕
-      </div>
 
       <svg
         width={width}

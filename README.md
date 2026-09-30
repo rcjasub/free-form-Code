@@ -207,3 +207,14 @@ When a user clicks Run, the code is never executed by the backend itself:
 4. The result is sent back to that user via Socket.IO, tagged with the `runId` so each output lands next to the block that produced it
 
 See [docs/redis-and-queues.md](docs/redis-and-queues.md) for the full breakdown.
+
+## Credits
+
+The canvas uses two fonts from the [Excalidraw](https://excalidraw.com) project, bundled in [`my-app/src/assets/fonts/`](my-app/src/assets/fonts/) with their licenses:
+
+| Font | Used for | Author | License |
+|---|---|---|---|
+| [Excalifont](https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw/fonts/Excalifont) (Latin subset) | Code blocks, run output | Excalidraw — Your Own Font Foundry (Virgil), Ján Filípek / DizajnDesign | [SIL Open Font License 1.1](my-app/src/assets/fonts/Excalifont-LICENSE.txt) |
+| [Comic Shanns](https://github.com/shannpersand/comic-shanns) v2 | Fallback for characters outside Excalifont's subset | Shannon Miwa | [MIT](my-app/src/assets/fonts/ComicShanns-LICENSE.txt) |
+
+The code sandbox is [Piston](https://github.com/engineer-man/piston) by Engineer Man.

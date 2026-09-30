@@ -668,7 +668,6 @@ export default function SharedCanvas() {
               y={node.y}
               points={node.points ?? []}
               onMove={moveNode}
-              onDelete={deleteNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               mode={canEdit ? mode : "select"}
@@ -686,7 +685,6 @@ export default function SharedCanvas() {
               onChange={updateNode}
               onLanguageChange={canEdit ? changeLanguage : undefined}
               onMove={moveNode}
-              onDelete={deleteNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}

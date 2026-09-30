@@ -624,65 +624,67 @@ export default function App() {
         )}
       </div>
 
-      {/* mode toolbar */}
-      <div
-        className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]"
-      >
-        {toolbarBtn(
-          "select",
-          // arrow / cursor icon
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" />
-          </svg>,
-          "Select (V)",
-        )}
-        {toolbarBtn(
-          "hand",
-          // hand icon
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" />
-          </svg>,
-          "Hand (H)",
-        )}
-        {toolbarBtn(
-          "text",
-          <span className="text-xs font-bold leading-none">T</span>,
-          "Text (T)",
-        )}
-        {toolbarBtn(
-          "erase",
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" />
-            <path d="M6.5 17.5l4-4" />
-          </svg>,
-          "Erase (E)",
-        )}
-        {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
-      </div>
-
-      {/* top-right: run hint + dark/light toggle */}
-      <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
-        <span className="text-xs font-mono pointer-events-none text-gray-500 dark:text-gray-300">
+      {/* mode toolbar + run hint, centered as one column */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
+        <div
+          className="flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]"
+        >
+          {toolbarBtn(
+            "select",
+            // arrow / cursor icon
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" />
+            </svg>,
+            "Select (V)",
+          )}
+          {toolbarBtn(
+            "hand",
+            // hand icon
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" />
+            </svg>,
+            "Hand (H)",
+          )}
+          {toolbarBtn(
+            "text",
+            <span className="text-xs font-bold leading-none">T</span>,
+            "Text (T)",
+          )}
+          {toolbarBtn(
+            "erase",
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" />
+              <path d="M6.5 17.5l4-4" />
+            </svg>,
+            "Erase (E)",
+          )}
+          {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
+        </div>
+        <span className="font-canvas text-[11px] pointer-events-none select-none text-gray-400 dark:text-gray-500">
           select code + ctrl+enter to run
         </span>
+      </div>
+
+      {/* top-right: run button, share, dark/light toggle */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
         <button
           onClick={() =>
             window.dispatchEvent(
@@ -751,7 +753,6 @@ export default function App() {
               y={node.y}
               points={node.points ?? []}
               onMove={moveNode}
-              onDelete={deleteNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               mode={mode}
@@ -770,7 +771,6 @@ export default function App() {
               onLanguageChange={changeLanguage}
               onMove={moveNode}
               onSaveSelection={saveSelection}
-              onDelete={deleteNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
