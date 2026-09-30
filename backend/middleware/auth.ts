@@ -3,8 +3,16 @@ import jwt from "jsonwebtoken";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+// What's inside our JWT. Guests have no email and have isGuest: true.
+export interface TokenPayload {
+  id: string;
+  username: string;
+  email?: string;
+  isGuest?: boolean;
+}
+
 export interface AuthRequest extends Request {
-  user?: { id: string; email: string };
+  user?: TokenPayload;
 }
 
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
@@ -16,7 +24,7 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string; username: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
     req.user = decoded;
     next();
   } catch {
@@ -33,7 +41,7 @@ export function optionalAuthenticate(req: AuthRequest, res: Response, next: Next
   const token = req.cookies?.token;
   if (token) {
     try {
-      req.user = jwt.verify(token, JWT_SECRET) as { id: string; email: string; username: string };
+      req.user = jwt.verify(token, JWT_SECRET) as TokenPayload;
     } catch {
       // invalid/expired token — continue unauthenticated rather than reject
     }

@@ -1,18 +1,59 @@
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
 import Particles from "@/components/Particles";
+import { getMe, startGuest } from "@/API/auth";
 
 type AuthMode = "login" | "register";
 
 export default function Home() {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const location = useLocation();
+  // The canvas page's "Sign up" link sends guests here with mode: "register".
+  const [mode, setMode] = useState<AuthMode>(
+    (location.state as { mode?: AuthMode } | null)?.mode ?? "login",
+  );
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  function showError(err: unknown) {
+    const response = axios.isAxiosError(err) ? err.response : undefined;
+    const data = response?.data as
+      | { error?: string; errors?: { message: string }[] }
+      | undefined;
+    if (data?.error) {
+      setError(data.error);
+    } else if (data?.errors?.length) {
+      setError(data.errors.map((e) => e.message).join(", "));
+    } else if (!response) {
+      setError("Could not reach the server. Please check your connection and try again.");
+    } else {
+      setError("Something went wrong");
+    }
+  }
+
+  async function handleTryAsGuest() {
+    setError("");
+    try {
+      // Returning guest: reopen their canvas instead of minting a new guest
+      // and orphaning the old one.
+      const me = await getMe();
+      if (me?.isGuest) {
+        const { data } = await axios.get("/api/canvases", { withCredentials: true });
+        if (data[0]) {
+          navigate(`/canvas/${data[0].id}`);
+          return;
+        }
+      }
+      const { data } = await startGuest();
+      navigate(`/canvas/${data.canvasId}`);
+    } catch (err) {
+      showError(err);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,17 +67,8 @@ export default function Home() {
         await axios.post("/api/auth/login", { email, password }, { withCredentials: true });
         navigate("/dashboard");
       }
-    } catch (err: any) {
-      const data = err.response?.data;
-      if (data?.error) {
-        setError(data.error);
-      } else if (data?.errors?.length) {
-        setError(data.errors.map((e: { message: string }) => e.message).join(", "));
-      } else if (!err.response) {
-        setError("Could not reach the server. Please check your connection and try again.");
-      } else {
-        setError("Something went wrong");
-      }
+    } catch (err) {
+      showError(err);
     }
   }
 
@@ -124,6 +156,14 @@ export default function Home() {
             {mode === "login" ? "Sign in" : "Create account"}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={handleTryAsGuest}
+          className="w-full mt-4 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          Try without an account →
+        </button>
       </div>
     </div>
   );

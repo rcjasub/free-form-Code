@@ -21,6 +21,7 @@ function SignOutButton({ onClick }: { onClick: () => void }) {
 }
 import { Trash2, Search } from "lucide-react";
 import axios from "axios";
+import { getMe } from "@/API/auth";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { useNavigate } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
@@ -60,11 +61,26 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios
-      .get("/api/canvases", { withCredentials: true })
-      .then(({ data }) => setCanvases(data))
-      .catch(() => navigate("/"))
-      .finally(() => setLoading(false));
+    (async () => {
+      try {
+        const me = await getMe();
+        if (!me) {
+          navigate("/");
+          return;
+        }
+        const { data } = await axios.get("/api/canvases", { withCredentials: true });
+        // Guests only get one canvas and no dashboard — send them straight to it.
+        if (me.isGuest) {
+          navigate(data[0] ? `/canvas/${data[0].id}` : "/", { replace: true });
+          return;
+        }
+        setCanvases(data);
+      } catch {
+        navigate("/");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {

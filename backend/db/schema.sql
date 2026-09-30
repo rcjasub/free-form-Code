@@ -7,10 +7,18 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- more secure
   username      VARCHAR(50) UNIQUE NOT NULL,
-  email         VARCHAR(255) UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  email         VARCHAR(255) UNIQUE NULL,
+  password_hash TEXT NULL,
+  is_guest      BOOLEAN NOT NULL DEFAULT false,
   created_at    TIMESTAMP DEFAULT NOW()
 );
+
+-- guest accounts: brings databases created before guests existed up to date
+-- (CREATE TABLE IF NOT EXISTS above skips tables that already exist).
+-- Safe to re-run.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- canvases (the session / shared room)
 CREATE TABLE IF NOT EXISTS canvases (

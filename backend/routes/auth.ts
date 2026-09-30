@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { register, login, logout, me } from "../controllers/usersController";
+import { register, login, logout, guest, me } from "../controllers/usersController";
 import rateLimit from "express-rate-limit";
 import { validate } from "../middleware/validate";
+import { optionalAuthenticate } from "../middleware/auth";
 import { registerSchema, loginSchema } from "../schemas/user.schema";
 
 const authLimiter = rateLimit({
@@ -12,9 +13,11 @@ const authLimiter = rateLimit({
 
 const router = Router();
 
-router.post("/register", authLimiter, validate(registerSchema), register);
+// optionalAuthenticate so register can see if the caller is a guest to upgrade.
+router.post("/register", authLimiter, optionalAuthenticate, validate(registerSchema), register);
 router.post("/login", authLimiter, validate(loginSchema), login);
 router.post("/logout", logout);
+router.post("/guest", authLimiter, guest);
 router.get("/me", me);
 
 export default router;

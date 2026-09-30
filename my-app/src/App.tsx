@@ -21,6 +21,7 @@ import {
   deleteBlock,
   updateBlockContent,
 } from "./API/block";
+import { getMe } from "./API/auth";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw";
@@ -107,6 +108,7 @@ export default function App() {
   const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
   const [snapShapes, setSnapShapes] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
   const lastCursorEmit = useRef(0);
@@ -162,6 +164,10 @@ export default function App() {
     fetch(`/api/canvases/${canvasId}`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setShareId(data.share_id));
+
+    getMe()
+      .then((me) => setIsGuest(!!me?.isGuest))
+      .catch(() => {});
 
     // load blocks from DB on mount
     getAllBlocks(canvasId).then(({ data }) => {
@@ -609,13 +615,24 @@ export default function App() {
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
-      <div className="absolute top-4 left-4 z-10">
+      <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
         <span
-          onClick={() => navigate("/dashboard")}
-          className="text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300 cursor-pointer hover:text-gray-800 dark:hover:text-white transition-colors"
+          // Guests have no dashboard, so the logo is just a label for them.
+          onClick={() => !isGuest && navigate("/dashboard")}
+          className={`text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300 transition-colors ${
+            isGuest ? "" : "cursor-pointer hover:text-gray-800 dark:hover:text-white"
+          }`}
         >
           free-form
         </span>
+        {isGuest && (
+          <button
+            onClick={() => navigate("/", { state: { mode: "register" } })}
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white underline underline-offset-2 transition-colors"
+          >
+            Sign up to save more canvases
+          </button>
+        )}
       </div>
 
       {/* mode toolbar */}

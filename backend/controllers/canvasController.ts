@@ -63,6 +63,14 @@ export async function createCanvas(
   const user_id = req.user!.id;
 
   try {
+    if (req.user!.isGuest) {
+      const existing = await Canvas.getByUserId(user_id);
+      if (existing.length >= 1) {
+        res.status(403).json({ error: "Create an account to make more canvases" });
+        return;
+      }
+    }
+
     const share_id = generateShareId();
     const canvas = await Canvas.create({ user_id, name, share_id, is_public });
     res.status(201).json(canvas);
