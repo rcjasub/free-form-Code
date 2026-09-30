@@ -11,7 +11,7 @@ export const useThemeToggle = () => {
     setIsDark(resolvedTheme === "dark");
   }, [resolvedTheme]);
 
-  const toggleTheme = useCallback(() => {
+  const toggleTheme = useCallback((e?: React.MouseEvent<HTMLElement>) => {
     const next = theme === "light" ? "dark" : "light";
     const css = `
       ::view-transition-group(root) { animation-duration: 0.7s; animation-timing-function: ease-in-out; }
@@ -35,7 +35,16 @@ export const useThemeToggle = () => {
       setTheme(next);
       return;
     }
-    document.startViewTransition(() => flushSync(() => setTheme(next)));
+    // While the transition runs, a snapshot overlay covers the page and the
+    // browser shows <html>'s cursor instead of the page's — so the blue dot
+    // would flicker to the default arrow. Pin the cursor that was showing on
+    // the button to <html> until the transition finishes.
+    const root = document.documentElement;
+    root.style.cursor = e ? getComputedStyle(e.currentTarget).cursor : "";
+    const transition = document.startViewTransition(() => flushSync(() => setTheme(next)));
+    transition.finished.finally(() => {
+      root.style.cursor = "";
+    });
   }, [theme, setTheme]);
 
   return { isDark, toggleTheme };
