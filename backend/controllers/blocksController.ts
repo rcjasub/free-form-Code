@@ -49,7 +49,7 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
 }
 
 export async function deleteBlock(req: AuthRequest, res: Response): Promise<void> {
-  const { blockId } = req.params;
+  const { id: canvasId, blockId } = req.params;
 
   if (!blockId) {
     res.status(400).json({ error: "Block ID is required" });
@@ -57,7 +57,7 @@ export async function deleteBlock(req: AuthRequest, res: Response): Promise<void
   }
 
   try {
-    const block = await Blocks.deleteBlock(blockId);
+    const block = await Blocks.deleteBlock(canvasId, blockId);
 
     if (!block) {
       res.status(404).json({ error: "Block not found" });
@@ -72,7 +72,7 @@ export async function deleteBlock(req: AuthRequest, res: Response): Promise<void
 }
 
 export async function updateBlock(req: AuthRequest, res: Response): Promise<void> {
-  const { blockId } = req.params;
+  const { id: canvasId, blockId } = req.params;
   const { x, y } = req.body;
 
   if (!blockId) {
@@ -81,7 +81,7 @@ export async function updateBlock(req: AuthRequest, res: Response): Promise<void
   }
 
   try {
-    const block = await Blocks.updateBlockPosition(blockId, x, y);
+    const block = await Blocks.updateBlockPosition(canvasId, blockId, x, y);
     if (!block) {
       res.status(404).json({ error: "Block not found" });
       return;
@@ -98,11 +98,11 @@ export async function updateBlockContent(
   req: AuthRequest,
   res: Response,
 ): Promise<void> {
-  const { blockId } = req.params;
+  const { id: canvasId, blockId } = req.params;
   const { content } = req.body;
 
   try {
-    const block = await Blocks.updateBlockContent(blockId, content);
+    const block = await Blocks.updateBlockContent(canvasId, blockId, content);
     if (!block) {
       res.status(404).json({ error: "Block not found" });
       return;
@@ -119,11 +119,11 @@ export async function updateBlockLanguage(
   req: AuthRequest,
   res: Response,
 ): Promise<void> {
-  const { blockId } = req.params;
+  const { id: canvasId, blockId } = req.params;
   const { language } = req.body;
 
   try {
-    const block = await Blocks.updateBlockLanguage(blockId, language);
+    const block = await Blocks.updateBlockLanguage(canvasId, blockId, language);
     if (!block) {
       res.status(404).json({ error: "Block not found" });
       return;

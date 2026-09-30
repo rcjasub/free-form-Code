@@ -41,45 +41,51 @@ export async function CreateBlock(params: createBlockParams): Promise<Block> {
   return result.rows[0];
 }
 
-export async function deleteBlock(blockId: string): Promise<Block> {
+// Every write below matches on canvas_id as well as id. The route middleware
+// only checks access to the canvas in the URL — without this, someone with
+// access to one canvas could modify a block on another canvas by its id.
+
+export async function deleteBlock(canvasId: string, blockId: string): Promise<Block> {
   const result = await pool.query<Block>(
-    `
-    DELETE FROM blocks WHERE id = $1 RETURNING *`,
-    [blockId],
+    `DELETE FROM blocks WHERE id = $1 AND canvas_id = $2 RETURNING *`,
+    [blockId, canvasId],
   );
   return result.rows[0];
 }
 
 export async function updateBlockPosition(
+  canvasId: string,
   blockId: string,
   x: number,
   y: number,
 ): Promise<Block> {
   const result = await pool.query<Block>(
-    `UPDATE blocks SET x = $1, y = $2 WHERE id = $3 RETURNING *`,
-    [x, y, blockId],
+    `UPDATE blocks SET x = $1, y = $2 WHERE id = $3 AND canvas_id = $4 RETURNING *`,
+    [x, y, blockId, canvasId],
   );
   return result.rows[0];
 }
 
 export async function updateBlockContent(
+  canvasId: string,
   blockId: string,
   content: string,
 ): Promise<Block> {
   const result = await pool.query<Block>(
-    `UPDATE blocks SET content = $1 WHERE id = $2 RETURNING *`,
-    [content, blockId],
+    `UPDATE blocks SET content = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
+    [content, blockId, canvasId],
   );
   return result.rows[0];
 }
 
 export async function updateBlockLanguage(
+  canvasId: string,
   blockId: string,
   language: string,
 ): Promise<Block> {
   const result = await pool.query<Block>(
-    `UPDATE blocks SET language = $1 WHERE id = $2 RETURNING *`,
-    [language, blockId],
+    `UPDATE blocks SET language = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
+    [language, blockId, canvasId],
   );
   return result.rows[0];
 }

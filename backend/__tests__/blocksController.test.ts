@@ -120,7 +120,7 @@ describe("deleteBlock", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { blockId: "b1" } };
+    req = { params: { id: "1", blockId: "b1" } };
     res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   });
 
@@ -128,6 +128,9 @@ describe("deleteBlock", () => {
     mockBlocks.deleteBlock.mockResolvedValue(fakeBlock);
 
     await deleteBlock(req, res);
+
+    // canvas id from the URL must scope the query, not just the block id
+    expect(mockBlocks.deleteBlock).toHaveBeenCalledWith("1", "b1");
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
@@ -148,7 +151,7 @@ describe("updateBlock", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { blockId: "b1" }, body: { x: 5, y: 5 } };
+    req = { params: { id: "1", blockId: "b1" }, body: { x: 5, y: 5 } };
     res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   });
 
@@ -156,6 +159,9 @@ describe("updateBlock", () => {
     mockBlocks.updateBlockPosition.mockResolvedValue(fakeBlock);
 
     await updateBlock(req, res);
+
+    // canvas id from the URL must scope the query, not just the block id
+    expect(mockBlocks.updateBlockPosition).toHaveBeenCalledWith("1", "b1", 5, 5);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
@@ -175,7 +181,7 @@ describe("updateBlockContent", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { blockId: "b1" }, body: { content: "console.log(1)" } };
+    req = { params: { id: "1", blockId: "b1" }, body: { content: "console.log(1)" } };
     res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   });
 
@@ -183,6 +189,9 @@ describe("updateBlockContent", () => {
     mockBlocks.updateBlockContent.mockResolvedValue(fakeBlock);
 
     await updateBlockContent(req, res);
+
+    // canvas id from the URL must scope the query, not just the block id
+    expect(mockBlocks.updateBlockContent).toHaveBeenCalledWith("1", "b1", "console.log(1)");
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
@@ -202,7 +211,7 @@ describe("updateBlockLanguage", () => {
   let res: any;
 
   beforeEach(() => {
-    req = { params: { blockId: "b1" }, body: { language: "python" } };
+    req = { params: { id: "1", blockId: "b1" }, body: { language: "python" } };
     res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   });
 
@@ -211,7 +220,7 @@ describe("updateBlockLanguage", () => {
 
     await updateBlockLanguage(req, res);
 
-    expect(mockBlocks.updateBlockLanguage).toHaveBeenCalledWith("b1", "python");
+    expect(mockBlocks.updateBlockLanguage).toHaveBeenCalledWith("1", "b1", "python");
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
   });
