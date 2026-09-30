@@ -23,7 +23,6 @@ app.set("trust proxy", 1);
 app.use(helmet());
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://free-form-code-production.up.railway.app",
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
 ];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
