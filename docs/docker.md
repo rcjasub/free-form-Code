@@ -28,7 +28,7 @@ That one command installs dependencies, compiles TypeScript, builds the frontend
 
 ## Services
 
-The project runs four containers:
+The project runs four containers, plus the code sandbox during local development:
 
 ```
 ┌─────────────┐     ┌─────────────┐
@@ -50,6 +50,33 @@ The project runs four containers:
 | backend    | node:20-alpine     | 4000 | Express API + Socket.IO |
 | postgres   | postgres:16-alpine | 5432 | Primary database        |
 | redis      | redis:alpine       | 6379 | Job queue + cache       |
+| piston     | ghcr.io/engineer-man/piston | 2000 (localhost only) | Code sandbox — `local` profile only |
+
+## Profiles: services that only run sometimes
+
+The `piston` service (the code sandbox) has `profiles: ["local"]`. A service with a profile is **skipped** by a plain `docker compose up` and only starts when that profile is asked for:
+
+```bash
+docker compose up -d                          # postgres, redis, backend, frontend
+docker compose --profile local up -d piston   # also the sandbox
+```
+
+This lets one compose file serve two machines: a developer laptop runs the sandbox, while the ARM deploy server (which Piston has no image for) never downloads it.
+
+Two other settings on `piston` matter for security:
+
+- `ports: "127.0.0.1:2000:2000"` publishes the port on the loopback interface only. Without the `127.0.0.1`, anyone on the internet could send code straight to the sandbox and skip the backend's rate limit.
+- `privileged: true` is required by Piston to build its per-run sandboxes. Privileged containers effectively have root on the host, which is why only the official image is used.
+
+## Database tables are not created automatically
+
+The `postgres` container starts with an **empty** database. Create (or update) the tables by piping the schema into it:
+
+```bash
+docker exec -i postgres psql -U postgres -d freeformcode < backend/db/schema.sql
+```
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS` plus `ALTER TABLE ... IF NOT EXISTS` migrations, so it is safe to run again after pulling changes.
 
 ## Multi-stage builds
 
@@ -111,5 +138,5 @@ free-form-Code/
 │   ├── Dockerfile        # builds the React/Vite frontend
 │   ├── nginx.conf        # SPA routing + /api and /socket.io proxy rules
 │   └── .dockerignore     # excludes node_modules, dist, .env from the build
-└── docker-compose.yml    # orchestrates all four services
+└── docker-compose.yml    # orchestrates the services (piston behind the "local" profile)
 ```
