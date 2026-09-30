@@ -141,10 +141,10 @@ export default React.memo(function OutputBubble({
     <div
       ref={containerRef}
       data-output-id={id} // lets the next output from the same block be placed beside this one
-      className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap border ${
-        isError
-          ? isDark ? "bg-[#2d1515] text-red-400 border-[#5c2a2a]" : "bg-red-50 text-red-700 border-red-200"
-          : isDark ? "bg-[#232329] text-green-400 border-[#3c3c4a]" : "bg-gray-900 text-green-400 border-gray-700"
+      // Black terminal box (the app's dark canvas black) with Beautiful Dracula
+      // text colors (see lib/codeTheme.ts); the same in both canvas themes.
+      className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap bg-[#121212] ${
+        isError ? "text-[#ff5555]" : "text-[#ffabd8]"
       }`}
       style={{ left: x, top: y, pointerEvents: mode === "draw" ? "none" : undefined }}
       onMouseDown={(e) => {
@@ -167,7 +167,7 @@ export default React.memo(function OutputBubble({
       {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
-        className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-red-400" : "text-gray-400"}`}
+        className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#ff5555]" : "text-[#7A86b3]"}`}
         onClick={() => onDelete(id)}
       >
         ✕

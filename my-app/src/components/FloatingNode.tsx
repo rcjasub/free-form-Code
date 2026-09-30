@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/languages";
 import AnimatedDropdown from "./ui/animated-dropdown";
+import { draculaDark, draculaLight } from "../lib/codeTheme";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
 
@@ -294,7 +295,7 @@ export default React.memo(function FloatingNode({
       <CodeMirror
         ref={editorRef}
         value={initialContent}
-        extensions={[highlight, theme, EditorView.lineWrapping]}
+        extensions={[highlight, isDark ? draculaDark : draculaLight, theme, EditorView.lineWrapping]}
         onFocus={() => {
           isFocused.current = true;
         }}

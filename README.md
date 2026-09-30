@@ -217,4 +217,6 @@ The canvas uses two fonts from the [Excalidraw](https://excalidraw.com) project,
 | [Excalifont](https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw/fonts/Excalifont) (Latin subset) | Code blocks, run output | Excalidraw — Your Own Font Foundry (Virgil), Ján Filípek / DizajnDesign | [SIL Open Font License 1.1](my-app/src/assets/fonts/Excalifont-LICENSE.txt) |
 | [Comic Shanns](https://github.com/shannpersand/comic-shanns) v2 | Fallback for characters outside Excalifont's subset | Shannon Miwa | [MIT](my-app/src/assets/fonts/ComicShanns-LICENSE.txt) |
 
+Code block syntax colors come from the [Beautiful Dracula](https://github.com/lamhoang1256/beautiful-dracula) VS Code theme (MIT): its exact colors in dark mode, and the same hues darkened for readability in light mode (`my-app/src/lib/codeTheme.ts`).
+
 The code sandbox is [Piston](https://github.com/engineer-man/piston) by Engineer Man.
