@@ -1,33 +1,16 @@
 import { Worker } from "bullmq";
 import { Server } from "socket.io";
-import vm from "vm";
 import { bullConnection } from "./redis";
+import { runInSandbox } from "./sandbox";
 
 export function startWorker(io: Server) {
   new Worker(
     "code-execution",
     async (job) => {
-      const { code, socketId } = job.data;
-
-      const logs: string[] = [];
-      const sandbox = {
-        console: {
-          log: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-          error: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-        },
-      };
-
-      try {
-        vm.runInNewContext(code, sandbox, { timeout: 3000 });
-        io.to(socketId).emit("run:complete", {
-          output: logs.join("\n") || "(no output)",
-        });
-      } catch (err) {
-        io.to(socketId).emit("run:complete", {
-          output: (err as Error).message,
-          error: true,
-        });
-      }
+      // Jobs queued before multi-language support have no language field.
+      const { code, language = "javascript", socketId } = job.data;
+      const result = await runInSandbox(language, code);
+      io.to(socketId).emit("run:complete", result);
     },
     { connection: bullConnection },
   );

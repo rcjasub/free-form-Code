@@ -1,22 +1,10 @@
 import { Request, Response } from "express";
 import { codeQueue } from "../queue";
 
+// Body is already checked by runSchema (see routes/run.ts).
 export async function runCode(req: Request, res: Response): Promise<void> {
-  const { code, language = "javascript", socketId } = req.body;
+  const { code, language, socketId } = req.body;
 
-  if (!code) {
-    res.status(400).json({ error: "No code provided" });
-    return;
-  }
-  if (!socketId) {
-    res.status(400).json({ error: "No socketId provided" });
-    return;
-  }
-  if (language !== "javascript") {
-    res.status(400).json({ error: `Language "${language}" not supported yet` });
-    return;
-  }
-
-  const job = await codeQueue.add("run", { code, socketId });
+  const job = await codeQueue.add("run", { code, language, socketId });
   res.json({ jobId: job.id });
 }

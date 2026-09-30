@@ -40,6 +40,23 @@ services:
       - redis
     restart: unless-stopped
 
+  # Code-execution sandbox for local development only. The "local" profile keeps
+  # it out of a plain `docker compose up` — Piston has no ARM image, so the
+  # Oracle VM never starts it. Start it with:
+  #   docker compose --profile local up -d piston
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: piston
+    profiles: ["local"]
+    privileged: true # Piston needs it to sandbox each run
+    ports:
+      - "127.0.0.1:2000:2000" # reachable from this machine only
+    volumes:
+      - piston-packages:/piston/packages
+    tmpfs:
+      - /tmp:exec
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./my-app
@@ -52,3 +69,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  piston-packages:
