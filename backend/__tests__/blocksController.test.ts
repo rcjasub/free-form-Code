@@ -4,6 +4,7 @@ import {
   deleteBlock,
   updateBlock,
   updateBlockContent,
+  updateBlockLanguage,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
@@ -24,6 +25,7 @@ const fakeBlock = {
   id: "b1",
   canvas_id: "1",
   type: "draw",
+  language: "javascript",
   content: "[]",
   x: 0,
   y: 0,
@@ -190,6 +192,34 @@ describe("updateBlockContent", () => {
     mockBlocks.updateBlockContent.mockResolvedValue(undefined as any);
 
     await updateBlockContent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
+describe("updateBlockLanguage", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = { params: { blockId: "b1" }, body: { language: "python" } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("returns 200 and invalidates the cache on successful update", async () => {
+    mockBlocks.updateBlockLanguage.mockResolvedValue({ ...fakeBlock, language: "python" });
+
+    await updateBlockLanguage(req, res);
+
+    expect(mockBlocks.updateBlockLanguage).toHaveBeenCalledWith("b1", "python");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+  });
+
+  test("returns 404 when the block doesn't exist", async () => {
+    mockBlocks.updateBlockLanguage.mockResolvedValue(undefined as any);
+
+    await updateBlockLanguage(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
   });

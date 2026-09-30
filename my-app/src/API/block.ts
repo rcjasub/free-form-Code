@@ -37,3 +37,7 @@ export function deleteBlock(canvasId: string, blockId: string) {
 export function updateBlockContent(canvasId: string, blockId: string, content: string) {
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/content`, { content });
 }
+
+export function updateBlockLanguage(canvasId: string, blockId: string, language: string) {
+  return api.patch(`/canvases/${canvasId}/blocks/${blockId}/language`, { language });
+}

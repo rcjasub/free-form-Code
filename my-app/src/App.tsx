@@ -20,7 +20,10 @@ import {
   updateBlockPosition,
   deleteBlock,
   updateBlockContent,
+  updateBlockLanguage,
 } from "./API/block";
+import { LANGUAGE_OPTIONS, languageOption, type Language } from "./lib/languages";
+import { requestRun } from "./lib/runCode";
 import { getMe } from "./API/auth";
 import "./App.css";
 
@@ -32,6 +35,7 @@ interface Node {
   y: number;
   content: string;
   type?: string;
+  language?: Language;
   points?: Point[];
 }
 
@@ -55,7 +59,7 @@ function blockToNode(b: any): Node {
   if (b.type === "draw") {
     return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
   }
-  return { id: b.id, x: b.x, y: b.y, content: b.content };
+  return { id: b.id, x: b.x, y: b.y, content: b.content, language: b.language };
 }
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
@@ -198,7 +202,9 @@ export default function App() {
           prev.map((n) => n.id),
         );
         return prev.map((n) =>
-          n.id === data.id ? { ...n, content: data.content } : n,
+          n.id === data.id
+            ? { ...n, content: data.content, language: data.language ?? n.language }
+            : n,
         );
       });
     });
@@ -410,36 +416,18 @@ export default function App() {
 
       if (!code || !socket.id) return;
 
-      socket.once("run:complete", ({ output, error }) => {
-        setOutputs((prev) => [
-          ...prev,
-          { id: nextId.current++, x, y, text: output, isError: !!error },
-        ]);
-      });
+      // The block the code came from carries its language as a data attribute
+      // (this listener is registered once, so it can't read `nodes` state).
+      const sourceEl = lastSelection.current
+        ? lastSelection.current.el
+        : window.getSelection()?.anchorNode?.parentElement?.closest<HTMLElement>("[data-node-id]");
+      const language = sourceEl?.dataset.language ?? "javascript";
 
-      try {
-        await fetch("/api/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            code,
-            language: "javascript",
-            socketId: socket.id,
-          }),
-        });
-      } catch {
-        setOutputs((prev) => [
-          ...prev,
-          {
-            id: nextId.current++,
-            x,
-            y,
-            text: "Failed to reach server",
-            isError: true,
-          },
-        ]);
-      }
+      const { output, error } = await requestRun(socket, code, language);
+      setOutputs((prev) => [
+        ...prev,
+        { id: nextId.current++, x, y, text: output, isError: error },
+      ]);
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -515,27 +503,28 @@ export default function App() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    socket.once("run:complete", ({ output, error }) => {
-      setOutputs((prev) => [
-        ...prev,
-        { id: nextId.current++, x, y, text: output, isError: !!error },
-      ]);
-    });
-
-    try {
-      await fetch("/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
-      });
-    } catch {
-      setOutputs((prev) => [
-        ...prev,
-        { id: nextId.current++, x, y, text: "Failed to reach server", isError: true },
-      ]);
-    }
+    const { output, error } = await requestRun(socket, node.content, node.language ?? "javascript");
+    setOutputs((prev) => [
+      ...prev,
+      { id: nextId.current++, x, y, text: output, isError: error },
+    ]);
   }, [nodes]);
+
+  const changeLanguage = useCallback((id: string, language: Language) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!node || !canvasId) return;
+
+    // Swap in the new language's starter if the block is empty or still holds
+    // another language's untouched starter; never overwrite real code.
+    const isUntouched =
+      !node.content.trim() || LANGUAGE_OPTIONS.some((l) => l.starter === node.content);
+    const content = isUntouched ? (languageOption(language).starter ?? "") : node.content;
+
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
+    updateBlockLanguage(canvasId, id, language);
+    if (content !== node.content) updateBlockContent(canvasId, id, content);
+    socket.emit("block:updated", canvasId, { id, content, language });
+  }, [nodes, canvasId]);
 
   // inline lambda in JSX would be a new reference every render — extracted so memo works
   const handleMarkErase = useCallback((id: string) => {
@@ -776,7 +765,9 @@ export default function App() {
               x={node.x}
               y={node.y}
               content={node.content}
+              language={node.language ?? "javascript"}
               onChange={updateNode}
+              onLanguageChange={changeLanguage}
               onMove={moveNode}
               onSaveSelection={saveSelection}
               onDelete={deleteNode}

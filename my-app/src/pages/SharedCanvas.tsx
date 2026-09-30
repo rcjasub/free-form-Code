@@ -11,6 +11,8 @@ import type { Mode } from "@/App";
 import { Pencil, Shapes } from "lucide-react";
 import { detectShape } from "@/lib/shapeDetection";
 import { strokePath } from "@/lib/smoothPath";
+import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
+import { requestRun } from "@/lib/runCode";
 
 interface Output {
   id: number;
@@ -26,6 +28,7 @@ interface Node {
   y: number;
   content: string;
   type?: string;
+  language?: Language;
   points?: Point[];
 }
 
@@ -37,6 +40,7 @@ interface ApiBlock {
   y: number;
   content: string;
   type?: string;
+  language?: Language;
 }
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
@@ -44,7 +48,7 @@ function blockToNode(b: ApiBlock): Node {
   if (b.type === "draw") {
     return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
   }
-  return { id: b.id, x: b.x, y: b.y, content: b.content };
+  return { id: b.id, x: b.x, y: b.y, content: b.content, language: b.language };
 }
 
 interface RemoteCursor {
@@ -100,12 +104,6 @@ export default function SharedCanvas() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
-  // Position context for runs that have been submitted but haven't gotten
-  // a run:complete back yet. The BullMQ worker processes the code-execution
-  // queue with concurrency 1, so results arrive in the same order jobs were
-  // submitted — a FIFO queue here correctly pairs each result with the run
-  // that triggered it, even if multiple runs are in flight at once.
-  const pendingRuns = useRef<{ x: number; y: number }[]>([]);
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
@@ -195,7 +193,9 @@ export default function SharedCanvas() {
       setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, x: data.x, y: data.y } : n));
     });
     socket.on("block:updated", (data) => {
-      setNodes((prev) => prev.map((n) => n.id === data.id ? { ...n, content: data.content } : n));
+      setNodes((prev) => prev.map((n) =>
+        n.id === data.id ? { ...n, content: data.content, language: data.language ?? n.language } : n,
+      ));
     });
     socket.on("block:deleted", (blockId) => {
       setNodes((prev) => prev.filter((n) => n.id !== blockId));
@@ -225,26 +225,6 @@ export default function SharedCanvas() {
       socket.off("cursor:leave");
     };
   }, [canvasId]);
-
-  // Single persistent run:complete listener, registered once for the life
-  // of the component instead of a fresh socket.once() per run — a fresh
-  // listener per run either leaked (never fired if the component unmounted
-  // mid-execution) or, if a second run started before the first's result
-  // came back, could fire both listeners against the same event and
-  // misattribute output B's result to run A's position.
-  useEffect(() => {
-    function onRunComplete({ output, error }: { output: string; error?: boolean }) {
-      const ctx = pendingRuns.current.shift();
-      if (!ctx) return; // no run we're tracking expected this
-      setOutputs((prev) =>
-        [...prev, { id: nextId.current++, x: ctx.x, y: ctx.y, text: output, isError: !!error }].slice(
-          -MAX_OUTPUTS,
-        ),
-      );
-    }
-    socket.on("run:complete", onRunComplete);
-    return () => { socket.off("run:complete", onRunComplete); };
-  }, []);
 
   // pan + zoom keys
   useEffect(() => {
@@ -421,28 +401,37 @@ export default function SharedCanvas() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    const ctx = { x, y };
-    pendingRuns.current.push(ctx);
+    // requestRun matches the result to this run by id, so overlapping runs
+    // each get their own output.
+    const { output, error } = await requestRun(socket, node.content, node.language ?? "javascript");
+    setOutputs((prev) =>
+      [...prev, { id: nextId.current++, x, y, text: output, isError: error }].slice(-MAX_OUTPUTS),
+    );
+  }, [canEdit, nodes]);
 
-    try {
-      await fetch("/api/run", {
-        method: "POST",
+  const changeLanguage = useCallback((id: string, language: Language) => {
+    if (!canEdit) return;
+    const node = nodes.find((n) => n.id === id);
+    const cid = canvasIdRef.current;
+    if (!node || !cid) return;
+
+    // Swap in the new language's starter if the block is empty or still holds
+    // another language's untouched starter; never overwrite real code.
+    const isUntouched =
+      !node.content.trim() || LANGUAGE_OPTIONS.some((l) => l.starter === node.content);
+    const content = isUntouched ? (languageOption(language).starter ?? "") : node.content;
+
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
+    const patch = (path: string, body: object) =>
+      fetch(`/api/canvases/${cid}/blocks/${id}/${path}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ code: node.content, language: "javascript", socketId: socket.id }),
+        body: JSON.stringify(body),
       });
-    } catch {
-      // request never reached the server, so no run:complete will ever
-      // arrive for it — drop it from the queue by reference so it doesn't
-      // desync the FIFO pairing for whatever run is next.
-      const idx = pendingRuns.current.indexOf(ctx);
-      if (idx !== -1) pendingRuns.current.splice(idx, 1);
-      setOutputs((prev) =>
-        [...prev, { id: nextId.current++, x, y, text: "Failed to reach server", isError: true }].slice(
-          -MAX_OUTPUTS,
-        ),
-      );
-    }
+    patch("language", { language });
+    if (content !== node.content) patch("content", { content });
+    socket.emit("block:updated", cid, { id, content, language });
   }, [canEdit, nodes]);
 
   const handleMarkErase = useCallback((id: string) => {
@@ -693,7 +682,9 @@ export default function SharedCanvas() {
               x={node.x}
               y={node.y}
               content={node.content}
+              language={node.language ?? "javascript"}
               onChange={updateNode}
+              onLanguageChange={canEdit ? changeLanguage : undefined}
               onMove={moveNode}
               onDelete={deleteNode}
               onMarkErase={handleMarkErase}

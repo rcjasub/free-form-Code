@@ -114,3 +114,24 @@ export async function updateBlockContent(
     handleServerError(res, err);
   }
 }
+
+export async function updateBlockLanguage(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  const { blockId } = req.params;
+  const { language } = req.body;
+
+  try {
+    const block = await Blocks.updateBlockLanguage(blockId, language);
+    if (!block) {
+      res.status(404).json({ error: "Block not found" });
+      return;
+    }
+
+    await cacheDel(`blocks:${block.canvas_id}`);
+    res.status(200).json(block);
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}

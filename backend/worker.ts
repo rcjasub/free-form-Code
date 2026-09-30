@@ -8,9 +8,9 @@ export function startWorker(io: Server) {
     "code-execution",
     async (job) => {
       // Jobs queued before multi-language support have no language field.
-      const { code, language = "javascript", socketId } = job.data;
+      const { code, language = "javascript", socketId, runId } = job.data;
       const result = await runInSandbox(language, code);
-      io.to(socketId).emit("run:complete", result);
+      io.to(socketId).emit("run:complete", { ...result, runId });
     },
     { connection: bullConnection },
   );

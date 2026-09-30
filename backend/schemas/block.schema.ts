@@ -1,5 +1,6 @@
 
 import {z} from "zod";
+import { LANGUAGES, Language } from "../sandbox";
 
 export const createSchema = z.object({
     type: z.enum(["text", "code", "draw"]),
@@ -19,4 +20,8 @@ export const updateBlockSchema = z.object({
 
 export const updateBlockContentSchema = z.object({
     content: z.string(),
+});
+
+export const updateBlockLanguageSchema = z.object({
+    language: z.enum(Object.keys(LANGUAGES) as [Language, ...Language[]]),
 });

@@ -1,9 +1,9 @@
 import { useRef, useEffect, useMemo, useState } from "react";
 import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { javascript } from "@codemirror/lang-javascript";
 import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
+import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/languages";
 
 // While dragging, the pointer's visual position is applied straight to the
 // DOM every frame (cheap, no re-render), while onMove — which updates React
@@ -18,7 +18,10 @@ interface Props {
   x: number;
   y: number;
   content: string;
+  language: Language;
   onChange: (id: string, content: string) => void;
+  // Omitted for viewers who can't edit — the language then shows as a plain label.
+  onLanguageChange?: (id: string, language: Language) => void;
   onMove: (id: string, x: number, y: number) => void;
   onSaveSelection?: (content: string, el: HTMLElement) => void;
   onDelete: (id: string) => void;
@@ -67,7 +70,9 @@ export default React.memo(function FloatingNode({
   x,
   y,
   content,
+  language,
   onChange,
+  onLanguageChange,
   onMove,
   onSaveSelection,
   onDelete,
@@ -105,6 +110,7 @@ export default React.memo(function FloatingNode({
   }, [content]);
 
   const theme = useMemo(() => makeTheme(isDark), [isDark]);
+  const highlight = useMemo(() => languageOption(language).highlight(), [language]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -211,6 +217,7 @@ export default React.memo(function FloatingNode({
     <div
       ref={containerRef}
       data-node-id={id}
+      data-language={language}
       className="absolute group outline-none"
       style={{
         left: x,
@@ -258,6 +265,29 @@ export default React.memo(function FloatingNode({
         ▶
       </div>
 
+      {/* language picker — below the block, visible on hover in select mode */}
+      {mode === "select" && (
+        <div
+          className={`absolute -bottom-5 left-0 text-[10px] font-mono opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+        >
+          {onLanguageChange ? (
+            <select
+              value={language}
+              onChange={(e) => onLanguageChange(id, e.target.value as Language)}
+              className={`bg-transparent cursor-pointer outline-none ${isDark ? "[&>option]:bg-[#232329]" : ""}`}
+            >
+              {LANGUAGE_OPTIONS.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            languageOption(language).label
+          )}
+        </div>
+      )}
+
       {/* delete button */}
       <div
         className={`absolute -right-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
@@ -269,7 +299,7 @@ export default React.memo(function FloatingNode({
       <CodeMirror
         ref={editorRef}
         value={initialContent}
-        extensions={[javascript(), theme, EditorView.lineWrapping]}
+        extensions={[highlight, theme, EditorView.lineWrapping]}
         onFocus={() => {
           isFocused.current = true;
         }}
