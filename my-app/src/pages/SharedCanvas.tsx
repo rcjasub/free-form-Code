@@ -13,14 +13,7 @@ import { detectShape } from "@/lib/shapeDetection";
 import { strokePath } from "@/lib/smoothPath";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
-
-interface Output {
-  id: number;
-  x: number;
-  y: number;
-  text: string;
-  isError: boolean;
-}
+import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
 interface Node {
   id: string;
@@ -104,6 +97,13 @@ export default function SharedCanvas() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
+  // Latest outputs for handleRunNode's duplicate check, and runs still
+  // waiting on a result.
+  const outputsRef = useRef<Output[]>([]);
+  const pendingRunKeys = useRef(new Set<string>());
+  useEffect(() => {
+    outputsRef.current = outputs;
+  }, [outputs]);
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
@@ -401,12 +401,28 @@ export default function SharedCanvas() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    // requestRun matches the result to this run by id, so overlapping runs
-    // each get their own output.
-    const { output, error } = await requestRun(socket, node.content, node.language ?? "javascript");
-    setOutputs((prev) =>
-      [...prev, { id: nextId.current++, x, y, text: output, isError: error }].slice(-MAX_OUTPUTS),
-    );
+    // Same rules as the main canvas (lib/runOutputs): unchanged code whose
+    // output is still showing doesn't run again; changed code's output goes
+    // beside the previous one.
+    const language = node.language ?? "javascript";
+    const runKey = makeRunKey(id, language, node.content);
+    if (pendingRunKeys.current.has(runKey) || isAlreadyShown(outputsRef.current, runKey)) return;
+    pendingRunKeys.current.add(runKey);
+    try {
+      // requestRun matches the result to this run by id, so overlapping runs
+      // each get their own output.
+      const { output, error } = await requestRun(socket, node.content, language);
+      const outputId = nextId.current++;
+      setOutputs((prev) => {
+        const pos = placeOutput(prev, id, { x, y }, scaleRef.current);
+        return [
+          ...prev,
+          { id: outputId, ...pos, text: output, isError: error, sourceId: id, runKey },
+        ].slice(-MAX_OUTPUTS);
+      });
+    } finally {
+      pendingRunKeys.current.delete(runKey);
+    }
   }, [canEdit, nodes]);
 
   const changeLanguage = useCallback((id: string, language: Language) => {
@@ -556,7 +572,7 @@ export default function SharedCanvas() {
   return (
     <div
       ref={rootRef}
-      className={`relative w-screen h-screen overflow-hidden select-none cursor-default`}
+      className={`relative w-screen h-screen overflow-hidden select-none ${mode === "select" ? "dot-cursor" : "cursor-default"}`}
       style={{
         backgroundColor: isDark ? "#121212" : "#ffffff",
         backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,

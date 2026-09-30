@@ -140,7 +140,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#121212]">
+    <div className="dot-cursor min-h-screen bg-white dark:bg-[#121212]">
       {/* header */}
       <div className="flex items-center justify-between px-8 py-4 border-b border-gray-100 dark:border-[#2e2e3a]">
         <div className="flex items-center gap-2">

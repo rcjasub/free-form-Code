@@ -24,6 +24,7 @@ import {
 } from "./API/block";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
+import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe } from "./API/auth";
 import "./App.css";
 
@@ -37,14 +38,6 @@ interface Node {
   type?: string;
   language?: Language;
   points?: Point[];
-}
-
-interface Output {
-  id: number;
-  x: number;
-  y: number;
-  text: string;
-  isError: boolean;
 }
 
 interface RemoteCursor {
@@ -101,6 +94,10 @@ export default function App() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const nextId = useRef(1);
+  // Latest outputs for the run handlers (the Ctrl+Enter listener is registered
+  // once, so it can't read state), and runs still waiting on a result.
+  const outputsRef = useRef<Output[]>([]);
+  const pendingRunKeys = useRef(new Set<string>());
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [scale, setScale] = useState(1);
@@ -394,6 +391,34 @@ export default function App() {
   }
 
   useEffect(() => {
+    outputsRef.current = outputs;
+  }, [outputs]);
+
+  // Runs code and adds its output, following lib/runOutputs: re-running
+  // unchanged code whose output is still showing does nothing, and changed code
+  // puts its output beside the previous one instead of on top of it.
+  const runAndPlace = useCallback(
+    async (sourceId: string | undefined, code: string, language: string, anchor: { x: number; y: number }) => {
+      const runKey = sourceId ? makeRunKey(sourceId, language, code) : undefined;
+      if (runKey) {
+        if (pendingRunKeys.current.has(runKey) || isAlreadyShown(outputsRef.current, runKey)) return;
+        pendingRunKeys.current.add(runKey);
+      }
+      try {
+        const { output, error } = await requestRun(socket, code, language);
+        const id = nextId.current++;
+        setOutputs((prev) => {
+          const { x, y } = placeOutput(prev, sourceId, anchor, scaleRef.current);
+          return [...prev, { id, x, y, text: output, isError: error, sourceId, runKey }];
+        });
+      } finally {
+        if (runKey) pendingRunKeys.current.delete(runKey);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
     async function handleKeyDown(e: KeyboardEvent) {
       if (!(e.ctrlKey && e.key === "Enter")) return;
 
@@ -423,16 +448,17 @@ export default function App() {
         : window.getSelection()?.anchorNode?.parentElement?.closest<HTMLElement>("[data-node-id]");
       const language = sourceEl?.dataset.language ?? "javascript";
 
-      const { output, error } = await requestRun(socket, code, language);
-      setOutputs((prev) => [
-        ...prev,
-        { id: nextId.current++, x, y, text: output, isError: error },
-      ]);
+      // x/y above are screen coordinates; outputs live in canvas coordinates.
+      const anchor = {
+        x: (x - offsetRef.current.x) / scaleRef.current,
+        y: (y - offsetRef.current.y) / scaleRef.current,
+      };
+      await runAndPlace(sourceEl?.dataset.nodeId, code, language, anchor);
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [runAndPlace]);
 
   // useCallback keeps the same function reference between renders.
   // Without it, App re-rendering (e.g. from a cursor:move) would create a new
@@ -503,12 +529,8 @@ export default function App() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    const { output, error } = await requestRun(socket, node.content, node.language ?? "javascript");
-    setOutputs((prev) => [
-      ...prev,
-      { id: nextId.current++, x, y, text: output, isError: error },
-    ]);
-  }, [nodes]);
+    await runAndPlace(id, node.content, node.language ?? "javascript", { x, y });
+  }, [nodes, runAndPlace]);
 
   const changeLanguage = useCallback((id: string, language: Language) => {
     const node = nodes.find((n) => n.id === id);
@@ -567,7 +589,9 @@ export default function App() {
       ? "cursor-grab"
       : mode === "text" || mode === "draw"
         ? "cursor-crosshair"
-        : "cursor-default";
+        : mode === "select"
+          ? "dot-cursor" // blue dot, see index.css
+          : "cursor-default"; // erase: overridden by the inline eraser cursor
 
   const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
     <button
@@ -659,6 +683,7 @@ export default function App() {
             <span className="text-xs font-bold leading-none">T</span>,
             "Text (T)",
           )}
+          {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
           {toolbarBtn(
             "erase",
             <svg
@@ -676,7 +701,6 @@ export default function App() {
             </svg>,
             "Erase (E)",
           )}
-          {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
         </div>
         <span className="font-canvas text-[11px] pointer-events-none select-none text-gray-400 dark:text-gray-500">
           select code + ctrl+enter to run

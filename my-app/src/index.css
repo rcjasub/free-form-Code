@@ -272,3 +272,17 @@ html {
     @apply bg-background text-foreground;}
   html {
     @apply font-sans;}}
+/* App pointer: a translucent blue dot instead of the arrow — on the login page,
+   the dashboard, and the canvas in select mode. Real CSS cursors (not a
+   JS-tracked element), so the dot *is* the pointer — no lag, no re-renders.
+   Over anything clickable it swaps to a larger dot; text fields keep the
+   I-beam. Unlayered on purpose so it beats Tailwind's cursor-* utilities. */
+.dot-cursor {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%233d8bff' fill-opacity='0.75'/%3E%3C/svg%3E") 8 8, auto;
+}
+.dot-cursor :is(button, a[href], select, summary, [role="button"], [role="option"], .cursor-pointer):not(:disabled) {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='14' cy='14' r='14' fill='%233d8bff' fill-opacity='0.45'/%3E%3C/svg%3E") 14 14, pointer;
+}
+.dot-cursor :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) {
+  cursor: text;
+}

@@ -73,7 +73,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#121212] relative overflow-hidden">
+    <div className="dot-cursor min-h-screen flex items-center justify-center bg-[#121212] relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <Particles
           particleColors={["#ffffff"]}

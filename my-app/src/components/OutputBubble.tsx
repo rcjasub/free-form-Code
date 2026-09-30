@@ -140,6 +140,7 @@ export default React.memo(function OutputBubble({
   return (
     <div
       ref={containerRef}
+      data-output-id={id} // lets the next output from the same block be placed beside this one
       className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap border ${
         isError
           ? isDark ? "bg-[#2d1515] text-red-400 border-[#5c2a2a]" : "bg-red-50 text-red-700 border-red-200"
