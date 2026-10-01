@@ -26,6 +26,9 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { useNavigate } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
+import { useTheme } from "next-themes";
+import { ShootingStars } from "@/components/ui/shooting-stars";
+import { StarsBackground } from "@/components/ui/stars-background";
 
 type FormState = "idle" | "loading" | "success";
 
@@ -59,6 +62,8 @@ export default function Dashboard() {
   const [canvasName, setCanvasName] = useState("");
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   useEffect(() => {
     (async () => {
@@ -140,9 +145,26 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="dot-cursor min-h-screen bg-white dark:bg-[#121212]">
+    <div className="dot-cursor relative min-h-screen bg-white dark:bg-[#121212]">
+      {/* sky behind the page: white stars at night, ink specks with blue
+          pen-stroke shooting stars by day. Fixed so it covers the screen
+          while the list scrolls, click-through so it never blocks the cards */}
+      <div className="fixed inset-0 pointer-events-none">
+        {isDark ? (
+          <>
+            <StarsBackground />
+            <ShootingStars />
+          </>
+        ) : (
+          <>
+            <StarsBackground starColor="100, 116, 139" starRadius={0.9} starDensity={0.0002} />
+            <ShootingStars starColor="#4fb4f2" trailColor="#c7e6fb" starHeight={1.5} />
+          </>
+        )}
+      </div>
+
       {/* header */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-gray-100 dark:border-[#2e2e3a]">
+      <div className="relative z-10 flex items-center justify-between px-8 py-4 border-b border-gray-100 dark:border-[#2e2e3a]">
         <div className="flex items-center gap-2">
           <DotLottieReact
             src="https://lottie.host/ba280eed-ba90-41e4-bca2-21a7e13bb168/FjzsnbcULu.lottie"
@@ -151,7 +173,7 @@ export default function Dashboard() {
             style={{ width: 120, height: 120 }}
           />
           <h1 className="text-[56px] font-semibold text-gray-900 dark:text-white">
-            <TextRoll>free-form</TextRoll>
+            <TextRoll>Free-Form</TextRoll>
           </h1>
         </div>
         <div className="flex items-center gap-3">
@@ -161,7 +183,7 @@ export default function Dashboard() {
       </div>
 
       {/* content */}
-      <div className="max-w-4xl mx-auto px-8 py-12">
+      <div className="relative z-10 max-w-4xl mx-auto px-8 py-12">
         {/* row: title + count | search | new button */}
         <div className="flex items-center justify-between mb-8 gap-4">
           <div className="flex items-center gap-4">
