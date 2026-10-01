@@ -182,9 +182,13 @@ export default function SharedCanvas() {
   useEffect(() => {
     if (!canvasId) return;
 
-    const joinCanvas = () => socket.emit("canvas:join", canvasId);
-    if (socket.connected) joinCanvas();
-    else socket.once("connect", joinCanvas);
+    // rejoin on every connect — a reconnect isn't in any room
+    const joinCanvas = () =>
+      socket.emit("canvas:join", canvasId, (res: { ok: boolean; error?: string }) => {
+        if (!res.ok) console.error("[socket] canvas:join failed:", res.error);
+      });
+    socket.on("connect", joinCanvas);
+    socket.connect();
 
     socket.on("block:created", (block) => {
       setNodes((prev) => [...prev, blockToNode(block)]);
@@ -223,6 +227,7 @@ export default function SharedCanvas() {
       socket.off("block:deleted");
       socket.off("cursor:move");
       socket.off("cursor:leave");
+      socket.disconnect();
     };
   }, [canvasId]);
 

@@ -4,7 +4,34 @@ Problems I ran into while building free-form, what caused them, how I fixed them
 
 ---
 
-## 1. Sandboxing user code: the backend was one line away from being taken over
+## 1. Live sync only worked after a page refresh
+
+**Date:** 2026-10-01 · **Area:** real-time, auth
+
+**Problem.** On the deployed site, logging in and opening a canvas showed no live changes from other users — until you refreshed, then everything worked. No error anywhere.
+
+**Cause.** Three things lined up:
+1. `lib/socket.ts` called `io(...)` at import time, so the socket connected on the **login page**, before any auth cookie existed.
+2. The server identifies a socket **once, in the handshake** (`io.use` reads the `token` cookie). No cookie → guest identity with `id = socket.id`, and it stays that way for the life of the connection.
+3. Login is a client-side `navigate()`, not a reload, so the same guest socket carried on. `canvas:join` compared `canvas.user_id` to that random id, returned `Forbidden` — and the client never passed an ack callback, so the rejection was silently dropped. No room, no events.
+
+A refresh "fixed" it because the reload opened a fresh socket whose handshake carried the new cookie.
+
+**Fix.**
+- `autoConnect: false` on the socket; the canvas page calls `socket.connect()` on mount and `socket.disconnect()` on unmount. Every canvas visit is a new handshake with the *current* cookie — covers login, register, guest mode, and switching accounts without special-casing each.
+- `socket.once("connect", join)` → `socket.on("connect", join)`. A reconnect (network blip, server restart) is a brand-new server-side socket in no rooms, so it has to rejoin every time.
+- `canvas:join` now passes an ack and logs `ok: false`, so a rejected join is visible instead of silent.
+
+**Takeaways.**
+- WebSocket auth is fixed at handshake time. Changing auth state (login/logout) means a new connection — the cookie isn't re-read mid-connection.
+- Module-level side effects (connecting on import) run earlier than you think — here, before the user existed.
+- Never drop an error channel. The server was correctly saying "Forbidden"; nobody was listening.
+
+**In one line:** *"Live sync silently failed after login because the WebSocket authenticated during the handshake on the login page, before the cookie existed; I moved the connection to the canvas page's lifecycle so every handshake carries current auth, and surfaced join errors that were being dropped."*
+
+---
+
+## 2. Sandboxing user code: the backend was one line away from being taken over
 
 **Date:** 2026-09-30 · **Area:** security, infrastructure
 
@@ -46,7 +73,7 @@ That returns the backend's environment: `JWT_SECRET` (forge a login for any user
 
 ---
 
-## 2. IDOR: editing blocks on canvases you don't own
+## 3. IDOR: editing blocks on canvases you don't own
 
 **Date:** 2026-09-30 · **Area:** security, API design
 
@@ -62,7 +89,7 @@ That returns the backend's environment: `JWT_SECRET` (forge a login for any user
 
 ---
 
-## 3. Run results landing next to the wrong block
+## 4. Run results landing next to the wrong block
 
 **Date:** 2026-09-30 · **Area:** real-time, concurrency
 
@@ -76,7 +103,7 @@ That returns the backend's environment: `JWT_SECRET` (forge a login for any user
 
 ---
 
-## 4. Guest mode: trying the app without an account
+## 5. Guest mode: trying the app without an account
 
 **Date:** 2026-09-29 · **Area:** auth, data modeling
 
@@ -96,7 +123,7 @@ That returns the backend's environment: `JWT_SECRET` (forge a login for any user
 
 ---
 
-## 5. Password rules: why the max is 72
+## 6. Password rules: why the max is 72
 
 **Date:** 2026-09-29 · **Area:** auth
 
@@ -106,7 +133,7 @@ Passwords are hashed with bcrypt, which only uses the **first 72 bytes** of its 
 
 ---
 
-## 6. Local environment issues
+## 7. Local environment issues
 
 Smaller problems, but good examples of reading errors carefully.
 
@@ -118,7 +145,7 @@ Smaller problems, but good examples of reading errors carefully.
 
 ---
 
-## 7. Moving off Railway
+## 8. Moving off Railway
 
 The app moved from Railway to an Oracle Cloud VM running Docker Compose. Cleanup: deleted both `railway.toml` files and the hard-coded Railway URL in the CORS allowlist — the allowed origin now comes only from `CLIENT_URL`, which must match exactly what users open (IP or domain), or the browser blocks requests.
 

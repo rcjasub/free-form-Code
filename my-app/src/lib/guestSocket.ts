@@ -14,6 +14,8 @@ export const guestName = randomGuestName();
 const guestSocket = io(window.location.origin, {
   path: "/socket.io",
   withCredentials: true,
+  // SharedCanvas connects on mount / disconnects on unmount (same as lib/socket.ts)
+  autoConnect: false,
   auth: { guest: true, guestName },
 });
 

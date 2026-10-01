@@ -148,18 +148,18 @@ export default function App() {
   useEffect(() => {
     if (!canvasId) return;
 
-    console.log("[socket] connected:", socket.connected);
-
+    // `on`, not `once`: a reconnect (network blip, server restart) is a new
+    // server-side socket that isn't in any room, so rejoin every time.
     const joinCanvas = () => {
-      socket.emit("canvas:join", canvasId);
-      console.log("[socket] joined canvas:", canvasId);
+      socket.emit("canvas:join", canvasId, (res: { ok: boolean; error?: string }) => {
+        if (res.ok) console.log("[socket] joined canvas:", canvasId);
+        else console.error("[socket] canvas:join failed:", res.error);
+      });
     };
 
-    if (socket.connected) {
-      joinCanvas();
-    } else {
-      socket.once("connect", joinCanvas);
-    }
+    socket.on("connect", joinCanvas);
+    // fresh handshake on every canvas visit, so it carries the current cookie
+    socket.connect();
 
     // fetch canvas metadata to get share_id
     fetch(`/api/canvases/${canvasId}`, { credentials: "include" })
@@ -236,6 +236,7 @@ export default function App() {
       socket.off("block:deleted");
       socket.off("cursor:move");
       socket.off("cursor:leave");
+      socket.disconnect();
     };
   }, [canvasId]);
 
