@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 
 const LogoutIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -12,7 +12,8 @@ function SignOutButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2e2e3a] hover:text-gray-900 dark:hover:text-white transition-all"
+      // no box at all — just the icon + text, lifting on hover
+      className="flex items-center gap-2 px-2 py-2 text-sm font-bold text-gray-900 dark:text-white transform hover:-translate-y-1 transition duration-400"
     >
       <LogoutIcon size={16} />
       Sign out
@@ -27,8 +28,79 @@ import { useNavigate } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import { useTheme } from "next-themes";
+// Header cat: the original LottieFiles black cat in dark mode, and a recolored
+// copy in light mode — white with a dark belly (fur and belly colors swapped,
+// nose and shadow unchanged). ?url so Vite serves it for DotLottie to fetch.
+import whiteCatUrl from "@/assets/cat-inverted.json?url";
+const BLACK_CAT_URL = "https://lottie.host/ba280eed-ba90-41e4-bca2-21a7e13bb168/FjzsnbcULu.lottie";
 import { ShootingStars } from "@/components/ui/shooting-stars";
 import { StarsBackground } from "@/components/ui/stars-background";
+import { Liquid } from "@/components/ui/button-1";
+
+// blue liquid palette from the ui-layouts button-1 demo
+const LIQUID_COLORS = {
+  color1: "#FFFFFF",
+  color2: "#1E10C5",
+  color3: "#9089E2",
+  color4: "#FCFCFE",
+  color5: "#F9F9FD",
+  color6: "#B2B8E7",
+  color7: "#0E2DCB",
+  color8: "#0017E9",
+  color9: "#4743EF",
+  color10: "#7D7BF4",
+  color11: "#0B06FC",
+  color12: "#C5C1EA",
+  color13: "#1403DE",
+  color14: "#B6BAF6",
+  color15: "#C1BEEB",
+  color16: "#290ECB",
+  color17: "#3F4CC0",
+};
+
+// Dark-mode New canvas button: the ui-layouts liquid button, resized to sit
+// in the toolbar row. A blurred liquid glow behind, the liquid fill clipped
+// to the button, and a transparent <button> on top for clicks + hover.
+function LiquidNewCanvasButton({ onClick }: { onClick: () => void }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const id = useId();
+  return (
+    <div className="relative inline-block w-36 h-10 shrink-0 bg-black border-2 border-white rounded-lg">
+      {/* glow */}
+      <div className="absolute w-[112.81%] h-[128.57%] top-[8.57%] left-1/2 -translate-x-1/2 filter blur-[19px] opacity-70 pointer-events-none">
+        <span className="absolute inset-0 rounded-lg bg-[#d9d9d9] filter blur-[6.5px]" />
+        <div className="relative w-full h-full overflow-hidden rounded-lg">
+          <Liquid isHovered={isHovered} colors={LIQUID_COLORS} id={`${id}-glow`} />
+        </div>
+      </div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[40%] w-[92.23%] h-[112.85%] rounded-lg bg-[#010128] filter blur-[7.3px] pointer-events-none" />
+      {/* fill */}
+      <div className="relative w-full h-full overflow-hidden rounded-lg pointer-events-none">
+        <span className="absolute inset-0 rounded-lg bg-[#d9d9d9]" />
+        <span className="absolute inset-0 rounded-lg bg-black" />
+        <Liquid isHovered={isHovered} colors={LIQUID_COLORS} id={`${id}-fill`} />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <span
+            key={i}
+            className={`absolute inset-0 rounded-lg border-solid border-[3px] mix-blend-overlay filter ${
+              i <= 2 ? "blur-[3px]" : i === 3 ? "blur-[5px]" : "blur-[4px]"
+            }`}
+          />
+        ))}
+        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[40%] w-[70.8%] h-[42.85%] rounded-lg filter blur-[15px] bg-[#006]" />
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className="absolute inset-0 flex items-center justify-center gap-1.5 rounded-lg bg-transparent text-sm font-semibold text-white hover:text-yellow-300 transition-colors whitespace-nowrap"
+      >
+        <span className="text-base leading-none">+</span> New canvas
+      </button>
+    </div>
+  );
+}
 
 type FormState = "idle" | "loading" | "success";
 
@@ -158,7 +230,7 @@ export default function Dashboard() {
         ) : (
           <>
             <StarsBackground starColor="100, 116, 139" starRadius={0.9} starDensity={0.0002} />
-            <ShootingStars starColor="#4fb4f2" trailColor="#c7e6fb" starHeight={1.5} />
+            <ShootingStars starColor="#1a8ad4" trailColor="#6fbdf0" starHeight={2} />
           </>
         )}
       </div>
@@ -167,7 +239,9 @@ export default function Dashboard() {
       <div className="relative z-10 flex items-center justify-between px-8 py-4 border-b border-gray-100 dark:border-[#2e2e3a]">
         <div className="flex items-center gap-2">
           <DotLottieReact
-            src="https://lottie.host/ba280eed-ba90-41e4-bca2-21a7e13bb168/FjzsnbcULu.lottie"
+            // key: remount on theme change so the new animation actually loads
+            key={isDark ? "black-cat" : "white-cat"}
+            src={isDark ? BLACK_CAT_URL : whiteCatUrl}
             loop
             autoplay
             style={{ width: 120, height: 120 }}
@@ -211,12 +285,18 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <button
-            onClick={() => setOpen(true)}
-            className="flex h-9 items-center gap-1.5 px-3 rounded-lg border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#1a1a22] text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-[#5c5c6a] transition-colors"
-          >
-            <span className="text-base leading-none">+</span> New canvas
-          </button>
+          {isDark ? (
+            <LiquidNewCanvasButton onClick={() => setOpen(true)} />
+          ) : (
+            <button
+              onClick={() => setOpen(true)}
+              // neobrutalist: hard offset shadow that the button "presses
+              // into" on hover
+              className="flex h-10 items-center gap-1.5 px-4 rounded-[5px] border-2 text-sm font-medium transition-all hover:translate-x-1 hover:translate-y-1 hover:shadow-none bg-white text-black border-black shadow-[4px_4px_0px_0px_#000]"
+            >
+              <span className="text-base leading-none">+</span> New canvas
+            </button>
+          )}
 
           {/* modal */}
           {open && (
@@ -247,7 +327,9 @@ export default function Dashboard() {
                         placeholder="Canvas name"
                         value={canvasName}
                         onChange={(e) => setCanvasName(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a]"
+                        // no border or focus ring — a filled field reads as the
+                        // input on its own (toolbar gray in dark mode)
+                        className="w-full px-3 py-2 text-sm rounded-lg border-0 outline-none bg-gray-100 dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400"
                         required
                       />
                     </div>
