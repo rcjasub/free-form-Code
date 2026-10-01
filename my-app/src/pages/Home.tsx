@@ -9,10 +9,15 @@ type AuthMode = "login" | "register";
 
 export default function Home() {
   const location = useLocation();
-  // The canvas page's "Sign up" link sends guests here with mode: "register".
-  const [mode, setMode] = useState<AuthMode>(
-    (location.state as { mode?: AuthMode } | null)?.mode ?? "login",
-  );
+  // The canvas page's "Sign up" link sends guests here with mode: "register";
+  // a shared canvas's "Sign in" passes redirect so they land back on it.
+  const navState = location.state as { mode?: AuthMode; redirect?: string } | null;
+  const [mode, setMode] = useState<AuthMode>(navState?.mode ?? "login");
+  // Only same-site paths — "//evil.com" would leave the app.
+  const redirect =
+    navState?.redirect?.startsWith("/") && !navState.redirect.startsWith("//")
+      ? navState.redirect
+      : "/dashboard";
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,10 +67,10 @@ export default function Home() {
     try {
       if (mode === "register") {
         await axios.post("/api/auth/register", { username, email, password }, { withCredentials: true });
-        navigate("/dashboard");
+        navigate(redirect);
       } else {
         await axios.post("/api/auth/login", { email, password }, { withCredentials: true });
-        navigate("/dashboard");
+        navigate(redirect);
       }
     } catch (err) {
       showError(err);
@@ -92,7 +97,7 @@ export default function Home() {
         {/* branding */}
         <div className="mb-8 text-center">
           <h1 className="text-[56px] font-semibold tracking-tight text-white">
-            <TextRoll center>free-form</TextRoll>
+            <TextRoll center>Free-Form</TextRoll>
           </h1>
           <p className="text-sm text-gray-400 mt-1">a canvas for your code</p>
         </div>

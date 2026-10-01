@@ -10,6 +10,7 @@ import RemoteCursorMarker from "./components/RemoteCursorMarker";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import ShareDrawer from "./components/ShareDrawer";
+import PresenceMenu from "./components/PresenceMenu";
 import socket from "./lib/socket";
 import { useCallback } from "react";
 
@@ -112,6 +113,8 @@ export default function App() {
   const [isGuest, setIsGuest] = useState(false);
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
+  // everyone in the room right now, from the server's "presence" broadcasts
+  const [people, setPeople] = useState<{ userId: string; username: string }[]>([]);
   const lastCursorEmit = useRef(0);
   const { resolvedTheme } = useTheme();
   const lastSelection = useRef<{
@@ -227,8 +230,14 @@ export default function App() {
       });
     });
 
+    socket.on("presence", (list: { userId: string; username: string }[]) => {
+      setPeople(list);
+    });
+
     // cleanup when you leave the page
     return () => {
+      socket.off("presence");
+      setPeople([]);
       socket.off("connect", joinCanvas);
       socket.off("block:created");
       socket.off("block:moved");
@@ -629,7 +638,7 @@ export default function App() {
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-3">
+      <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-1">
         <span
           // Guests have no dashboard, so the logo is just a label for them.
           onClick={() => !isGuest && navigate("/dashboard")}
@@ -642,7 +651,8 @@ export default function App() {
         {isGuest && (
           <button
             onClick={() => navigate("/", { state: { mode: "register" } })}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white underline underline-offset-2 transition-colors"
+            // Same hand-drawn font as the text blocks, a size down from their 14px.
+            className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white underline underline-offset-2 transition-colors"
           >
             Sign up to save more canvases
           </button>
@@ -751,6 +761,18 @@ export default function App() {
         </button>
         <ThemeToggleButton />
       </div>
+
+      {/* who's here, under the theme toggle — only once someone else has
+          joined through the share link; alone, it's just you */}
+      {people.length > 1 && (
+        <div className="absolute top-[60px] right-4 z-20">
+          <PresenceMenu
+            people={people.map((p) => ({ ...p, color: getCursorColor(p.userId) }))}
+            myId={socket.id}
+            isDark={isDark}
+          />
+        </div>
+      )}
 
       {/* canvas */}
       <div

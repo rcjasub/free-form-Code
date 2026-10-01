@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import RemoteCursorMarker from "@/components/RemoteCursorMarker";
 import OutputBubble from "@/components/OutputBubble";
+import PresenceMenu from "@/components/PresenceMenu";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
-import socket, { guestName } from "@/lib/guestSocket";
+import socket from "@/lib/guestSocket";
 import type { Mode } from "@/App";
 import { Pencil, Shapes } from "lucide-react";
 import { detectShape } from "@/lib/shapeDetection";
 import { strokePath } from "@/lib/smoothPath";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
+import { getMe } from "@/API/auth";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
 interface Node {
@@ -91,6 +93,7 @@ export default function SharedCanvas() {
   const [searchParams] = useSearchParams();
   const canEdit = searchParams.get("edit") === "true";
   const navigate = useNavigate();
+  const location = useLocation();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -105,7 +108,6 @@ export default function SharedCanvas() {
     outputsRef.current = outputs;
   }, [outputs]);
   const [canvasId, setCanvasId] = useState<string | null>(null);
-  const [canvasName, setCanvasName] = useState("");
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -117,6 +119,8 @@ export default function SharedCanvas() {
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
+  // everyone in the room right now, from the server's "presence" broadcasts
+  const [people, setPeople] = useState<{ userId: string; username: string }[]>([]);
   const lastCursorEmit = useRef(0);
   const canvasIdRef = useRef<string | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
@@ -146,11 +150,12 @@ export default function SharedCanvas() {
     return () => window.removeEventListener("mouseup", onMouseUp);
   }, [pendingErase]);
 
-  // check if user is logged in
+  // check if user is logged in — guests come back from /me too, but they
+  // have no dashboard, so they count as signed out here
   useEffect(() => {
-    fetch("/api/auth/me", { credentials: "include" })
-      .then((r) => r.json())
-      .then(({ user }) => setUsername(user?.username ?? null));
+    getMe()
+      .then((user) => setUsername(user && !user.isGuest ? user.username : null))
+      .catch(() => setUsername(null));
   }, []);
 
   // load canvas metadata + blocks
@@ -164,7 +169,6 @@ export default function SharedCanvas() {
       })
       .then((canvas) => {
         if (!canvas) return;
-        setCanvasName(canvas.name);
         const id = String(canvas.id);
         canvasIdRef.current = id;
         setCanvasId(id);
@@ -211,6 +215,9 @@ export default function SharedCanvas() {
         return next;
       });
     });
+    socket.on("presence", (list: { userId: string; username: string }[]) => {
+      setPeople(list);
+    });
     socket.on("cursor:leave", ({ userId }: { userId: string }) => {
       setRemoteCursors((prev) => {
         const next = new Map(prev);
@@ -227,7 +234,9 @@ export default function SharedCanvas() {
       socket.off("block:deleted");
       socket.off("cursor:move");
       socket.off("cursor:leave");
+      socket.off("presence");
       socket.disconnect();
+      setPeople([]);
     };
   }, [canvasId]);
 
@@ -595,23 +604,28 @@ export default function SharedCanvas() {
           isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"
         }`}
       >
+        {/* just "Shared" — the owner's canvas name (often the default
+            "My Canvas") read like a link to the visitor's own, and edit
+            access already shows through the toolbar */}
         <span className={`text-xs font-medium ${isDark ? "text-[#9b9ba8]" : "text-gray-500"}`}>
-          {canvasName}
+          Shared
         </span>
-        <span className={`text-xs px-2 py-0.5 rounded-full ${isDark ? "bg-[#3c3c4a] text-[#9b9ba8]" : "bg-gray-100 text-gray-500"}`}>
-          {guestName}
-        </span>
-        {canEdit && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
-            Editing
-          </span>
-        )}
-        {!username && (
+        {username ? (
           <button
-            onClick={() => navigate("/")}
-            className="text-xs text-blue-500 hover:underline"
+            onClick={() => navigate("/dashboard")}
+            className="text-xs text-[#4fb4f2] hover:underline"
           >
-            Sign in
+            My canvases →
+          </button>
+        ) : (
+          <button
+            // come back to this exact link (incl. ?edit=true) after signing in
+            onClick={() =>
+              navigate("/", { state: { mode: "register", redirect: location.pathname + location.search } })
+            }
+            className="text-xs text-[#4fb4f2] hover:underline"
+          >
+            Register
           </button>
         )}
       </div>
@@ -669,6 +683,15 @@ export default function SharedCanvas() {
           </button>
         )}
         <ThemeToggleButton />
+      </div>
+
+      {/* who's here, under the theme toggle */}
+      <div className="absolute top-[60px] right-4 z-20">
+        <PresenceMenu
+          people={people.map((p) => ({ ...p, color: getCursorColor(p.userId) }))}
+          myId={socket.id}
+          isDark={isDark}
+        />
       </div>
 
       {/* canvas */}

@@ -13,6 +13,18 @@ import {
 interface JwtPayload {
   id: string;
   username: string;
+  isGuest?: boolean;
+}
+
+// Everyone currently in a canvas room, sent to the whole room (the joiner
+// included) whenever someone joins or leaves. Usernames live on socket.data
+// because fetchSockets() returns RemoteSockets, which don't carry .user.
+async function broadcastPresence(io: Server, canvasId: string): Promise<void> {
+  const sockets = await io.in(canvasId).fetchSockets();
+  io.to(canvasId).emit(
+    "presence",
+    sockets.map((s) => ({ userId: s.id, username: s.data.username as string })),
+  );
 }
 
 interface SocketWithUser extends Socket {
@@ -30,7 +42,26 @@ function randomGuestName(): string {
 
 export function setUpSockets(io: Server) {
   io.use((socket: SocketWithUser, next) => {
-    // shared-link viewers always get a random guest identity
+    let payload: JwtPayload | null = null;
+    const cookieHeader = socket.handshake.headers.cookie;
+    const token = cookieHeader ? parse(cookieHeader).token : undefined;
+    if (token) {
+      try {
+        payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+      } catch {
+        // invalid token — treat as unauthenticated
+      }
+    }
+
+    // A real account keeps its username everywhere, shared links included,
+    // so the people list shows who it actually is.
+    if (payload && !payload.isGuest) {
+      socket.user = { id: payload.id, username: payload.username };
+      return next();
+    }
+
+    // shared-link viewers without an account get a friendly guest name
+    // instead of their "guest_xxxx" account name
     if (socket.handshake.auth?.guest) {
       const name = typeof socket.handshake.auth.guestName === "string" && socket.handshake.auth.guestName
         ? socket.handshake.auth.guestName
@@ -39,18 +70,9 @@ export function setUpSockets(io: Server) {
       return next();
     }
 
-    const cookieHeader = socket.handshake.headers.cookie;
-    if (cookieHeader) {
-      const token = parse(cookieHeader).token;
-      if (token) {
-        try {
-          const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
-          socket.user = { id: payload.id, username: payload.username };
-          return next();
-        } catch {
-          // invalid token — fall through to guest
-        }
-      }
+    if (payload) {
+      socket.user = { id: payload.id, username: payload.username };
+      return next();
     }
     // unauthenticated: give them a guest identity
     socket.user = { id: socket.id, username: randomGuestName() };
@@ -68,6 +90,7 @@ export function setUpSockets(io: Server) {
       return;
     }
     const user = socket.user;
+    socket.data.username = user.username;
 
     let currentCanvas: string | null = null;
 
@@ -88,9 +111,18 @@ export function setUpSockets(io: Server) {
             ack?.({ ok: false, error: "Forbidden" });
             return;
           }
+          // switching canvases: drop out of the old room's people list
+          if (currentCanvas && currentCanvas !== canvasId) {
+            const previous = currentCanvas;
+            socket.leave(previous);
+            socket.to(previous).emit("cursor:leave", { userId: socket.id });
+            broadcastPresence(io, previous).catch(() => {});
+          }
           socket.join(canvasId);
           currentCanvas = canvasId;
           ack?.({ ok: true });
+          // after the ack, so a failure here can't reach the catch below and ack twice
+          broadcastPresence(io, canvasId).catch(() => {});
         } catch {
           ack?.({ ok: false, error: "Internal error" });
         }
@@ -147,9 +179,12 @@ export function setUpSockets(io: Server) {
       });
     });
 
+    // by "disconnect" Socket.IO has already removed this socket from its
+    // rooms, so the list sent here no longer includes it
     socket.on("disconnect", () => {
       if (currentCanvas) {
         socket.to(currentCanvas).emit("cursor:leave", { userId: socket.id });
+        broadcastPresence(io, currentCanvas).catch(() => {});
       }
     });
   });

@@ -136,6 +136,68 @@ describe("socket events", () => {
   });
 });
 
+describe("presence", () => {
+  type Person = { userId: string; username: string };
+
+  test("everyone in the room gets the full list when someone joins", (done) => {
+    clientA.emit("canvas:join", "canvas-1", () => {
+      clientA.on("presence", (people: Person[]) => {
+        if (people.length < 2) return;
+        expect(people.map((p) => p.userId).sort()).toEqual([clientA.id, clientB.id].sort());
+        expect(people.every((p) => p.username === "testuser")).toBe(true);
+        done();
+      });
+      clientB.emit("canvas:join", "canvas-1");
+    });
+  });
+
+  test("the list drops a person when they disconnect", (done) => {
+    bothJoined("canvas-1", () => {
+      // wait out the join broadcasts so only the post-disconnect list counts
+      setTimeout(() => {
+        clientA.on("presence", (people: Person[]) => {
+          expect(people.map((p) => p.userId)).toEqual([clientA.id]);
+          done();
+        });
+        clientB.disconnect();
+      }, 50);
+    });
+  });
+
+  test("a logged-in account keeps its username on a shared link", (done) => {
+    clientB.disconnect();
+    const port = (httpServer.address() as any).port;
+    const shared = ioc(`http://localhost:${port}`, {
+      extraHeaders: { cookie: authCookie },
+      auth: { guest: true, guestName: "SwiftFox" },
+    });
+    shared.emit("canvas:join", "canvas-1", () => {});
+    shared.on("presence", (people: Person[]) => {
+      expect(people.find((p) => p.userId === shared.id)?.username).toBe("testuser");
+      shared.disconnect();
+      done();
+    });
+  });
+
+  test("a guest on a shared link shows up under their guest name", (done) => {
+    clientB.disconnect();
+    const port = (httpServer.address() as any).port;
+    const guestToken = jwt.sign({ id: "guest-1", username: "guest_abc", isGuest: true }, "test-secret");
+    const shared = ioc(`http://localhost:${port}`, {
+      extraHeaders: { cookie: `token=${guestToken}` },
+      auth: { guest: true, guestName: "SwiftFox" },
+    });
+    // a public canvas, since the guest doesn't own it
+    mockCanvas.getById.mockResolvedValue({ ...ownedCanvas, is_public: true });
+    shared.emit("canvas:join", "canvas-1", () => {});
+    shared.on("presence", (people: Person[]) => {
+      expect(people.find((p) => p.userId === shared.id)?.username).toBe("SwiftFox");
+      shared.disconnect();
+      done();
+    });
+  });
+});
+
 describe("canvas:join authorization", () => {
   test("acks ok:true and receives room broadcasts when the socket owns the canvas", (done) => {
     clientA.emit("canvas:join", "canvas-1", (result: { ok: boolean }) => {
@@ -175,6 +237,18 @@ describe("canvas:join authorization", () => {
           done();
         }, 100);
       });
+    });
+  });
+
+  test("rejected joins don't show up in the room's presence list", (done) => {
+    mockCanvas.getById.mockResolvedValueOnce({ ...ownedCanvas, user_id: "someone-else" });
+
+    clientA.emit("canvas:join", "canvas-1", () => {
+      clientB.on("presence", (people: { userId: string }[]) => {
+        expect(people.map((p) => p.userId)).toEqual([clientB.id]);
+        done();
+      });
+      clientB.emit("canvas:join", "canvas-1");
     });
   });
 
