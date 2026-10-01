@@ -84,15 +84,33 @@ function CursorProvider({ ref, children, ...props }: CursorProviderProps) {
 }
 
 type CursorProps = HTMLMotionProps<'div'> & {
+  // Optional spring between position updates. Leave unset for the local
+  // mouse (any smoothing there reads as lag); set it for remote cursors,
+  // whose positions arrive in throttled steps and would otherwise jump.
+  transition?: SpringOptions;
   children: React.ReactNode;
 };
 
-function Cursor({ ref, children, className, style, ...props }: CursorProps) {
+function Cursor({
+  ref,
+  children,
+  className,
+  style,
+  transition,
+  ...props
+}: CursorProps) {
   const { cursorPos, isActive, containerRef, cursorRef } = useCursor();
   React.useImperativeHandle(ref, () => cursorRef.current as HTMLDivElement);
 
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
+  // Start at the first known position, not 0, so a spring doesn't fly the
+  // cursor in from the top-left corner when it first appears.
+  const x = useMotionValue(cursorPos.x);
+  const y = useMotionValue(cursorPos.y);
+
+  // Hooks can't be conditional, so the springs always exist; they're only
+  // used when a transition is passed.
+  const springX = useSpring(x, transition);
+  const springY = useSpring(y, transition);
 
   React.useEffect(() => {
     const parentElement = containerRef.current?.parentElement;
@@ -119,7 +137,11 @@ function Cursor({ ref, children, className, style, ...props }: CursorProps) {
             'transform-[translate(-50%,-50%)] pointer-events-none z-[9999] absolute',
             className,
           )}
-          style={{ top: y, left: x, ...style }}
+          style={{
+            top: transition ? springY : y,
+            left: transition ? springX : x,
+            ...style,
+          }}
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0, opacity: 0 }}
@@ -167,8 +189,9 @@ function CursorFollow({
     () => cursorFollowRef.current as HTMLDivElement,
   );
 
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
+  // same reason as Cursor: don't spring in from (0, 0) on first appearance
+  const x = useMotionValue(cursorPos.x);
+  const y = useMotionValue(cursorPos.y);
 
   const springX = useSpring(x, transition);
   const springY = useSpring(y, transition);
