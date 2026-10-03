@@ -129,6 +129,8 @@ export default function App() {
   const isMouseDown = useRef(false);
   // undo stack — see hooks/useCanvasHistory
   const history = useCanvasHistory(nodes);
+  // each drawing being resized right now -> how it looked before the drag
+  const resizeStart = useRef<Record<string, Node>>({});
 
   // flush pending erase on mouseup
   useEffect(() => {
@@ -209,7 +211,13 @@ export default function App() {
         );
         return prev.map((n) =>
           n.id === data.id
-            ? { ...n, content: data.content, language: data.language ?? n.language }
+            ? {
+                ...n,
+                content: data.content,
+                language: data.language ?? n.language,
+                // a drawing's stroke lives in its content (e.g. after a resize)
+                points: n.type === "draw" ? JSON.parse(data.content) : n.points,
+              }
             : n,
         );
       });
@@ -528,6 +536,34 @@ export default function App() {
     }
   }, [canvasId, history]);
 
+  // Sets a drawing's position and stroke (its content) — for resizing and
+  // for undoing a resize. `save` is false for the in-between frames of a drag.
+  const applyShape = useCallback((id: string, x: number, y: number, content: string, save = true) => {
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: JSON.parse(content) } : n)));
+    if (!canvasId) return;
+    socket.emit("block:moved", canvasId, { id, x, y });
+    socket.emit("block:updated", canvasId, { id, content });
+    if (save) {
+      updateBlockPosition(canvasId, id, x, y);
+      updateBlockContent(canvasId, id, content);
+    }
+  }, [canvasId]);
+
+  // One drag of a drawing's resize handle: every call shows the new shape
+  // here and to everyone else; the last one (done) saves it and records a
+  // single undo step back to the shape it started from.
+  const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
+    if (!resizeStart.current[id]) {
+      const before = history.nodesRef.current.find((n) => n.id === id);
+      if (before) resizeStart.current[id] = before;
+    }
+    applyShape(id, x, y, JSON.stringify(points), done);
+    if (!done) return;
+    const before = resizeStart.current[id];
+    delete resizeStart.current[id];
+    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
+  }, [history, applyShape]);
+
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
@@ -562,7 +598,7 @@ export default function App() {
   const { selectedId, pointer } = useCanvasShortcuts({
     enabled: true,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, recreateBlock },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, recreateBlock },
     canvasRef,
     rootRef,
   });
@@ -858,6 +894,7 @@ export default function App() {
               points={node.points ?? []}
               onMove={moveNode}
               onMarkErase={handleMarkErase}
+              onResize={resizeDrawing}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedId === node.id}
               mode={mode}

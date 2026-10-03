@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import React from "react";
 import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
@@ -11,6 +11,26 @@ export interface Point {
 // See FloatingNode.tsx for why dragging is throttled this way.
 const DRAG_SYNC_INTERVAL_MS = 40;
 
+// Resize handles: four corners stretch both ways, four edges stretch one way.
+// fx/fy place each handle on the selection box (0 = left/top, 1 = right/bottom).
+type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+const HANDLES: { handle: Handle; fx: number; fy: number; cursor: string }[] = [
+  { handle: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
+  { handle: "n", fx: 0.5, fy: 0, cursor: "ns-resize" },
+  { handle: "ne", fx: 1, fy: 0, cursor: "nesw-resize" },
+  { handle: "e", fx: 1, fy: 0.5, cursor: "ew-resize" },
+  { handle: "se", fx: 1, fy: 1, cursor: "nwse-resize" },
+  { handle: "s", fx: 0.5, fy: 1, cursor: "ns-resize" },
+  { handle: "sw", fx: 0, fy: 1, cursor: "nesw-resize" },
+  { handle: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
+];
+const MIN_SIZE = 4; // a drawing can't be squashed smaller than this
+const BOX_PAD = 6; // matches the selection outline's offset
+const HANDLE_SIZE = 8;
+
+// two decimals is plenty, and keeps the saved JSON from bloating
+const round = (n: number) => Math.round(n * 100) / 100;
+
 interface Props {
   id: string;
   x: number;
@@ -18,6 +38,9 @@ interface Props {
   points: Point[];
   onMove: (id: string, x: number, y: number) => void;
   onMarkErase: (id: string) => void;
+  // Called while a resize handle is dragged (throttled) and once more with
+  // done=true on release. Omitted for viewers who can't edit.
+  onResize?: (id: string, x: number, y: number, points: Point[], done: boolean) => void;
   pendingErase: boolean;
   // clicked last — Ctrl+C copies this block
   selected?: boolean;
@@ -36,6 +59,7 @@ export default React.memo(function DrawingNode({
   points,
   onMove,
   onMarkErase,
+  onResize,
   pendingErase,
   selected,
   mode,
@@ -50,9 +74,71 @@ export default React.memo(function DrawingNode({
   yRef.current = y;
   onMoveRef.current = onMove;
 
-  const width = Math.max(...points.map((p) => p.x), 1);
-  const height = Math.max(...points.map((p) => p.y), 1);
-  const pathData = strokePath(points);
+  // While a handle is being dragged, the drawing renders from this local
+  // preview every frame; the page only hears about it at the throttled rate.
+  const [preview, setPreview] = useState<{ x: number; y: number; points: Point[] } | null>(null);
+  const shown = preview ?? { x, y, points };
+
+  const width = Math.max(...shown.points.map((p) => p.x), 1);
+  const height = Math.max(...shown.points.map((p) => p.y), 1);
+  const pathData = strokePath(shown.points);
+
+  function handleResizeMouseDown(e: React.MouseEvent, handle: Handle) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!onResize || !containerRef.current) return;
+    const resize = onResize;
+    const startClient = { x: e.clientX, y: e.clientY };
+    const start = { x, y, points, width, height };
+    // Screen pixels per canvas unit, read off the rendered box, so the edge
+    // follows the mouse exactly at any zoom level.
+    const zoom = containerRef.current.getBoundingClientRect().width / width || 1;
+    let latest: { x: number; y: number; points: Point[] } | null = null;
+    let lastSync = 0;
+
+    function onMouseMove(mv: MouseEvent) {
+      const dx = (mv.clientX - startClient.x) / zoom;
+      const dy = (mv.clientY - startClient.y) / zoom;
+
+      // Dragging an east/south edge grows the box; west/north grows it the
+      // other way, so those subtract the mouse movement.
+      let w = start.width + (handle.includes("e") ? dx : handle.includes("w") ? -dx : 0);
+      let h = start.height + (handle.includes("s") ? dy : handle.includes("n") ? -dy : 0);
+      w = Math.max(w, MIN_SIZE);
+      h = Math.max(h, MIN_SIZE);
+      // Shift on a corner keeps the drawing's proportions.
+      if (mv.shiftKey && handle.length === 2) {
+        const f = Math.max(w / start.width, h / start.height);
+        w = start.width * f;
+        h = start.height * f;
+      }
+
+      // Points are relative to the top-left corner, so growing to the
+      // west/north moves that corner and scales the points from there.
+      const sx = w / start.width;
+      const sy = h / start.height;
+      latest = {
+        x: round(start.x + (handle.includes("w") ? start.width - w : 0)),
+        y: round(start.y + (handle.includes("n") ? start.height - h : 0)),
+        points: start.points.map((p) => ({ x: round(p.x * sx), y: round(p.y * sy) })),
+      };
+      setPreview(latest);
+
+      const now = performance.now();
+      if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
+        lastSync = now;
+        resize(id, latest.x, latest.y, latest.points, false);
+      }
+    }
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      if (latest) resize(id, latest.x, latest.y, latest.points, true);
+      setPreview(null);
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
 
   function handleDragMouseDown(e: React.MouseEvent) {
     const startX = e.clientX;
@@ -103,8 +189,8 @@ export default React.memo(function DrawingNode({
       data-node-id={id}
       className="absolute group outline-none"
       style={{
-        left: x,
-        top: y,
+        left: shown.x,
+        top: shown.y,
         width,
         height,
         opacity: pendingErase ? 0.3 : 1,
@@ -155,6 +241,25 @@ export default React.memo(function DrawingNode({
           style={{ pointerEvents: "none" }}
         />
       </svg>
+
+      {selected && mode === "select" && onResize &&
+        HANDLES.map(({ handle, fx, fy, cursor }) => (
+          <div
+            key={handle}
+            onMouseDown={(e) => handleResizeMouseDown(e, handle)}
+            className="absolute rounded-sm border"
+            style={{
+              left: -BOX_PAD + fx * (width + 2 * BOX_PAD) - HANDLE_SIZE / 2,
+              top: -BOX_PAD + fy * (height + 2 * BOX_PAD) - HANDLE_SIZE / 2,
+              width: HANDLE_SIZE,
+              height: HANDLE_SIZE,
+              background: isDark ? "#121212" : "#ffffff",
+              borderColor: "#4fb4f2",
+              cursor,
+              pointerEvents: "auto", // the container itself ignores the mouse
+            }}
+          />
+        ))}
     </div>
   );
 });

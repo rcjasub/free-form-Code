@@ -21,7 +21,9 @@ export type HistoryEntry =
   | { kind: "create"; id: string }
   | { kind: "delete"; nodes: CanvasNode[] } // one eraser drag can delete several
   | { kind: "move"; id: string; x: number; y: number }
-  | { kind: "language"; id: string; language: Language; content: string };
+  | { kind: "language"; id: string; language: Language; content: string }
+  // a drawing's position and stroke before it was resized
+  | { kind: "reshape"; id: string; x: number; y: number; content: string };
 
 const MAX_HISTORY = 100;
 
@@ -69,6 +71,7 @@ export interface CanvasOps {
   deleteNode: (id: string, record: boolean) => void;
   moveNode: (id: string, x: number, y: number, record: boolean) => void;
   applyLanguage: (id: string, language: Language, content: string) => void;
+  applyShape: (id: string, x: number, y: number, content: string) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
 }
@@ -94,7 +97,7 @@ export function useCanvasShortcuts({ enabled, history, ops, canvasRef, rootRef }
   // `history` and `selectedId` — never a stale copy from an earlier render.
 
   const undo = useEffectEvent(async () => {
-    const { deleteNode, moveNode, applyLanguage, recreateBlock } = ops;
+    const { deleteNode, moveNode, applyLanguage, applyShape, recreateBlock } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
     // Skip entries for blocks someone else has deleted since.
@@ -109,6 +112,9 @@ export function useCanvasShortcuts({ enabled, history, ops, canvasRef, rootRef }
       } else if (entry.kind === "language") {
         if (!exists(entry.id)) continue;
         applyLanguage(entry.id, entry.language, entry.content);
+      } else if (entry.kind === "reshape") {
+        if (!exists(entry.id)) continue;
+        applyShape(entry.id, entry.x, entry.y, entry.content);
       } else {
         for (const node of entry.nodes) {
           const newId = await recreateBlock(node, node.x, node.y);
