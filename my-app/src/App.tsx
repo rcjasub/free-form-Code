@@ -18,6 +18,7 @@ import {
   getAllBlocks,
   createBlock,
   createDrawingBlock,
+  createBlockFrom,
   updateBlockPosition,
   deleteBlock,
   updateBlockContent,
@@ -27,6 +28,7 @@ import { LANGUAGE_OPTIONS, languageOption, type Language } from "./lib/languages
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe } from "./API/auth";
+import { useCanvasHistory, useCanvasShortcuts } from "./hooks/useCanvasHistory";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw";
@@ -125,12 +127,16 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const isMouseDown = useRef(false);
+  // undo stack — see hooks/useCanvasHistory
+  const history = useCanvasHistory(nodes);
 
   // flush pending erase on mouseup
   useEffect(() => {
     function onMouseUp() {
       if (pendingErase.size === 0) return;
-      pendingErase.forEach(id => deleteNode(id));
+      const erased = history.nodesRef.current.filter((n) => pendingErase.has(n.id));
+      if (erased.length > 0) history.record({ kind: "delete", nodes: erased });
+      pendingErase.forEach(id => deleteNode(id, false));
       setPendingErase(new Set());
     }
     window.addEventListener("mouseup", onMouseUp);
@@ -302,6 +308,7 @@ export default function App() {
     const node = blockToNode(data);
     setNodes((prev) => [...prev, node]);
     socket.emit("block:created", canvasId, data);
+    history.record({ kind: "create", id: node.id });
   }
 
   // The canvas layer is only ever sized to the viewport, then visually
@@ -348,6 +355,7 @@ export default function App() {
     ]);
     console.log("[socket] emitting block:created", data);
     socket.emit("block:created", canvasId, data);
+    history.record({ kind: "create", id: data.id });
   }
 
   function applyZoom(newScale: number) {
@@ -487,7 +495,15 @@ export default function App() {
     }, 800);
   }, [canvasId]);
 
-  const moveNode = useCallback((id: string, x: number, y: number) => {
+  // `record` is false when undo itself is doing the move/delete, so undoing
+  // doesn't push a new history entry.
+  const moveNode = useCallback((id: string, x: number, y: number, record = true) => {
+    // A drag calls this many times; only its first call (no save pending
+    // yet) records where the block started.
+    if (record && !moveSaveTimers.current[id]) {
+      const before = history.nodesRef.current.find((n) => n.id === id);
+      if (before) history.record({ kind: "move", id, x: before.x, y: before.y });
+    }
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     if (!canvasId) return;
     // socket emit stays immediate so other viewers see live drag movement;
@@ -497,17 +513,59 @@ export default function App() {
     socket.emit("block:moved", canvasId, { id, x, y });
     clearTimeout(moveSaveTimers.current[id]);
     moveSaveTimers.current[id] = setTimeout(() => {
+      delete moveSaveTimers.current[id];
       updateBlockPosition(canvasId, id, x, y);
     }, 300);
-  }, [canvasId]);
+  }, [canvasId, history]);
 
-  const deleteNode = useCallback((id: string) => {
+  const deleteNode = useCallback((id: string, record = true) => {
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (record && node) history.record({ kind: "delete", nodes: [node] });
     setNodes((prev) => prev.filter((n) => n.id !== id));
     if (canvasId) {
       deleteBlock(canvasId, id);
       socket.emit("block:deleted", canvasId, id);
     }
+  }, [canvasId, history]);
+
+  // Saves a copy of a block as a brand-new block at (x, y) — for paste and
+  // for undoing a delete. The server hands back a new id.
+  const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
+    if (!canvasId) return null;
+    const isDraw = src.type === "draw";
+    const { data } = await createBlockFrom(canvasId, {
+      type: isDraw ? "draw" : "code",
+      content: src.content,
+      x,
+      y,
+      width: isDraw ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : 300,
+    });
+    // the create endpoint ignores language, so set it in a second call
+    if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
+    const block = { ...data, language: src.language };
+    setNodes((prev) => [...prev, blockToNode(block)]);
+    socket.emit("block:created", canvasId, block);
+    return String(data.id);
   }, [canvasId]);
+
+  // Sets a block's language and content — saving content only if it changed.
+  const applyLanguage = useCallback((id: string, language: Language, content: string) => {
+    if (!canvasId) return;
+    const before = history.nodesRef.current.find((n) => n.id === id);
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
+    updateBlockLanguage(canvasId, id, language);
+    if (content !== before?.content) updateBlockContent(canvasId, id, content);
+    socket.emit("block:updated", canvasId, { id, content, language });
+  }, [canvasId, history]);
+
+  // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
+  const { selectedId, pointer } = useCanvasShortcuts({
+    enabled: true,
+    history,
+    ops: { deleteNode, moveNode, applyLanguage, recreateBlock },
+    canvasRef,
+    rootRef,
+  });
 
   // saveSelection only writes to a ref — no canvasId dependency, always stable.
   const saveSelection = useCallback((content: string, el: HTMLElement) => {
@@ -552,11 +610,9 @@ export default function App() {
       !node.content.trim() || LANGUAGE_OPTIONS.some((l) => l.starter === node.content);
     const content = isUntouched ? (languageOption(language).starter ?? "") : node.content;
 
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
-    updateBlockLanguage(canvasId, id, language);
-    if (content !== node.content) updateBlockContent(canvasId, id, content);
-    socket.emit("block:updated", canvasId, { id, content, language });
-  }, [nodes, canvasId]);
+    history.record({ kind: "language", id, language: node.language ?? "javascript", content: node.content });
+    applyLanguage(id, language, content);
+  }, [nodes, canvasId, history, applyLanguage]);
 
   // inline lambda in JSX would be a new reference every render — extracted so memo works
   const handleMarkErase = useCallback((id: string) => {
@@ -564,12 +620,13 @@ export default function App() {
   }, []);
 
   function handleMouseMove(e: React.MouseEvent) {
+    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
+    pointer.current = { x, y };
     if (!canvasId) return;
     const now = Date.now();
     if (now - lastCursorEmit.current < 50) return;
     lastCursorEmit.current = now;
-    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
-    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
     socket.emit("cursor:move", canvasId, { x, y });
   }
 
@@ -802,6 +859,7 @@ export default function App() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
+              selected={selectedId === node.id}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}

@@ -26,6 +26,14 @@ export function createDrawingBlock(canvasId: string, x: number, y: number, width
   });
 }
 
+// Recreates a block from a saved copy — used for paste and for undoing a delete.
+export function createBlockFrom(
+  canvasId: string,
+  block: { type: string; content: string; x: number; y: number; width: number },
+) {
+  return api.post(`/canvases/${canvasId}/blocks`, block);
+}
+
 export function updateBlockPosition(canvasId: string, blockId: string, x: number, y: number) {
   return api.put(`/canvases/${canvasId}/blocks/${blockId}`, { x, y });
 }

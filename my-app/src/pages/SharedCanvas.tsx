@@ -15,6 +15,7 @@ import { strokePath } from "@/lib/smoothPath";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
+import { useCanvasHistory, useCanvasShortcuts } from "@/hooks/useCanvasHistory";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
 interface Node {
@@ -128,6 +129,9 @@ export default function SharedCanvas() {
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
+  // undo stack — see hooks/useCanvasHistory
+  const history = useCanvasHistory(nodes);
+
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -143,7 +147,9 @@ export default function SharedCanvas() {
   useEffect(() => {
     function onMouseUp() {
       if (pendingErase.size === 0) return;
-      pendingErase.forEach(id => deleteNode(id));
+      const erased = history.nodesRef.current.filter((n) => pendingErase.has(n.id));
+      if (erased.length > 0) history.record({ kind: "delete", nodes: erased });
+      pendingErase.forEach(id => deleteNode(id, false));
       setPendingErase(new Set());
     }
     window.addEventListener("mouseup", onMouseUp);
@@ -370,8 +376,16 @@ export default function SharedCanvas() {
     }, 800);
   }, [canEdit]);
 
-  const moveNode = useCallback((id: string, x: number, y: number) => {
+  // `record` is false when undo itself is doing the move/delete, so undoing
+  // doesn't push a new history entry.
+  const moveNode = useCallback((id: string, x: number, y: number, record = true) => {
     if (!canEdit) return;
+    // A drag calls this many times; only its first call (no save pending
+    // yet) records where the block started.
+    if (record && !moveSaveTimers.current[id]) {
+      const before = history.nodesRef.current.find((n) => n.id === id);
+      if (before) history.record({ kind: "move", id, x: before.x, y: before.y });
+    }
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     const cid = canvasIdRef.current;
     if (!cid) return;
@@ -382,6 +396,7 @@ export default function SharedCanvas() {
     socket.emit("block:moved", cid, { id, x, y });
     clearTimeout(moveSaveTimers.current[id]);
     moveSaveTimers.current[id] = setTimeout(() => {
+      delete moveSaveTimers.current[id];
       fetch(`/api/canvases/${cid}/blocks/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -389,17 +404,85 @@ export default function SharedCanvas() {
         body: JSON.stringify({ x, y }),
       });
     }, 300);
-  }, [canEdit]);
+  }, [canEdit, history]);
 
-  const deleteNode = useCallback((id: string) => {
+  const deleteNode = useCallback((id: string, record = true) => {
     if (!canEdit) return;
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (record && node) history.record({ kind: "delete", nodes: [node] });
     setNodes((prev) => prev.filter((n) => n.id !== id));
     const cid = canvasIdRef.current;
     if (cid) {
       fetch(`/api/canvases/${cid}/blocks/${id}`, { method: "DELETE", credentials: "include" });
       socket.emit("block:deleted", cid, id);
     }
+  }, [canEdit, history]);
+
+  // Saves a copy of a block as a brand-new block at (x, y) — for paste and
+  // for undoing a delete. The server hands back a new id.
+  const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
+    const cid = canvasIdRef.current;
+    if (!canEdit || !cid) return null;
+    const isDraw = src.type === "draw";
+    try {
+      const res = await fetchWithTimeout(`/api/canvases/${cid}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          type: isDraw ? "draw" : "code",
+          content: src.content,
+          x,
+          y,
+          width: isDraw ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : 300,
+        }),
+      });
+      const data = await res.json();
+      // the create endpoint ignores language, so set it in a second call
+      if (src.language) {
+        await fetchWithTimeout(`/api/canvases/${cid}/blocks/${data.id}/language`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ language: src.language }),
+        });
+      }
+      const block = { ...data, language: src.language };
+      setNodes((prev) => [...prev, blockToNode(block)]);
+      socket.emit("block:created", cid, block);
+      return String(data.id);
+    } catch {
+      showError("Couldn't restore the block — check your connection and try again.");
+      return null;
+    }
   }, [canEdit]);
+
+  // Sets a block's language and content — saving content only if it changed.
+  const applyLanguage = useCallback((id: string, language: Language, content: string) => {
+    const cid = canvasIdRef.current;
+    if (!canEdit || !cid) return;
+    const before = history.nodesRef.current.find((n) => n.id === id);
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
+    const patch = (path: string, body: object) =>
+      fetch(`/api/canvases/${cid}/blocks/${id}/${path}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+    patch("language", { language });
+    if (content !== before?.content) patch("content", { content });
+    socket.emit("block:updated", cid, { id, content, language });
+  }, [canEdit, history]);
+
+  // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
+  const { selectedId, pointer } = useCanvasShortcuts({
+    enabled: canEdit,
+    history,
+    ops: { deleteNode, moveNode, applyLanguage, recreateBlock },
+    canvasRef,
+    rootRef,
+  });
 
   const handleRunNode = useCallback(async (id: string) => {
     if (!canEdit) return;
@@ -442,8 +525,7 @@ export default function SharedCanvas() {
   const changeLanguage = useCallback((id: string, language: Language) => {
     if (!canEdit) return;
     const node = nodes.find((n) => n.id === id);
-    const cid = canvasIdRef.current;
-    if (!node || !cid) return;
+    if (!node || !canvasIdRef.current) return;
 
     // Swap in the new language's starter if the block is empty or still holds
     // another language's untouched starter; never overwrite real code.
@@ -451,18 +533,9 @@ export default function SharedCanvas() {
       !node.content.trim() || LANGUAGE_OPTIONS.some((l) => l.starter === node.content);
     const content = isUntouched ? (languageOption(language).starter ?? "") : node.content;
 
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
-    const patch = (path: string, body: object) =>
-      fetch(`/api/canvases/${cid}/blocks/${id}/${path}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-    patch("language", { language });
-    if (content !== node.content) patch("content", { content });
-    socket.emit("block:updated", cid, { id, content, language });
-  }, [canEdit, nodes]);
+    history.record({ kind: "language", id, language: node.language ?? "javascript", content: node.content });
+    applyLanguage(id, language, content);
+  }, [canEdit, nodes, history, applyLanguage]);
 
   const handleMarkErase = useCallback((id: string) => {
     if (!canEdit) return;
@@ -478,13 +551,14 @@ export default function SharedCanvas() {
   }, []);
 
   function handleMouseMove(e: React.MouseEvent) {
+    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
+    pointer.current = { x, y };
     const id = canvasIdRef.current;
     if (!id) return;
     const now = Date.now();
     if (now - lastCursorEmit.current < 50) return;
     lastCursorEmit.current = now;
-    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
-    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
     socket.emit("cursor:move", id, { x, y });
   }
 
@@ -511,6 +585,7 @@ export default function SharedCanvas() {
       const data = await res.json();
       setNodes((prev) => [...prev, blockToNode(data)]);
       socket.emit("block:created", canvasId, data);
+      history.record({ kind: "create", id: String(data.id) });
     } catch {
       showError("Couldn't save your drawing — check your connection and try again.");
     }
@@ -562,6 +637,7 @@ export default function SharedCanvas() {
       const data = await res.json();
       setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
       socket.emit("block:created", canvasId, data);
+      history.record({ kind: "create", id: data.id });
     } catch {
       showError("Couldn't create the block — check your connection and try again.");
     }
@@ -714,6 +790,7 @@ export default function SharedCanvas() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
+              selected={selectedId === node.id}
               mode={canEdit ? mode : "select"}
               isMouseDown={isMouseDown}
               isDark={isDark}

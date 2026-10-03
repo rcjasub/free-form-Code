@@ -19,6 +19,8 @@ interface Props {
   onMove: (id: string, x: number, y: number) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
+  // clicked last — Ctrl+C copies this block
+  selected?: boolean;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -35,6 +37,7 @@ export default React.memo(function DrawingNode({
   onMove,
   onMarkErase,
   pendingErase,
+  selected,
   mode,
   isMouseDown,
   isDark,
@@ -105,6 +108,8 @@ export default React.memo(function DrawingNode({
         width,
         height,
         opacity: pendingErase ? 0.3 : 1,
+        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outlineOffset: 6,
         transition: "opacity 0.15s",
         // The bounding box is usually much bigger than the visible stroke
         // (e.g. a diagonal line's box is a full rectangle). If this div were
