@@ -6,6 +6,7 @@ import type { Mode } from "../App";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/languages";
 import AnimatedDropdown from "./ui/animated-dropdown";
 import { draculaDark, draculaLight } from "../lib/codeTheme";
+import LinkBadge from "./LinkBadge";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
 
@@ -31,6 +32,7 @@ interface Props {
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
   onRun: (id: string) => void;
+  link?: string | null;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -85,6 +87,7 @@ export default React.memo(function FloatingNode({
   onMarkErase,
   pendingErase,
   onRun,
+  link,
   mode,
   isMouseDown,
   isDark,
@@ -324,6 +327,8 @@ export default React.memo(function FloatingNode({
         }}
         placeholder="type here..."
       />
+
+      {link && <LinkBadge link={link} isDark={isDark} />}
     </div>
   );
 });

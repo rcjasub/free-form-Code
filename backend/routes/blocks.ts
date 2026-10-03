@@ -6,11 +6,12 @@ import {
   updateBlock,
   updateBlockContent,
   updateBlockLanguage,
+  updateBlockLink,
 } from "../controllers/blocksController";
 import { optionalAuthenticate } from "../middleware/auth";
 import { requireCanvasAccess } from "../middleware/canvasAccess";
 import { validate } from "../middleware/validate";
-import { createSchema, updateBlockSchema, updateBlockContentSchema, updateBlockLanguageSchema} from "../schemas/block.schema"
+import { createSchema, updateBlockSchema, updateBlockContentSchema, updateBlockLanguageSchema, updateBlockLinkSchema } from "../schemas/block.schema"
 
 
 // mergeParams: true allows this router to access :id from the parent route in server.ts
@@ -28,5 +29,6 @@ router.delete("/:blockId", deleteBlock);
 router.put("/:blockId", validate(updateBlockSchema), updateBlock);
 router.patch("/:blockId/content", validate(updateBlockContentSchema), updateBlockContent);
 router.patch("/:blockId/language", validate(updateBlockLanguageSchema), updateBlockLanguage);
+router.patch("/:blockId/link", validate(updateBlockLinkSchema), updateBlockLink);
 
 export default router;

@@ -3,6 +3,8 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
+import ImageNode from "@/components/ImageNode";
+import CanvasContextMenu from "@/components/CanvasContextMenu";
 import RemoteCursorMarker from "@/components/RemoteCursorMarker";
 import OutputBubble from "@/components/OutputBubble";
 import PresenceMenu from "@/components/PresenceMenu";
@@ -15,18 +17,11 @@ import { strokePath } from "@/lib/smoothPath";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
-import { useCanvasHistory, useCanvasShortcuts } from "@/hooks/useCanvasHistory";
+import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "@/hooks/useCanvasHistory";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
-interface Node {
-  id: string;
-  x: number;
-  y: number;
-  content: string;
-  type?: string;
-  language?: Language;
-  points?: Point[];
-}
+// a block as this page holds it — see hooks/useCanvasHistory
+type Node = CanvasNode;
 
 // shape of a block as returned by GET /canvases/:id/blocks — only the
 // fields this file actually reads off it.
@@ -37,14 +32,16 @@ interface ApiBlock {
   content: string;
   type?: string;
   language?: Language;
+  width?: number;
+  link?: string | null;
 }
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
 function blockToNode(b: ApiBlock): Node {
-  if (b.type === "draw") {
-    return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
-  }
-  return { id: b.id, x: b.x, y: b.y, content: b.content, language: b.language };
+  const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
+  if (b.type === "draw") return { ...common, type: "draw", points: JSON.parse(b.content) };
+  if (b.type === "image") return { ...common, type: "image", width: b.width };
+  return { ...common, language: b.language };
 }
 
 interface RemoteCursor {
@@ -217,6 +214,7 @@ export default function SharedCanvas() {
               language: data.language ?? n.language,
               // a drawing's stroke lives in its content (e.g. after a resize)
               points: n.type === "draw" ? JSON.parse(data.content) : n.points,
+              link: "link" in data ? data.link : n.link,
             }
           : n,
       ));
@@ -466,34 +464,51 @@ export default function SharedCanvas() {
 
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
+  // Sets or removes a block's link — for the right-click menu and for undo.
+  const applyLink = useCallback((id: string, link: string | null) => {
+    const cid = canvasIdRef.current;
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!canEdit || !cid || !node) return;
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, link } : n)));
+    fetch(`/api/canvases/${cid}/blocks/${id}/link`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ link }),
+    });
+    // block:updated requires content; resending the current content changes nothing
+    socket.emit("block:updated", cid, { id, content: node.content, link });
+  }, [canEdit, history]);
+
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
     const cid = canvasIdRef.current;
     if (!canEdit || !cid) return null;
-    const isDraw = src.type === "draw";
+    const type = src.type === "draw" || src.type === "image" ? src.type : "code";
     try {
       const res = await fetchWithTimeout(`/api/canvases/${cid}/blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          type: isDraw ? "draw" : "code",
+          type,
           content: src.content,
           x,
           y,
-          width: isDraw ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : 300,
+          width: type === "draw" ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : src.width ?? 300,
         }),
       });
       const data = await res.json();
-      // the create endpoint ignores language, so set it in a second call
-      if (src.language) {
-        await fetchWithTimeout(`/api/canvases/${cid}/blocks/${data.id}/language`, {
+      // the create endpoint ignores language and link, so set them in follow-up calls
+      const patch = (path: string, body: object) =>
+        fetchWithTimeout(`/api/canvases/${cid}/blocks/${data.id}/${path}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ language: src.language }),
+          body: JSON.stringify(body),
         });
-      }
-      const block = { ...data, language: src.language };
+      if (src.language) await patch("language", { language: src.language });
+      if (src.link) await patch("link", { link: src.link });
+      const block = { ...data, language: src.language, link: src.link ?? null };
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", cid, block);
       return String(data.id);
@@ -522,10 +537,12 @@ export default function SharedCanvas() {
   }, [canEdit, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedId, pointer } = useCanvasShortcuts({
+  const { selectedId, pointer, contextMenu } = useCanvasShortcuts({
     enabled: canEdit,
+    nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, recreateBlock },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock },
+    onError: showError,
     canvasRef,
     rootRef,
   });
@@ -826,7 +843,24 @@ export default function SharedCanvas() {
         }}
       >
         {nodes.map((node) =>
-          node.type === "draw" ? (
+          node.type === "image" ? (
+            <ImageNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              width={node.width ?? 300}
+              src={node.content}
+              link={node.link}
+              onMove={moveNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              selected={selectedId === node.id}
+              mode={canEdit ? mode : "select"}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ) : node.type === "draw" ? (
             <DrawingNode
               key={node.id}
               id={node.id}
@@ -836,6 +870,7 @@ export default function SharedCanvas() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               onResize={canEdit ? resizeDrawing : undefined}
+              link={node.link}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedId === node.id}
               mode={canEdit ? mode : "select"}
@@ -856,6 +891,7 @@ export default function SharedCanvas() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
+              link={node.link}
               mode={canEdit ? mode : "select"}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -894,6 +930,8 @@ export default function SharedCanvas() {
 
         <RemoteCursors cursors={remoteCursors} mySocketId={socket.id} />
       </div>
+
+      {contextMenu && <CanvasContextMenu {...contextMenu} isDark={isDark} />}
 
       {/* zoom controls */}
       <div

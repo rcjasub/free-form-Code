@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_canvases_user_id ON canvases(user_id);
 CREATE TABLE IF NOT EXISTS blocks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   canvas_id  UUID REFERENCES canvases(id) ON DELETE CASCADE,
-  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text', 'code', or 'draw'
+  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text', 'code', 'draw', or 'image'
   language   VARCHAR(20) NOT NULL DEFAULT 'javascript',  -- see LANGUAGES in sandbox.ts
   content    TEXT NOT NULL DEFAULT '',
   x          FLOAT NOT NULL DEFAULT 100,
@@ -51,3 +51,6 @@ CREATE INDEX IF NOT EXISTS idx_blocks_canvas_id ON blocks(canvas_id);
 
 -- per-block language: brings databases created before it existed up to date. Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS language VARCHAR(20) NOT NULL DEFAULT 'javascript';
+
+-- optional web link attached to a block (right-click > Add link). Safe to re-run.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS link TEXT;

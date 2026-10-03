@@ -6,6 +6,7 @@ export interface Block {
   type: string;
   language: string;
   content: string;
+  link: string | null;
   x: number;
   y: number;
   width: number;
@@ -86,6 +87,18 @@ export async function updateBlockLanguage(
   const result = await pool.query<Block>(
     `UPDATE blocks SET language = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
     [language, blockId, canvasId],
+  );
+  return result.rows[0];
+}
+
+export async function updateBlockLink(
+  canvasId: string,
+  blockId: string,
+  link: string | null,
+): Promise<Block> {
+  const result = await pool.query<Block>(
+    `UPDATE blocks SET link = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
+    [link, blockId, canvasId],
   );
   return result.rows[0];
 }

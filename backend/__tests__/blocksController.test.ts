@@ -5,9 +5,11 @@ import {
   updateBlock,
   updateBlockContent,
   updateBlockLanguage,
+  updateBlockLink,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
+import { updateBlockLinkSchema } from "../schemas/block.schema";
 
 jest.mock("../models/blocks");
 jest.mock("../redis", () => ({
@@ -27,6 +29,7 @@ const fakeBlock = {
   type: "draw",
   language: "javascript",
   content: "[]",
+  link: null,
   x: 0,
   y: 0,
   width: 10,
@@ -231,5 +234,48 @@ describe("updateBlockLanguage", () => {
     await updateBlockLanguage(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
+describe("updateBlockLink", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = { params: { id: "1", blockId: "b1" }, body: { link: "https://example.com" } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("returns 200 and invalidates the cache on successful update", async () => {
+    mockBlocks.updateBlockLink.mockResolvedValue({ ...fakeBlock, link: "https://example.com" });
+
+    await updateBlockLink(req, res);
+
+    expect(mockBlocks.updateBlockLink).toHaveBeenCalledWith("1", "b1", "https://example.com");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+  });
+
+  test("returns 404 when the block doesn't exist", async () => {
+    mockBlocks.updateBlockLink.mockResolvedValue(undefined as any);
+
+    await updateBlockLink(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
+describe("updateBlockLinkSchema", () => {
+  test("accepts http(s) links and null (removes the link)", () => {
+    expect(updateBlockLinkSchema.safeParse({ link: "https://example.com/a?b=1" }).success).toBe(true);
+    expect(updateBlockLinkSchema.safeParse({ link: "http://localhost:3000" }).success).toBe(true);
+    expect(updateBlockLinkSchema.safeParse({ link: null }).success).toBe(true);
+  });
+
+  // the link becomes an <a href> for everyone on the canvas
+  test("rejects links that could run code or aren't web pages", () => {
+    expect(updateBlockLinkSchema.safeParse({ link: "javascript:alert(1)" }).success).toBe(false);
+    expect(updateBlockLinkSchema.safeParse({ link: "data:text/html,<script>alert(1)</script>" }).success).toBe(false);
+    expect(updateBlockLinkSchema.safeParse({ link: "not a url" }).success).toBe(false);
   });
 });

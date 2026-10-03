@@ -26,6 +26,10 @@ const allowedOrigins = [
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
 ];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
+// Pasted images are saved inside the block (as a data URL), so block
+// requests get a bigger body limit than the default 100kb everything else keeps.
+// Registered first: express.json skips bodies that are already parsed.
+app.use("/api/canvases/:id/blocks", express.json({ limit: "3mb" }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -40,6 +44,8 @@ const httpServer = createServer(app);
 // attach socket.io to the http server
 const io = new Server(httpServer, {
   cors: { origin: allowedOrigins, credentials: true },
+  // block:created carries a pasted image's data URL, which can pass the 1MB default
+  maxHttpBufferSize: 3e6,
 });
 
 // register all socket event handlers

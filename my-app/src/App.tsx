@@ -6,6 +6,8 @@ import { detectShape } from "./lib/shapeDetection";
 import { strokePath } from "./lib/smoothPath";
 import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
+import ImageNode from "./components/ImageNode";
+import CanvasContextMenu from "./components/CanvasContextMenu";
 import RemoteCursorMarker from "./components/RemoteCursorMarker";
 import OutputBubble from "./components/OutputBubble";
 import { ThemeToggleButton } from "./components/ThemeToggle";
@@ -23,25 +25,19 @@ import {
   deleteBlock,
   updateBlockContent,
   updateBlockLanguage,
+  updateBlockLink,
 } from "./API/block";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe } from "./API/auth";
-import { useCanvasHistory, useCanvasShortcuts } from "./hooks/useCanvasHistory";
+import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "./hooks/useCanvasHistory";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw";
 
-interface Node {
-  id: string;
-  x: number;
-  y: number;
-  content: string;
-  type?: string;
-  language?: Language;
-  points?: Point[];
-}
+// a block as this page holds it — see hooks/useCanvasHistory
+type Node = CanvasNode;
 
 interface RemoteCursor {
   userId: string;
@@ -52,10 +48,10 @@ interface RemoteCursor {
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
 function blockToNode(b: any): Node {
-  if (b.type === "draw") {
-    return { id: b.id, x: b.x, y: b.y, content: b.content, type: "draw", points: JSON.parse(b.content) };
-  }
-  return { id: b.id, x: b.x, y: b.y, content: b.content, language: b.language };
+  const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
+  if (b.type === "draw") return { ...common, type: "draw", points: JSON.parse(b.content) };
+  if (b.type === "image") return { ...common, type: "image", width: b.width };
+  return { ...common, language: b.language };
 }
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
@@ -118,6 +114,8 @@ export default function App() {
   // everyone in the room right now, from the server's "presence" broadcasts
   const [people, setPeople] = useState<{ userId: string; username: string }[]>([]);
   const lastCursorEmit = useRef(0);
+  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const errorToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { resolvedTheme } = useTheme();
   const lastSelection = useRef<{
     content: string;
@@ -217,6 +215,7 @@ export default function App() {
                 language: data.language ?? n.language,
                 // a drawing's stroke lives in its content (e.g. after a resize)
                 points: n.type === "draw" ? JSON.parse(data.content) : n.points,
+                link: "link" in data ? data.link : n.link,
               }
             : n,
         );
@@ -566,22 +565,44 @@ export default function App() {
 
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
+  function showError(message: string) {
+    setErrorToast(message);
+    if (errorToastTimer.current) clearTimeout(errorToastTimer.current);
+    errorToastTimer.current = setTimeout(() => setErrorToast(null), 4000);
+  }
+
+  // Sets or removes a block's link — for the right-click menu and for undo.
+  const applyLink = useCallback((id: string, link: string | null) => {
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!node || !canvasId) return;
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, link } : n)));
+    updateBlockLink(canvasId, id, link);
+    // block:updated requires content; resending the current content changes nothing
+    socket.emit("block:updated", canvasId, { id, content: node.content, link });
+  }, [canvasId, history]);
+
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
     if (!canvasId) return null;
-    const isDraw = src.type === "draw";
-    const { data } = await createBlockFrom(canvasId, {
-      type: isDraw ? "draw" : "code",
-      content: src.content,
-      x,
-      y,
-      width: isDraw ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : 300,
-    });
-    // the create endpoint ignores language, so set it in a second call
-    if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
-    const block = { ...data, language: src.language };
-    setNodes((prev) => [...prev, blockToNode(block)]);
-    socket.emit("block:created", canvasId, block);
-    return String(data.id);
+    const type = src.type === "draw" || src.type === "image" ? src.type : "code";
+    try {
+      const { data } = await createBlockFrom(canvasId, {
+        type,
+        content: src.content,
+        x,
+        y,
+        width: type === "draw" ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : src.width ?? 300,
+      });
+      // the create endpoint ignores language and link, so set them in follow-up calls
+      if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
+      if (src.link) await updateBlockLink(canvasId, data.id, src.link);
+      const block = { ...data, language: src.language, link: src.link ?? null };
+      setNodes((prev) => [...prev, blockToNode(block)]);
+      socket.emit("block:created", canvasId, block);
+      return String(data.id);
+    } catch {
+      showError("Couldn't save the block — check your connection and try again.");
+      return null;
+    }
   }, [canvasId]);
 
   // Sets a block's language and content — saving content only if it changed.
@@ -595,10 +616,12 @@ export default function App() {
   }, [canvasId, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedId, pointer } = useCanvasShortcuts({
+  const { selectedId, pointer, contextMenu } = useCanvasShortcuts({
     enabled: true,
+    nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, recreateBlock },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock },
+    onError: showError,
     canvasRef,
     rootRef,
   });
@@ -885,7 +908,24 @@ export default function App() {
         )}
 
         {nodes.map((node) =>
-          node.type === "draw" ? (
+          node.type === "image" ? (
+            <ImageNode
+              key={node.id}
+              id={node.id}
+              x={node.x}
+              y={node.y}
+              width={node.width ?? 300}
+              src={node.content}
+              link={node.link}
+              onMove={moveNode}
+              onMarkErase={handleMarkErase}
+              pendingErase={pendingErase.has(node.id)}
+              selected={selectedId === node.id}
+              mode={mode}
+              isMouseDown={isMouseDown}
+              isDark={isDark}
+            />
+          ) : node.type === "draw" ? (
             <DrawingNode
               key={node.id}
               id={node.id}
@@ -895,6 +935,7 @@ export default function App() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               onResize={resizeDrawing}
+              link={node.link}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedId === node.id}
               mode={mode}
@@ -916,6 +957,7 @@ export default function App() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
+              link={node.link}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -957,6 +999,15 @@ export default function App() {
 
         <RemoteCursors cursors={remoteCursors} mySocketId={socket.id} />
       </div>
+
+      {/* transient error toast */}
+      {errorToast && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 text-xs px-3 py-2 rounded-lg shadow-sm border bg-red-50 border-red-200 text-red-600 dark:bg-[#3a1f1f] dark:border-[#5c2c2c] dark:text-[#f5b5b5]">
+          {errorToast}
+        </div>
+      )}
+
+      {contextMenu && <CanvasContextMenu {...contextMenu} isDark={isDark} />}
 
       {/* zoom controls */}
       <div

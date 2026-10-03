@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import React from "react";
 import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
+import LinkBadge from "./LinkBadge";
 
 export interface Point {
   x: number;
@@ -42,6 +43,7 @@ interface Props {
   // done=true on release. Omitted for viewers who can't edit.
   onResize?: (id: string, x: number, y: number, points: Point[], done: boolean) => void;
   pendingErase: boolean;
+  link?: string | null;
   // clicked last — Ctrl+C copies this block
   selected?: boolean;
   mode: Mode;
@@ -61,6 +63,7 @@ export default React.memo(function DrawingNode({
   onMarkErase,
   onResize,
   pendingErase,
+  link,
   selected,
   mode,
   isMouseDown,
@@ -241,6 +244,8 @@ export default React.memo(function DrawingNode({
           style={{ pointerEvents: "none" }}
         />
       </svg>
+
+      {link && <LinkBadge link={link} isDark={isDark} />}
 
       {selected && mode === "select" && onResize &&
         HANDLES.map(({ handle, fx, fy, cursor }) => (
