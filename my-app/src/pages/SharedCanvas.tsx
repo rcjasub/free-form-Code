@@ -15,6 +15,7 @@ import { Pencil, Shapes } from "lucide-react";
 import { detectShape } from "@/lib/shapeDetection";
 import { strokePath } from "@/lib/smoothPath";
 import { parsePoints } from "@/lib/points";
+import { jsonOrThrow, saveErrorMessage } from "@/lib/saveErrors";
 import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
@@ -379,7 +380,9 @@ export default function SharedCanvas() {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ content }),
-        });
+        })
+          .then(jsonOrThrow)
+          .catch((err) => showError(saveErrorMessage(err, "Couldn't save your changes — check your connection and try again.")));
         socket.emit("block:updated", cid, { id, content });
       }
     }, 800);
@@ -498,7 +501,7 @@ export default function SharedCanvas() {
           width: type === "draw" ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : src.width ?? 300,
         }),
       });
-      const data = await res.json();
+      const data = await jsonOrThrow(res);
       // the create endpoint ignores language and link, so set them in follow-up calls
       const patch = (path: string, body: object) =>
         fetchWithTimeout(`/api/canvases/${cid}/blocks/${data.id}/${path}`, {
@@ -513,8 +516,8 @@ export default function SharedCanvas() {
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", cid, block);
       return String(data.id);
-    } catch {
-      showError("Couldn't restore the block — check your connection and try again.");
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't restore the block — check your connection and try again."));
       return null;
     }
   }, [canEdit]);
@@ -646,12 +649,12 @@ export default function SharedCanvas() {
           width: Math.max(maxX - minX, 1),
         }),
       });
-      const data = await res.json();
+      const data = await jsonOrThrow(res);
       setNodes((prev) => [...prev, blockToNode(data)]);
       socket.emit("block:created", canvasId, data);
       history.record({ kind: "create", id: String(data.id) });
-    } catch {
-      showError("Couldn't save your drawing — check your connection and try again.");
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't save your drawing — check your connection and try again."));
     }
   }
 
@@ -698,12 +701,12 @@ export default function SharedCanvas() {
         credentials: "include",
         body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
       });
-      const data = await res.json();
+      const data = await jsonOrThrow(res);
       setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
       socket.emit("block:created", canvasId, data);
       history.record({ kind: "create", id: data.id });
-    } catch {
-      showError("Couldn't create the block — check your connection and try again.");
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
     }
   }
 
