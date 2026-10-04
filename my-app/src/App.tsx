@@ -4,6 +4,7 @@ import { Pencil, Shapes } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
 import { strokePath } from "./lib/smoothPath";
+import { parsePoints } from "./lib/points";
 import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
 import ImageNode from "./components/ImageNode";
@@ -49,7 +50,7 @@ interface RemoteCursor {
 // draw blocks store their stroke as a JSON-encoded points array in `content`
 function blockToNode(b: any): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
-  if (b.type === "draw") return { ...common, type: "draw", points: JSON.parse(b.content) };
+  if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
   return { ...common, language: b.language };
 }
@@ -214,7 +215,7 @@ export default function App() {
                 content: data.content,
                 language: data.language ?? n.language,
                 // a drawing's stroke lives in its content (e.g. after a resize)
-                points: n.type === "draw" ? JSON.parse(data.content) : n.points,
+                points: n.type === "draw" ? parsePoints(data.content) ?? n.points : n.points,
                 link: "link" in data ? data.link : n.link,
               }
             : n,
