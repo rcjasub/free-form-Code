@@ -713,9 +713,9 @@ export default function App() {
   const cursorClass =
     mode === "hand"
       ? "cursor-grab"
-      : mode === "text" || mode === "draw"
+      : mode === "draw"
         ? "cursor-crosshair"
-        : mode === "select"
+        : mode === "select" || mode === "text"
           ? "dot-cursor" // blue dot, see index.css
           : "cursor-default"; // erase: overridden by the inline eraser cursor
 

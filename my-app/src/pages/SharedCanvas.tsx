@@ -836,7 +836,7 @@ export default function SharedCanvas() {
       {/* canvas */}
       <div
         ref={canvasRef}
-        className={`w-full h-full ${canEdit && (mode === "text" || mode === "draw") ? "cursor-crosshair" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
+        className={`w-full h-full ${canEdit && mode === "draw" ? "cursor-crosshair" : canEdit && mode === "text" ? "dot-cursor" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
