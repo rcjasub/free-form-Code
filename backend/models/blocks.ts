@@ -31,6 +31,25 @@ export async function getBlocksByCanvasId(canvasId: string): Promise<Block[]> {
   return result.rows; //unwrapping
 }
 
+export interface CanvasUsage {
+  count: number;
+  chars: number;
+}
+
+// How many blocks a canvas holds and how much content they add up to, for the
+// per-canvas quota. `excludeBlockId` leaves one block out of the total, so an
+// edit can be checked as "everything else + the block's new content".
+// id::text so a malformed block id just matches nothing instead of erroring.
+export async function getCanvasUsage(canvasId: string, excludeBlockId?: string): Promise<CanvasUsage> {
+  const result = await pool.query<{ count: number; chars: string }>(
+    `SELECT count(*)::int AS count, coalesce(sum(length(content)), 0) AS chars
+     FROM blocks WHERE canvas_id = $1 AND id::text IS DISTINCT FROM $2`,
+    [canvasId, excludeBlockId ?? null],
+  );
+  // sum() of int is bigint, which pg returns as a string
+  return { count: result.rows[0].count, chars: Number(result.rows[0].chars) };
+}
+
 export async function CreateBlock(params: createBlockParams): Promise<Block> {
   const { canvasId, type, content, x, y, width } = params;
   const result = await pool.query<Block>(

@@ -6,6 +6,8 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  MAX_BLOCKS_PER_CANVAS,
+  MAX_CANVAS_CONTENT,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
@@ -39,6 +41,8 @@ const fakeBlock = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // an empty canvas unless a test says otherwise, so the quota check passes
+  mockBlocks.getCanvasUsage.mockResolvedValue({ count: 0, chars: 0 });
 });
 
 describe("getAllBlocks", () => {
@@ -115,6 +119,24 @@ describe("createBlock", () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: "Internal server error" });
+  });
+
+  test("returns 413 without creating when the canvas already has the max number of blocks", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: MAX_BLOCKS_PER_CANVAS, chars: 0 });
+
+    await createBlock(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockBlocks.CreateBlock).not.toHaveBeenCalled();
+  });
+
+  test("returns 413 without creating when the new content would push the canvas over its size cap", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: 1, chars: MAX_CANVAS_CONTENT - 1 });
+
+    await createBlock(req, res); // content "[]" is 2 chars
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockBlocks.CreateBlock).not.toHaveBeenCalled();
   });
 });
 
@@ -206,6 +228,26 @@ describe("updateBlockContent", () => {
     await updateBlockContent(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test("checks the quota against every other block plus the new content", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: 3, chars: MAX_CANVAS_CONTENT - 5 });
+
+    await updateBlockContent(req, res); // "console.log(1)" is 14 chars
+
+    // the edited block's old content is left out of the total
+    expect(mockBlocks.getCanvasUsage).toHaveBeenCalledWith("1", "b1");
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockBlocks.updateBlockContent).not.toHaveBeenCalled();
+  });
+
+  test("allows an edit on a canvas that's at its block-count cap", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: MAX_BLOCKS_PER_CANVAS, chars: 0 });
+    mockBlocks.updateBlockContent.mockResolvedValue(fakeBlock);
+
+    await updateBlockContent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });
 
