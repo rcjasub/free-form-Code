@@ -4,6 +4,8 @@ import { Pencil, Shapes } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
 import { strokePath } from "./lib/smoothPath";
+import { parsePoints } from "./lib/points";
+import { saveErrorMessage } from "./lib/saveErrors";
 import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
 import ImageNode from "./components/ImageNode";
@@ -49,7 +51,7 @@ interface RemoteCursor {
 // draw blocks store their stroke as a JSON-encoded points array in `content`
 function blockToNode(b: any): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
-  if (b.type === "draw") return { ...common, type: "draw", points: JSON.parse(b.content) };
+  if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
   return { ...common, language: b.language };
 }
@@ -214,7 +216,7 @@ export default function App() {
                 content: data.content,
                 language: data.language ?? n.language,
                 // a drawing's stroke lives in its content (e.g. after a resize)
-                points: n.type === "draw" ? JSON.parse(data.content) : n.points,
+                points: n.type === "draw" ? parsePoints(data.content) ?? n.points : n.points,
                 link: "link" in data ? data.link : n.link,
               }
             : n,
@@ -305,17 +307,21 @@ export default function App() {
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
     const relPoints = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
-    const { data } = await createDrawingBlock(
-      canvasId,
-      minX,
-      minY,
-      Math.max(maxX - minX, 1),
-      JSON.stringify(relPoints),
-    );
-    const node = blockToNode(data);
-    setNodes((prev) => [...prev, node]);
-    socket.emit("block:created", canvasId, data);
-    history.record({ kind: "create", id: node.id });
+    try {
+      const { data } = await createDrawingBlock(
+        canvasId,
+        minX,
+        minY,
+        Math.max(maxX - minX, 1),
+        JSON.stringify(relPoints),
+      );
+      const node = blockToNode(data);
+      setNodes((prev) => [...prev, node]);
+      socket.emit("block:created", canvasId, data);
+      history.record({ kind: "create", id: node.id });
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't save your drawing — check your connection and try again."));
+    }
   }
 
   // The canvas layer is only ever sized to the viewport, then visually
@@ -355,14 +361,18 @@ export default function App() {
     if (!canvasId) return;
     const x = (e.clientX - offset.x) / scale;
     const y = (e.clientY - offset.y) / scale;
-    const { data } = await createBlock(canvasId, x, y);
-    setNodes((prev) => [
-      ...prev,
-      { id: data.id, x: data.x, y: data.y, content: data.content },
-    ]);
-    console.log("[socket] emitting block:created", data);
-    socket.emit("block:created", canvasId, data);
-    history.record({ kind: "create", id: data.id });
+    try {
+      const { data } = await createBlock(canvasId, x, y);
+      setNodes((prev) => [
+        ...prev,
+        { id: data.id, x: data.x, y: data.y, content: data.content },
+      ]);
+      console.log("[socket] emitting block:created", data);
+      socket.emit("block:created", canvasId, data);
+      history.record({ kind: "create", id: data.id });
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
+    }
   }
 
   function applyZoom(newScale: number) {
@@ -495,7 +505,9 @@ export default function App() {
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
       if (canvasId) {
-        updateBlockContent(canvasId, id, content);
+        updateBlockContent(canvasId, id, content).catch((err) =>
+          showError(saveErrorMessage(err, "Couldn't save your changes — check your connection and try again.")),
+        );
         console.log("[socket] emitting block:updated", { id, content });
         socket.emit("block:updated", canvasId, { id, content });
       }
@@ -599,8 +611,8 @@ export default function App() {
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", canvasId, block);
       return String(data.id);
-    } catch {
-      showError("Couldn't save the block — check your connection and try again.");
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't save the block — check your connection and try again."));
       return null;
     }
   }, [canvasId]);

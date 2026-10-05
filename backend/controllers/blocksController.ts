@@ -4,6 +4,19 @@ import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
 
+// Per-canvas quota. The per-block size limit (MAX_CONTENT_LENGTH) alone can't
+// keep the disk from filling — anyone on a public canvas could keep adding
+// max-size blocks — so a canvas also caps its block count and total content.
+export const MAX_BLOCKS_PER_CANVAS = 500;
+export const MAX_CANVAS_CONTENT = 50_000_000; // characters, ~50 MB
+
+const QUOTA_ERROR = "This canvas is full — delete some blocks (large images count the most) and try again";
+
+function exceedsQuota(usage: Blocks.CanvasUsage, newContentLength: number, addingBlock: boolean): boolean {
+  if (addingBlock && usage.count >= MAX_BLOCKS_PER_CANVAS) return true;
+  return usage.chars + newContentLength > MAX_CANVAS_CONTENT;
+}
+
 export async function getAllBlocks(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
 
@@ -32,6 +45,12 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
   const { type, content, x, y, width } = req.body;
 
   try {
+    const usage = await Blocks.getCanvasUsage(canvasId);
+    if (exceedsQuota(usage, content.length, true)) {
+      res.status(413).json({ error: QUOTA_ERROR });
+      return;
+    }
+
     const block = await Blocks.CreateBlock({
       canvasId,
       type,
@@ -102,6 +121,12 @@ export async function updateBlockContent(
   const { content } = req.body;
 
   try {
+    const usage = await Blocks.getCanvasUsage(canvasId, blockId);
+    if (exceedsQuota(usage, content.length, false)) {
+      res.status(413).json({ error: QUOTA_ERROR });
+      return;
+    }
+
     const block = await Blocks.updateBlockContent(canvasId, blockId, content);
     if (!block) {
       res.status(404).json({ error: "Block not found" });
