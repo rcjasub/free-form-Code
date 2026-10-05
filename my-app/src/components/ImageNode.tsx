@@ -2,6 +2,7 @@ import { useRef } from "react";
 import React from "react";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
+import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 
 // See FloatingNode.tsx for why dragging is throttled this way.
 const DRAG_SYNC_INTERVAL_MS = 40;
@@ -56,6 +57,7 @@ export default React.memo(function ImageNode({
     const offset = { x: startX - x, y: startY - y };
     let lastSync = 0;
     let latest: { x: number; y: number } | null = null;
+    pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
       latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
@@ -73,6 +75,7 @@ export default React.memo(function ImageNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) onMove(id, latest.x, latest.y);
+      resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -90,7 +93,7 @@ export default React.memo(function ImageNode({
         opacity: pendingErase ? 0.3 : 1,
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,
-        transition: "opacity 0.15s",
+        transition: GLIDE_TRANSITION, // see lib/glide
         cursor: mode === "select" ? "grab" : undefined,
         // in draw mode, strokes can start right on top of an image
         pointerEvents: mode === "draw" ? "none" : undefined,
