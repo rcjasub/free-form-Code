@@ -3,18 +3,18 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432" # reachable from this machine only
     environment:
       POSTGRES_DB: freeformcode
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # from .env next to this file
     restart: unless-stopped
 
   redis:
     image: redis:alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379" # reachable from this machine only
     restart: unless-stopped
 
   backend:
@@ -23,7 +23,7 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000" # the public way in is nginx (frontend)
     env_file:
       - ./backend/.env
     environment:
@@ -32,7 +32,7 @@ services:
       DB_PORT: 5432
       DB_NAME: freeformcode
       DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_PASSWORD: ${DB_PASSWORD} # from .env next to this file
       REDIS_URL: redis://redis:6379
       CLIENT_URL: http://localhost
     depends_on:
