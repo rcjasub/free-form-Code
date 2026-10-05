@@ -111,8 +111,11 @@ export default function SharedCanvas() {
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [mode, setMode] = useState<Mode>("select");
-  const modeRef = useRef<Mode>("select");
+  // View-only visitors are held in hand mode (they get no toolbar or mode
+  // keys to leave it): blocks can't be dragged or typed into, and dragging
+  // pans the canvas instead.
+  const [mode, setMode] = useState<Mode>(canEdit ? "select" : "hand");
+  const modeRef = useRef<Mode>(canEdit ? "select" : "hand");
   const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
   const [snapShapes, setSnapShapes] = useState(false);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,6 +128,8 @@ export default function SharedCanvas() {
   const canvasIdRef = useRef<string | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const errorToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // the code last selected inside a block, for Ctrl+Enter (see saveSelection)
+  const lastSelection = useRef<{ content: string; el: HTMLElement } | null>(null);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
@@ -551,6 +556,35 @@ export default function SharedCanvas() {
     rootRef,
   });
 
+  // Runs code and adds its output. Same rules as the main canvas
+  // (lib/runOutputs): unchanged code whose output is still showing doesn't run
+  // again; changed code's output goes beside the previous one. requestRun
+  // matches each result to its run by id, so overlapping runs each get their own.
+  const runAndPlace = useCallback(
+    async (sourceId: string | undefined, code: string, language: string, anchor: { x: number; y: number }) => {
+      if (!canEdit) return;
+      const runKey = sourceId ? makeRunKey(sourceId, language, code) : undefined;
+      if (runKey) {
+        if (pendingRunKeys.current.has(runKey) || isAlreadyShown(outputsRef.current, runKey)) return;
+        pendingRunKeys.current.add(runKey);
+      }
+      try {
+        const { output, error } = await requestRun(socket, code, language);
+        const outputId = nextId.current++;
+        setOutputs((prev) => {
+          const pos = placeOutput(prev, sourceId, anchor, scaleRef.current);
+          return [
+            ...prev,
+            { id: outputId, ...pos, text: output, isError: error, sourceId, runKey },
+          ].slice(-MAX_OUTPUTS);
+        });
+      } finally {
+        if (runKey) pendingRunKeys.current.delete(runKey);
+      }
+    },
+    [canEdit],
+  );
+
   const handleRunNode = useCallback(async (id: string) => {
     if (!canEdit) return;
     const node = nodes.find((n) => n.id === id);
@@ -565,29 +599,58 @@ export default function SharedCanvas() {
       y = (rect.top - offsetRef.current.y) / scaleRef.current;
     }
 
-    // Same rules as the main canvas (lib/runOutputs): unchanged code whose
-    // output is still showing doesn't run again; changed code's output goes
-    // beside the previous one.
-    const language = node.language ?? "javascript";
-    const runKey = makeRunKey(id, language, node.content);
-    if (pendingRunKeys.current.has(runKey) || isAlreadyShown(outputsRef.current, runKey)) return;
-    pendingRunKeys.current.add(runKey);
-    try {
-      // requestRun matches the result to this run by id, so overlapping runs
-      // each get their own output.
-      const { output, error } = await requestRun(socket, node.content, language);
-      const outputId = nextId.current++;
-      setOutputs((prev) => {
-        const pos = placeOutput(prev, id, { x, y }, scaleRef.current);
-        return [
-          ...prev,
-          { id: outputId, ...pos, text: output, isError: error, sourceId: id, runKey },
-        ].slice(-MAX_OUTPUTS);
-      });
-    } finally {
-      pendingRunKeys.current.delete(runKey);
+    await runAndPlace(id, node.content, node.language ?? "javascript", { x, y });
+  }, [canEdit, nodes, runAndPlace]);
+
+  // Ctrl+Enter runs the selected code, as on the main canvas: the selection
+  // last saved from a block (saveSelection), else whatever text is selected.
+  useEffect(() => {
+    if (!canEdit) return;
+    async function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey && e.key === "Enter")) return;
+
+      let code = "";
+      let x = 200;
+      let y = 100;
+
+      if (lastSelection.current) {
+        code = lastSelection.current.content;
+        const rect = lastSelection.current.el.getBoundingClientRect();
+        x = rect.right + 20;
+        y = rect.top;
+      } else {
+        const selection = window.getSelection();
+        code = selection?.toString().trim() ?? "";
+        const rect = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : undefined;
+        x = (rect?.right ?? 200) + 20;
+        y = rect?.top ?? 100;
+      }
+
+      if (!code || !socket.id) return;
+
+      // The block the code came from carries its language as a data attribute
+      // (this listener is registered once, so it can't read `nodes` state).
+      const sourceEl = lastSelection.current
+        ? lastSelection.current.el
+        : window.getSelection()?.anchorNode?.parentElement?.closest<HTMLElement>("[data-node-id]");
+      const language = sourceEl?.dataset.language ?? "javascript";
+
+      // x/y above are screen coordinates; outputs live in canvas coordinates.
+      const anchor = {
+        x: (x - offsetRef.current.x) / scaleRef.current,
+        y: (y - offsetRef.current.y) / scaleRef.current,
+      };
+      await runAndPlace(sourceEl?.dataset.nodeId, code, language, anchor);
     }
-  }, [canEdit, nodes]);
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canEdit, runAndPlace]);
+
+  // saveSelection only writes to a ref, so it's always the same function.
+  const saveSelection = useCallback((content: string, el: HTMLElement) => {
+    lastSelection.current = { content, el };
+  }, []);
 
   const changeLanguage = useCallback((id: string, language: Language) => {
     if (!canEdit) return;
@@ -726,14 +789,43 @@ export default function SharedCanvas() {
     );
   }
 
+  // Cursors and toolbar match the main canvas (App.tsx). View-only visitors
+  // are always in hand mode, so they get the grab cursor.
+  const eraserSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${isDark ? '#f5f5f5' : '#374151'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5"/><path d="M6.5 17.5l4-4"/></svg>`;
+  const eraserCursor = `url('data:image/svg+xml;base64,${btoa(eraserSvg)}') 4 20, auto`;
+
+  const cursorClass =
+    mode === "hand"
+      ? "cursor-grab"
+      : mode === "draw"
+        ? "cursor-crosshair"
+        : mode === "select" || mode === "text"
+          ? "dot-cursor" // blue dot, see index.css
+          : "cursor-default"; // erase: overridden by the inline eraser cursor
+
+  const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
+    <button
+      onClick={() => setMode(m)}
+      title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+        mode === m
+          ? "bg-gray-100 text-gray-800 dark:bg-[#3c3c4a] dark:text-[#f5f5f5]"
+          : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div
       ref={rootRef}
-      className={`relative w-screen h-screen overflow-hidden select-none ${mode === "select" ? "dot-cursor" : "cursor-default"}`}
+      className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
       style={{
         backgroundColor: isDark ? "#121212" : "#ffffff",
         backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
         backgroundSize: "28px 28px",
+        cursor: mode === "erase" ? eraserCursor : undefined,
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
@@ -784,32 +876,49 @@ export default function SharedCanvas() {
         </div>
       )}
 
-      {/* mode toolbar — only in edit mode */}
+      {/* mode toolbar + run hint, centered as one column — only in edit mode */}
       {canEdit && (
-        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 border rounded-lg shadow-sm p-1 ${isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"}`}>
-          {(["select", "hand", "text", "erase", "draw"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              title={m.charAt(0).toUpperCase() + m.slice(1)}
-              className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
-                mode === m
-                  ? isDark ? "bg-[#3c3c4a] text-[#f5f5f5]" : "bg-gray-100 text-gray-800"
-                  : isDark ? "text-[#9b9ba8] hover:text-[#f5f5f5]" : "text-gray-400 hover:text-gray-700"
-              }`}
-            >
-              {m === "select" && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>}
-              {m === "hand" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" /></svg>}
-              {m === "text" && <span className="text-xs font-bold leading-none">T</span>}
-              {m === "erase" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" /><path d="M6.5 17.5l4-4" /></svg>}
-              {m === "draw" && <Pencil size={14} />}
-            </button>
-          ))}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
+          <div className="flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]">
+            {toolbarBtn(
+              "select",
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>,
+              "Select (V)",
+            )}
+            {toolbarBtn(
+              "hand",
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" /></svg>,
+              "Hand (H)",
+            )}
+            {toolbarBtn("text", <span className="text-xs font-bold leading-none">T</span>, "Text (T)")}
+            {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
+            {toolbarBtn(
+              "erase",
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" /><path d="M6.5 17.5l4-4" /></svg>,
+              "Erase (E)",
+            )}
+          </div>
+          <span className="font-canvas text-[11px] pointer-events-none select-none text-gray-400 dark:text-gray-500">
+            select code + ctrl+enter to run
+          </span>
         </div>
       )}
 
       {/* top-right */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
+        {canEdit && (
+          <button
+            onClick={() =>
+              window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }))
+            }
+            title="Run selected code"
+            className="w-8 h-8 flex items-center justify-center rounded transition-colors border bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+          </button>
+        )}
         {canEdit && (
           <button
             onClick={() => setSnapShapes((v) => !v)}
@@ -840,12 +949,20 @@ export default function SharedCanvas() {
       {/* canvas */}
       <div
         ref={canvasRef}
-        className={`w-full h-full ${canEdit && mode === "draw" ? "cursor-crosshair" : canEdit && mode === "text" ? "dot-cursor" : canEdit && mode === "hand" ? "cursor-grab" : ""}`}
+        className="w-full h-full"
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
         }}
       >
+        {canEdit && nodes.length === 0 && mode === "text" && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <p className="text-gray-300 text-sm font-mono select-none">
+              click anywhere to start
+            </p>
+          </div>
+        )}
+
         {nodes.map((node) =>
           node.type === "image" ? (
             <ImageNode
@@ -860,7 +977,7 @@ export default function SharedCanvas() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedId === node.id}
-              mode={canEdit ? mode : "select"}
+              mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
             />
@@ -877,7 +994,7 @@ export default function SharedCanvas() {
               link={node.link}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedId === node.id}
-              mode={canEdit ? mode : "select"}
+              mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
             />
@@ -895,8 +1012,9 @@ export default function SharedCanvas() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
+              onSaveSelection={canEdit ? saveSelection : undefined}
               link={node.link}
-              mode={canEdit ? mode : "select"}
+              mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
             />
