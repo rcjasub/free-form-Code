@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: freeformcode
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # from .env next to this file
     restart: unless-stopped
 
   redis:
@@ -32,7 +32,7 @@ services:
       DB_PORT: 5432
       DB_NAME: freeformcode
       DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_PASSWORD: ${DB_PASSWORD} # from .env next to this file
       REDIS_URL: redis://redis:6379
       CLIENT_URL: http://localhost
     depends_on:

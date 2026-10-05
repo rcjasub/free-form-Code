@@ -113,6 +113,8 @@ backend:
     DB_HOST: postgres  # overrides DB_HOST=localhost from .env to use the container name
 ```
 
+The database passwords in `docker-compose.yml` are `${...}` placeholders filled from a **second** `.env`, next to `docker-compose.yml` (Docker Compose reads that one itself; it doesn't read `backend/.env` for this). Copy `.env.example` to `.env` and fill in both values — on a laptop, whatever your local database uses; on the server, the real ones. Without it, compose warns that the variables aren't set and the backend can't log in to the database.
+
 ## Container networking
 
 Containers communicate using their **service name** as the hostname, not `localhost`. Docker Compose sets up a private network between them automatically.
