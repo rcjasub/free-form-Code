@@ -3,6 +3,7 @@ import React from "react";
 import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
 import LinkBadge from "./LinkBadge";
+import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 
 export interface Point {
   x: number;
@@ -98,6 +99,7 @@ export default React.memo(function DrawingNode({
     const zoom = containerRef.current.getBoundingClientRect().width / width || 1;
     let latest: { x: number; y: number; points: Point[] } | null = null;
     let lastSync = 0;
+    pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
       const dx = (mv.clientX - startClient.x) / zoom;
@@ -138,6 +140,7 @@ export default React.memo(function DrawingNode({
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) resize(id, latest.x, latest.y, latest.points, true);
       setPreview(null);
+      resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -149,6 +152,7 @@ export default React.memo(function DrawingNode({
     const offset = { x: startX - xRef.current, y: startY - yRef.current };
     let lastSync = 0;
     let latest = { x: xRef.current, y: yRef.current };
+    pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
       latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
@@ -167,6 +171,7 @@ export default React.memo(function DrawingNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       onMoveRef.current(id, latest.x, latest.y);
+      resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -199,7 +204,7 @@ export default React.memo(function DrawingNode({
         opacity: pendingErase ? 0.3 : 1,
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,
-        transition: "opacity 0.15s",
+        transition: GLIDE_TRANSITION, // see lib/glide
         // The bounding box is usually much bigger than the visible stroke
         // (e.g. a diagonal line's box is a full rectangle). If this div were
         // hit-testable across that whole box, hovering the "empty" corner of

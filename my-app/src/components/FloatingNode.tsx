@@ -7,6 +7,7 @@ import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/language
 import AnimatedDropdown from "./ui/animated-dropdown";
 import { draculaDark, draculaLight } from "../lib/codeTheme";
 import LinkBadge from "./LinkBadge";
+import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
 
@@ -141,7 +142,10 @@ export default React.memo(function FloatingNode({
         if (!isDragging) {
           const dx = mv.clientX - startX;
           const dy = mv.clientY - startY;
-          if (Math.sqrt(dx * dx + dy * dy) > 5) isDragging = true;
+          if (Math.sqrt(dx * dx + dy * dy) > 5) {
+            isDragging = true;
+            pauseGlide(el);
+          }
         }
         if (!isDragging) return;
 
@@ -161,7 +165,10 @@ export default React.memo(function FloatingNode({
       function onMouseUp() {
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
-        if (isDragging) onMoveRef.current(id, latest.x, latest.y);
+        if (isDragging) {
+          onMoveRef.current(id, latest.x, latest.y);
+          resumeGlide(el);
+        }
       }
 
       window.addEventListener("mousemove", onMouseMove);
@@ -195,7 +202,10 @@ export default React.memo(function FloatingNode({
       if (!isDragging) {
         const dx = mv.clientX - startX;
         const dy = mv.clientY - startY;
-        if (Math.sqrt(dx * dx + dy * dy) > 3) isDragging = true;
+        if (Math.sqrt(dx * dx + dy * dy) > 3) {
+          isDragging = true;
+          pauseGlide(containerRef.current);
+        }
       }
       if (!isDragging) return;
 
@@ -215,7 +225,10 @@ export default React.memo(function FloatingNode({
     function onMouseUp() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
-      if (isDragging) onMoveRef.current(id, latest.x, latest.y);
+      if (isDragging) {
+        onMoveRef.current(id, latest.x, latest.y);
+        resumeGlide(containerRef.current);
+      }
     }
 
     window.addEventListener("mousemove", onMouseMove);
@@ -232,7 +245,7 @@ export default React.memo(function FloatingNode({
         left: x,
         top: y,
         opacity: pendingErase ? 0.3 : 1,
-        transition: "opacity 0.15s",
+        transition: GLIDE_TRANSITION, // see lib/glide
         // In draw mode, existing blocks shouldn't intercept clicks or steal
         // the crosshair cursor (e.g. via CodeMirror's own text cursor, or
         // the run button's cursor-pointer) — let strokes start and pass
