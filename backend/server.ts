@@ -19,7 +19,12 @@ import authRoutes from "./routes/auth";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.set("trust proxy", 1);
+// Two proxies sit in front of this server in production: Caddy (HTTPS) then
+// nginx. Caddy replaces any X-Forwarded-For the visitor sends with their real
+// IP, and nginx appends Caddy's address, so the header reads "visitor, caddy".
+// Trusting 2 hops makes req.ip the visitor — what the rate limiters key on.
+// Remove a proxy and this must drop to match, or req.ip becomes spoofable.
+app.set("trust proxy", 2);
 app.use(helmet());
 const allowedOrigins = [
   "http://localhost:5173",
