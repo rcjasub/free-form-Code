@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import { useTheme } from "next-themes";
 import { motion } from "motion/react";
 import FloatingNode from "@/components/FloatingNode";
+import EraserTrail from "@/components/EraserTrail";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
 import CanvasContextMenu from "@/components/CanvasContextMenu";
@@ -928,6 +929,8 @@ export default function SharedCanvas() {
           {errorToast}
         </div>
       )}
+
+      <EraserTrail active={mode === "erase"} isDark={isDark} />
 
       {/* mode toolbar + run hint, centered as one column — only in edit mode */}
       {canEdit && (
