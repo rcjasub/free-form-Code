@@ -13,6 +13,7 @@ import ImageNode from "./components/ImageNode";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import RemoteCursorMarker from "./components/RemoteCursorMarker";
 import OutputBubble from "./components/OutputBubble";
+import EraserTrail from "./components/EraserTrail";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import ShareDrawer from "./components/ShareDrawer";
 import PresenceMenu from "./components/PresenceMenu";
@@ -832,6 +833,8 @@ export default function App() {
           </button>
         )}
       </div>
+
+      <EraserTrail active={mode === "erase"} isDark={isDark} />
 
       {/* mode toolbar + run hint, centered as one column */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
