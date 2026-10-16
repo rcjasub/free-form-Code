@@ -184,7 +184,8 @@ export default React.memo(function DrawingNode({
       return;
     }
     if (mode !== "hand") e.stopPropagation();
-    if (mode === "select") handleDragMouseDown(e);
+    // text mode can drag too, in case clicking just to move things feels off
+    if (mode === "select" || mode === "text") handleDragMouseDown(e);
   }
 
   function handlePathMouseEnter() {
@@ -234,7 +235,7 @@ export default React.memo(function DrawingNode({
             strokeWidth={16}
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ pointerEvents: "stroke", cursor: mode === "select" ? "grab" : undefined }}
+            style={{ pointerEvents: "stroke", cursor: mode === "select" || mode === "text" ? "grab" : undefined }}
             onMouseDown={handlePathMouseDown}
             onMouseEnter={handlePathMouseEnter}
           />

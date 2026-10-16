@@ -4,8 +4,9 @@ import { python } from "@codemirror/lang-python";
 import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
 
-// Must match LANGUAGES in backend/sandbox.ts — the backend rejects anything else.
-export type Language = "javascript" | "python" | "cpp" | "java";
+// Runnable languages must match LANGUAGES in backend/sandbox.ts; "text" is a
+// plain note that never runs (languageSchema in backend/schemas/block.schema.ts).
+export type Language = "javascript" | "python" | "cpp" | "java" | "text";
 
 export const LANGUAGE_OPTIONS: {
   id: Language;
@@ -14,6 +15,8 @@ export const LANGUAGE_OPTIONS: {
   // Inserted when an empty block switches to this language.
   starter?: string;
 }[] = [
+  // No highlighting — just words.
+  { id: "text", label: "Plain text", highlight: () => [] },
   { id: "javascript", label: "JavaScript", highlight: javascript },
   { id: "python", label: "Python", highlight: python },
   {
@@ -33,5 +36,10 @@ export const LANGUAGE_OPTIONS: {
 ];
 
 export function languageOption(id: string | undefined) {
-  return LANGUAGE_OPTIONS.find((l) => l.id === id) ?? LANGUAGE_OPTIONS[0];
+  // Falls back to JavaScript (what blocks default to), not the first entry.
+  return LANGUAGE_OPTIONS.find((l) => l.id === id) ?? LANGUAGE_OPTIONS.find((l) => l.id === "javascript")!;
+}
+
+export function isRunnable(id: string | undefined) {
+  return id !== "text";
 }

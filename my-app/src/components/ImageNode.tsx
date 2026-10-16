@@ -50,7 +50,7 @@ export default React.memo(function ImageNode({
     if (mode === "hand" || e.button !== 0) return; // let the canvas pan
     e.stopPropagation();
     e.preventDefault(); // no native image drag-and-drop
-    if (mode !== "select") return;
+    if (mode !== "select" && mode !== "text") return; // text mode can drag too
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -94,7 +94,7 @@ export default React.memo(function ImageNode({
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,
         transition: GLIDE_TRANSITION, // see lib/glide
-        cursor: mode === "select" ? "grab" : undefined,
+        cursor: mode === "select" || mode === "text" ? "grab" : undefined,
         // in draw mode, strokes can start right on top of an image
         pointerEvents: mode === "draw" ? "none" : undefined,
       }}

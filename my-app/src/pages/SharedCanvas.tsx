@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
+import { motion } from "motion/react";
 import FloatingNode from "@/components/FloatingNode";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
@@ -16,7 +17,7 @@ import { detectShape } from "@/lib/shapeDetection";
 import { strokePath } from "@/lib/smoothPath";
 import { parsePoints } from "@/lib/points";
 import { jsonOrThrow, saveErrorMessage } from "@/lib/saveErrors";
-import { LANGUAGE_OPTIONS, languageOption, type Language } from "@/lib/languages";
+import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "@/hooks/useCanvasHistory";
@@ -132,6 +133,12 @@ export default function SharedCanvas() {
   const lastSelection = useRef<{ content: string; el: HTMLElement } | null>(null);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
+  // The block just made by a text click — it opens with the cursor in it.
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const lastTextCreate = useRef(0);
+  // While the cursor is in a block the toolbar shows T, whatever the mode.
+  const [editingText, setEditingText] = useState(false);
+  const activeTool: Mode = editingText ? "text" : mode;
 
   // undo stack — see hooks/useCanvasHistory
   const history = useCanvasHistory(nodes);
@@ -562,6 +569,7 @@ export default function SharedCanvas() {
   // matches each result to its run by id, so overlapping runs each get their own.
   const runAndPlace = useCallback(
     async (sourceId: string | undefined, code: string, language: string, anchor: { x: number; y: number }) => {
+      if (!isRunnable(language)) return;
       if (!canEdit) return;
       const runKey = sourceId ? makeRunKey(sourceId, language, code) : undefined;
       if (runKey) {
@@ -752,11 +760,31 @@ export default function SharedCanvas() {
     window.addEventListener("mouseup", onMouseUp);
   }
 
+  // Works like Excalidraw's text tool: a click makes a block with the cursor
+  // already in it and switches back to select, so the next click elsewhere
+  // just finishes typing. Double-clicking empty canvas makes another.
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
     if (!isCanvasBackground(e)) return;
-    const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
-    const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
+    await createTextBlock(e.clientX, e.clientY);
+  }
+
+  async function handleCanvasDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!canEdit || (modeRef.current !== "select" && modeRef.current !== "text")) return;
+    if (!isCanvasBackground(e)) return;
+    await createTextBlock(e.clientX, e.clientY);
+  }
+
+  async function createTextBlock(clientX: number, clientY: number) {
+    if (!canvasId) return;
+    const x = (clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (clientY - offsetRef.current.y) / scaleRef.current;
+    // A double-click in text mode is a click (makes a block) followed by a
+    // dblclick — don't let that second event make another one on top of it.
+    const now = performance.now();
+    if (now - lastTextCreate.current < 500) return;
+    lastTextCreate.current = now;
+    setMode("select");
     try {
       const res = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks`, {
         method: "POST",
@@ -765,8 +793,23 @@ export default function SharedCanvas() {
         body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
       });
       const data = await jsonOrThrow(res);
-      setNodes((prev) => [...prev, { id: data.id, x: data.x, y: data.y, content: data.content }]);
-      socket.emit("block:created", canvasId, data);
+      // New blocks start as plain text. The create endpoint ignores language,
+      // so set it in a follow-up call (the same one the language picker uses).
+      // If that fails the block already exists — keep it with its default
+      // language rather than losing it behind an error.
+      const language = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks/${data.id}/language`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ language: "text" }),
+      })
+        .then(jsonOrThrow)
+        .then(() => "text" as const)
+        .catch(() => data.language);
+      const block = { ...data, language };
+      setFocusNodeId(block.id);
+      setNodes((prev) => [...prev, { id: block.id, x: block.x, y: block.y, content: block.content, language: block.language }]);
+      socket.emit("block:created", canvasId, block);
       history.record({ kind: "create", id: data.id });
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
@@ -807,13 +850,22 @@ export default function SharedCanvas() {
     <button
       onClick={() => setMode(m)}
       title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
-        mode === m
-          ? "bg-gray-100 text-gray-800 dark:bg-[#3c3c4a] dark:text-[#f5f5f5]"
+      className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
+        activeTool === m
+          ? "text-gray-800 dark:text-[#f5f5f5]"
           : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
       }`}
     >
-      {label}
+      {/* One highlight shared by every button (same layoutId), so switching
+          tools slides it over to the new one instead of jumping. */}
+      {activeTool === m && (
+        <motion.span
+          layoutId="toolbar-active"
+          className="absolute inset-0 rounded bg-gray-100 dark:bg-[#3c3c4a]"
+          transition={{ type: "spring", stiffness: 500, damping: 35 }}
+        />
+      )}
+      <span className="relative">{label}</span>
     </button>
   );
 
@@ -830,6 +882,7 @@ export default function SharedCanvas() {
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
       onClick={handleCanvasClick}
+      onDoubleClick={handleCanvasDoubleClick}
       onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); handleDrawMouseDown(e); }}
       onMouseUp={() => (isMouseDown.current = false)}
     >
@@ -1012,6 +1065,8 @@ export default function SharedCanvas() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
+              autoFocus={node.id === focusNodeId}
+              onEditingChange={setEditingText}
               onSaveSelection={canEdit ? saveSelection : undefined}
               link={node.link}
               mode={mode}
