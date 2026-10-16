@@ -87,6 +87,8 @@ export interface CanvasOps {
   applyLink: (id: string, link: string | null) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
+  // removes every run output, as part of "Delete all"
+  clearOutputs: () => void;
 }
 
 interface ShortcutOptions {
@@ -102,12 +104,16 @@ interface ShortcutOptions {
 type ContextMenuProps = Omit<CanvasContextMenuProps, "isDark">;
 
 // Everything you do to blocks from the keyboard or the right-click menu:
-// select, undo, cut/copy/paste/duplicate/delete, links, and pasting text or
-// images from outside the app. Returns the selected block's id, a ref the
-// page keeps at the pointer's canvas position (where pastes land), and the
-// right-click menu's props while it's open.
+// select (one or all), undo, cut/copy/paste/duplicate/delete, links, and
+// pasting text or images from outside the app. Returns the selected blocks'
+// ids, a ref the page keeps at the pointer's canvas position (where pastes
+// land), and the right-click menu's props while it's open.
 export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, rootRef, onError }: ShortcutOptions) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Usually one block (a click); several after Select all. Copy, cut and
+  // duplicate act on a single selected block only.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   // `text` is null when the system clipboard couldn't be written (see copyNode)
   const clipboard = useRef<{ node: CanvasNode; text: string | null } | null>(null);
   const pointer = useRef({ x: 100, y: 100 });
@@ -131,6 +137,25 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     clipboard.current = entry;
     if (!navigator.clipboard?.writeText) entry.text = null;
     else navigator.clipboard.writeText(entry.text!).catch(() => (entry.text = null));
+  }
+
+  function selectAll() {
+    setSelectedIds(history.nodesRef.current.map((n) => n.id));
+  }
+
+  // Deletes several blocks as one undo step (Ctrl+Z brings them all back).
+  function deleteMany(ids: string[]) {
+    const doomed = history.nodesRef.current.filter((n) => ids.includes(n.id));
+    if (!doomed.length) return;
+    for (const node of doomed) ops.deleteNode(node.id, false);
+    history.record({ kind: "delete", nodes: doomed });
+    setSelectedIds([]);
+  }
+
+  // Clears the board: every block (undoable) and every run output.
+  function deleteAll() {
+    deleteMany(history.nodesRef.current.map((n) => n.id));
+    ops.clearOutputs();
   }
 
   function setLink(node: CanvasNode, link: string | null) {
@@ -216,6 +241,20 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     if (ctrl && !e.shiftKey && key === "z") {
       e.preventDefault();
       undo();
+      return;
+    }
+    if (ctrl && key === "a") {
+      e.preventDefault(); // instead of highlighting the whole page
+      selectAll();
+      return;
+    }
+    if (ctrl && e.key === "Backspace") {
+      e.preventDefault();
+      deleteAll();
+      return;
+    }
+    if (!ctrl && selectedIds.length > 1 && (e.key === "Delete" || e.key === "Backspace")) {
+      deleteMany(selectedIds);
       return;
     }
     const node = history.nodesRef.current.find((n) => n.id === selectedId);
@@ -364,8 +403,16 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       if (menuNode) setLink(menuNode, link);
       setMenu(null);
     },
+    onSelectAll: () => {
+      selectAll();
+      setMenu(null);
+    },
+    onDeleteAll: () => {
+      deleteAll();
+      setMenu(null);
+    },
     onClose: closeMenu,
   };
 
-  return { selectedId, pointer, contextMenu };
+  return { selectedIds, pointer, contextMenu };
 }

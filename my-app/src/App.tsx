@@ -96,6 +96,7 @@ export default function App() {
   const navigate = useNavigate();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
+  const clearOutputs = useCallback(() => setOutputs([]), []);
   const nextId = useRef(1);
   // Latest outputs for the run handlers (the Ctrl+Enter listener is registered
   // once, so it can't read state), and runs still waiting on a result.
@@ -665,11 +666,11 @@ export default function App() {
   }, [canvasId, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedId, pointer, contextMenu } = useCanvasShortcuts({
+  const { selectedIds, pointer, contextMenu } = useCanvasShortcuts({
     enabled: true,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -981,7 +982,7 @@ export default function App() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
-              selected={selectedId === node.id}
+              selected={selectedIds.includes(node.id)}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -998,7 +999,7 @@ export default function App() {
               onResize={resizeDrawing}
               link={node.link}
               pendingErase={pendingErase.has(node.id)}
-              selected={selectedId === node.id}
+              selected={selectedIds.includes(node.id)}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -1019,6 +1020,8 @@ export default function App() {
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
               autoFocus={node.id === focusNodeId}
+              // only outlined in a multi-selection; a click to type shouldn't show one
+              selected={selectedIds.length > 1 && selectedIds.includes(node.id)}
               onEditingChange={setEditingText}
               link={node.link}
               mode={mode}

@@ -36,6 +36,8 @@ interface Props {
   link?: string | null;
   // Put the cursor in the editor when it first appears (a just-made block).
   autoFocus?: boolean;
+  // Part of a multi-block selection (Select all): shows a dashed outline.
+  selected?: boolean;
   // Told when the cursor goes in/out of this block, so the toolbar can show T.
   onEditingChange?: (editing: boolean) => void;
   mode: Mode;
@@ -94,6 +96,7 @@ export default React.memo(function FloatingNode({
   onRun,
   link,
   autoFocus,
+  selected,
   onEditingChange,
   mode,
   isMouseDown,
@@ -266,6 +269,9 @@ export default React.memo(function FloatingNode({
         left: x,
         top: y,
         opacity: pendingErase ? 0.3 : 1,
+        // same dashed outline images and drawings use when selected
+        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outlineOffset: selected ? 4 : undefined,
         transition: GLIDE_TRANSITION, // see lib/glide
         // In draw mode, existing blocks shouldn't intercept clicks or steal
         // the crosshair cursor (e.g. via CodeMirror's own text cursor, or

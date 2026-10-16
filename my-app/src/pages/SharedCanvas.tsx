@@ -101,6 +101,7 @@ export default function SharedCanvas() {
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
+  const clearOutputs = useCallback(() => setOutputs([]), []);
   const nextId = useRef(1);
   // Latest outputs for handleRunNode's duplicate check, and runs still
   // waiting on a result.
@@ -554,11 +555,11 @@ export default function SharedCanvas() {
   }, [canEdit, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedId, pointer, contextMenu } = useCanvasShortcuts({
+  const { selectedIds, pointer, contextMenu } = useCanvasShortcuts({
     enabled: canEdit,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -1032,7 +1033,7 @@ export default function SharedCanvas() {
               onMove={moveNode}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
-              selected={selectedId === node.id}
+              selected={selectedIds.includes(node.id)}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -1049,7 +1050,7 @@ export default function SharedCanvas() {
               onResize={canEdit ? resizeDrawing : undefined}
               link={node.link}
               pendingErase={pendingErase.has(node.id)}
-              selected={selectedId === node.id}
+              selected={selectedIds.includes(node.id)}
               mode={mode}
               isMouseDown={isMouseDown}
               isDark={isDark}
@@ -1069,6 +1070,8 @@ export default function SharedCanvas() {
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
               autoFocus={node.id === focusNodeId}
+              // only outlined in a multi-selection; a click to type shouldn't show one
+              selected={selectedIds.length > 1 && selectedIds.includes(node.id)}
               onEditingChange={setEditingText}
               onSaveSelection={canEdit ? saveSelection : undefined}
               link={node.link}

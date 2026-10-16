@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Copy, CopyPlus, Link, Link2Off, Scissors, ClipboardPaste, Trash2 } from "lucide-react";
+import { Copy, CopyPlus, Link, Link2Off, Scissors, ClipboardPaste, Trash2, BoxSelect, Eraser } from "lucide-react";
 
 export interface CanvasContextMenuProps {
   // where it opens, in screen pixels
@@ -15,6 +15,8 @@ export interface CanvasContextMenuProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onSaveLink: (link: string | null) => void;
+  onSelectAll: () => void;
+  onDeleteAll: () => void;
   onClose: () => void;
 }
 
@@ -47,6 +49,8 @@ export default function CanvasContextMenu({
   onDuplicate,
   onDelete,
   onSaveLink,
+  onSelectAll,
+  onDeleteAll,
   onClose,
 }: CanvasContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -87,7 +91,7 @@ export default function CanvasContextMenu({
 
   // keep the whole menu on screen when opened near the right/bottom edge
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8);
-  const top = Math.min(y, window.innerHeight - (onBlock ? 290 : 50));
+  const top = Math.min(y, window.innerHeight - (onBlock ? 360 : 120));
 
   const item = (label: string, icon: ReactNode, onClick: () => void, hint?: string, danger?: boolean) => (
     <button
@@ -163,10 +167,17 @@ export default function CanvasContextMenu({
           {item(link ? "Edit link" : "Add link", <Link size={13} />, () => setEditingLink(true))}
           {link && item("Remove link", <Link2Off size={13} />, () => onSaveLink(null))}
           {divider}
+          {item("Select all", <BoxSelect size={13} />, onSelectAll, "Ctrl+A")}
           {item("Delete", <Trash2 size={13} />, onDelete, "Del", true)}
+          {item("Delete all", <Eraser size={13} />, onDeleteAll, "Ctrl+⌫", true)}
         </>
       ) : (
-        item("Paste", <ClipboardPaste size={13} />, onPaste, "Ctrl+V")
+        <>
+          {item("Paste", <ClipboardPaste size={13} />, onPaste, "Ctrl+V")}
+          {item("Select all", <BoxSelect size={13} />, onSelectAll, "Ctrl+A")}
+          {divider}
+          {item("Delete all", <Eraser size={13} />, onDeleteAll, "Ctrl+⌫", true)}
+        </>
       )}
     </div>
   );
