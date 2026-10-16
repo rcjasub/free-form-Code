@@ -141,10 +141,12 @@ export default React.memo(function OutputBubble({
     <div
       ref={containerRef}
       data-output-id={id} // lets the next output from the same block be placed beside this one
-      // Black terminal box (the app's dark canvas black) with Beautiful Dracula
-      // text colors (see lib/codeTheme.ts); the same in both canvas themes.
-      className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap bg-[#121212] ${
-        isError ? "text-[#ff5555]" : "text-[#ffabd8]"
+      // Matches the canvas: white text on the dark canvas black, black text on
+      // white in light mode. Errors stay red (a darker red on white).
+      className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap ${
+        isDark ? "bg-[#121212]" : "bg-white"
+      } ${
+        isError ? (isDark ? "text-[#ff5555]" : "text-[#dc2626]") : isDark ? "text-white" : "text-black"
       }`}
       style={{ left: x, top: y, pointerEvents: mode === "draw" ? "none" : undefined }}
       onMouseDown={(e) => {
