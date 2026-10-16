@@ -9,7 +9,9 @@ export const MAX_CONTENT_LENGTH = 3_000_000;
 
 export const contentSchema = z.string().max(MAX_CONTENT_LENGTH, "Block content is too large");
 
-export const languageSchema = z.enum(Object.keys(LANGUAGES) as [Language, ...Language[]]);
+// What a block can be set to: every runnable language, plus "text" for plain
+// notes. runSchema still only takes LANGUAGES, so a text block can't be run.
+export const languageSchema = z.enum([...(Object.keys(LANGUAGES) as Language[]), "text"]);
 
 // null removes the link. Only http(s): the link is rendered as an <a href>
 // for everyone on the canvas, and a "javascript:" URL there would run
