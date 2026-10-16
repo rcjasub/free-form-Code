@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { Pencil, Shapes } from "lucide-react";
+import { motion } from "motion/react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
 import { strokePath } from "./lib/smoothPath";
@@ -29,7 +30,7 @@ import {
   updateBlockLanguage,
   updateBlockLink,
 } from "./API/block";
-import { LANGUAGE_OPTIONS, languageOption, type Language } from "./lib/languages";
+import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe } from "./API/auth";
@@ -106,6 +107,12 @@ export default function App() {
   const offsetRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
   const [mode, setMode] = useState<Mode>("select");
+  // The block just made by a text click — it opens with the cursor in it.
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const lastTextCreate = useRef(0);
+  // While the cursor is in a block the toolbar shows T, whatever the mode.
+  const [editingText, setEditingText] = useState(false);
+  const activeTool: Mode = editingText ? "text" : mode;
   const modeRef = useRef<Mode>("select");
   const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
   const [snapShapes, setSnapShapes] = useState(false);
@@ -355,20 +362,48 @@ export default function App() {
     window.addEventListener("mouseup", onMouseUp);
   }
 
+  // Works like Excalidraw's text tool: a click makes a block with the cursor
+  // already in it and switches back to select, so the next click elsewhere
+  // just finishes typing. Double-clicking empty canvas makes another.
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "text") return;
     if (!isCanvasBackground(e)) return;
+    await createTextBlock(e.clientX, e.clientY);
+  }
+
+  async function handleCanvasDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (mode !== "select" && mode !== "text") return;
+    if (!isCanvasBackground(e)) return;
+    await createTextBlock(e.clientX, e.clientY);
+  }
+
+  async function createTextBlock(clientX: number, clientY: number) {
     if (!canvasId) return;
-    const x = (e.clientX - offset.x) / scale;
-    const y = (e.clientY - offset.y) / scale;
+    const x = (clientX - offset.x) / scale;
+    const y = (clientY - offset.y) / scale;
+    // A double-click in text mode is a click (makes a block) followed by a
+    // dblclick — don't let that second event make another one on top of it.
+    const now = performance.now();
+    if (now - lastTextCreate.current < 500) return;
+    lastTextCreate.current = now;
+    setMode("select");
     try {
       const { data } = await createBlock(canvasId, x, y);
+      // New blocks start as plain text. The create endpoint ignores language,
+      // so set it in a follow-up call (the same one the language picker uses).
+      // If that fails the block already exists — keep it with its default
+      // language rather than losing it behind an error.
+      const language = await updateBlockLanguage(canvasId, data.id, "text")
+        .then(() => "text" as const)
+        .catch(() => data.language);
+      const block = { ...data, language };
+      setFocusNodeId(block.id);
       setNodes((prev) => [
         ...prev,
-        { id: data.id, x: data.x, y: data.y, content: data.content },
+        { id: block.id, x: block.x, y: block.y, content: block.content, language: block.language },
       ]);
-      console.log("[socket] emitting block:created", data);
-      socket.emit("block:created", canvasId, data);
+      console.log("[socket] emitting block:created", block);
+      socket.emit("block:created", canvasId, block);
       history.record({ kind: "create", id: data.id });
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
@@ -434,6 +469,7 @@ export default function App() {
   // puts its output beside the previous one instead of on top of it.
   const runAndPlace = useCallback(
     async (sourceId: string | undefined, code: string, language: string, anchor: { x: number; y: number }) => {
+      if (!isRunnable(language)) return;
       const runKey = sourceId ? makeRunKey(sourceId, language, code) : undefined;
       if (runKey) {
         if (pendingRunKeys.current.has(runKey) || isAlreadyShown(outputsRef.current, runKey)) return;
@@ -735,13 +771,22 @@ export default function App() {
     <button
       onClick={() => setMode(m)}
       title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
-        mode === m
-          ? "bg-gray-100 text-gray-800 dark:bg-[#3c3c4a] dark:text-[#f5f5f5]"
+      className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
+        activeTool === m
+          ? "text-gray-800 dark:text-[#f5f5f5]"
           : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
       }`}
     >
-      {label}
+      {/* One highlight shared by every button (same layoutId), so switching
+          tools slides it over to the new one instead of jumping. */}
+      {activeTool === m && (
+        <motion.span
+          layoutId="toolbar-active"
+          className="absolute inset-0 rounded bg-gray-100 dark:bg-[#3c3c4a]"
+          transition={{ type: "spring", stiffness: 500, damping: 35 }}
+        />
+      )}
+      <span className="relative">{label}</span>
     </button>
   );
 
@@ -758,6 +803,7 @@ export default function App() {
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
       onClick={handleCanvasClick}
+      onDoubleClick={handleCanvasDoubleClick}
       onMouseDown={(e) => {
         isMouseDown.current = true;
         handlePanStart(e);
@@ -969,6 +1015,8 @@ export default function App() {
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
+              autoFocus={node.id === focusNodeId}
+              onEditingChange={setEditingText}
               link={node.link}
               mode={mode}
               isMouseDown={isMouseDown}

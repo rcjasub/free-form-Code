@@ -3,7 +3,7 @@ import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import type { Mode } from "../App";
-import { LANGUAGE_OPTIONS, languageOption, type Language } from "../lib/languages";
+import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "../lib/languages";
 import AnimatedDropdown from "./ui/animated-dropdown";
 import { draculaDark, draculaLight } from "../lib/codeTheme";
 import LinkBadge from "./LinkBadge";
@@ -34,6 +34,10 @@ interface Props {
   pendingErase: boolean;
   onRun: (id: string) => void;
   link?: string | null;
+  // Put the cursor in the editor when it first appears (a just-made block).
+  autoFocus?: boolean;
+  // Told when the cursor goes in/out of this block, so the toolbar can show T.
+  onEditingChange?: (editing: boolean) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -89,6 +93,8 @@ export default React.memo(function FloatingNode({
   pendingErase,
   onRun,
   link,
+  autoFocus,
+  onEditingChange,
   mode,
   isMouseDown,
   isDark,
@@ -118,6 +124,18 @@ export default React.memo(function FloatingNode({
       changes: { from: 0, to: current.length, insert: content },
     });
   }, [content]);
+
+  // A block removed while being typed in never gets a blur — clear it here.
+  const onEditingChangeRef = useRef(onEditingChange);
+  useEffect(() => {
+    onEditingChangeRef.current = onEditingChange;
+  }, [onEditingChange]);
+  useEffect(() => {
+    const focused = isFocused;
+    return () => {
+      if (focused.current) onEditingChangeRef.current?.(false);
+    };
+  }, []);
 
   const theme = useMemo(() => makeTheme(isDark), [isDark]);
   const highlight = useMemo(() => languageOption(language).highlight(), [language]);
@@ -187,7 +205,7 @@ export default React.memo(function FloatingNode({
     };
   }, [id]);
 
-  // Left-click drag from the drag handle (select mode)
+  // Left-click drag from the drag handle (select and text mode)
   function handleDragHandleMouseDown(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -240,7 +258,10 @@ export default React.memo(function FloatingNode({
       ref={containerRef}
       data-node-id={id}
       data-language={language}
-      className="absolute group outline-none"
+      // w-max: size to the longest line. Otherwise the browser shrink-wraps an
+      // absolute box to the room left before the canvas's right edge, and a
+      // block placed far right gets squeezed into a narrow vertical column.
+      className="absolute group outline-none w-max"
       style={{
         left: x,
         top: y,
@@ -264,8 +285,8 @@ export default React.memo(function FloatingNode({
         if (mode === "erase" && isMouseDown.current) onMarkErase(id);
       }}
     >
-      {/* drag handle — visible on hover in select mode */}
-      {mode === "select" && (
+      {/* drag handle — visible on hover in select and text mode */}
+      {(mode === "select" || mode === "text") && (
         <div
           className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragHandleMouseDown}
@@ -279,13 +300,15 @@ export default React.memo(function FloatingNode({
       {/* hand mode overlay */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
 
-      {/* play button */}
-      <div
-        className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
-        onClick={() => onRun(id)}
-      >
-        ▶
-      </div>
+      {/* play button — plain text has nothing to run */}
+      {isRunnable(language) && (
+        <div
+          className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
+          onClick={() => onRun(id)}
+        >
+          ▶
+        </div>
+      )}
 
       {/* language picker — below the block in select and text mode (where
           code gets written); always faintly visible, brighter on hover */}
@@ -311,12 +334,17 @@ export default React.memo(function FloatingNode({
       <CodeMirror
         ref={editorRef}
         value={initialContent}
-        extensions={[highlight, isDark ? draculaDark : draculaLight, theme, EditorView.lineWrapping]}
+        autoFocus={autoFocus}
+        // No lineWrapping: a line keeps going right for as long as you type;
+        // Enter is the only thing that starts a new one.
+        extensions={[highlight, isDark ? draculaDark : draculaLight, theme]}
         onFocus={() => {
           isFocused.current = true;
+          onEditingChange?.(true);
         }}
         onBlur={() => {
           isFocused.current = false;
+          onEditingChange?.(false);
         }}
         onChange={(val) => onChange(id, val)}
         onStatistics={(data) => {
@@ -330,9 +358,10 @@ export default React.memo(function FloatingNode({
           foldGutter: false,
           dropCursor: false,
           allowMultipleSelections: false,
-          indentOnInput: true,
-          bracketMatching: true,
-          closeBrackets: true,
+          // code conveniences that just get in the way of prose
+          indentOnInput: isRunnable(language),
+          bracketMatching: isRunnable(language),
+          closeBrackets: isRunnable(language),
           autocompletion: false,
           highlightActiveLine: false,
           highlightSelectionMatches: false,

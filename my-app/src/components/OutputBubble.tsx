@@ -154,8 +154,8 @@ export default React.memo(function OutputBubble({
         if (mode === "erase" && isMouseDown.current) onDelete(id);
       }}
     >
-      {/* drag handle — visible on hover in select mode */}
-      {mode === "select" && (
+      {/* drag handle — visible on hover in select and text mode */}
+      {(mode === "select" || mode === "text") && (
         <div
           className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
           onMouseDown={handleDragHandleMouseDown}
