@@ -1003,13 +1003,12 @@ export default function SharedCanvas() {
       onPointerDown={handleDrawPointerDown}
       onMouseUp={() => (isMouseDown.current = false)}
     >
-      {/* top-left: the same FREE-FORM branding as the host's canvas — its one
-          link: your canvases if you're logged in, otherwise sign up (coming
-          back to this exact link, incl. ?edit=true) — and a pill saying it's
-          shared and whether you can edit (viewers have no toolbar to tell
-          them). No canvas name: the owner's (often the default "My Canvas")
-          read like a link to the visitor's own. */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-1.5">
+      {/* top-left: the same FREE-FORM branding as the host's canvas, and its
+          only link — your canvases if you're logged in, otherwise sign up
+          (coming back to this exact link, incl. ?edit=true). Like Excalidraw,
+          nothing labels the canvas as shared or view-only: the toolbar (or
+          its absence) already shows whether you can edit. */}
+      <div className="absolute top-4 left-4 z-20">
         <button
           onClick={() =>
             username
@@ -1021,13 +1020,6 @@ export default function SharedCanvas() {
         >
           free-form
         </button>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-            isDark ? "bg-[#232329] text-[#c8c8d2]" : "bg-white text-gray-600"
-          } shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]`}
-        >
-          Shared · {canEdit ? "can edit" : "view only"}
-        </span>
       </div>
 
       {/* transient error toast */}
