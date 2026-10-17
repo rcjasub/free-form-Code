@@ -4,7 +4,6 @@ import { Pencil, Shapes } from "lucide-react";
 import { motion } from "motion/react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
-import { strokePath } from "./lib/smoothPath";
 import { parsePoints } from "./lib/points";
 import { saveErrorMessage } from "./lib/saveErrors";
 import FloatingNode from "./components/FloatingNode";
@@ -37,6 +36,7 @@ import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe } from "./API/auth";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "./hooks/useCanvasHistory";
+import { useFreehandStroke } from "./hooks/useFreehandStroke";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw";
@@ -117,7 +117,7 @@ export default function App() {
   const [editingText, setEditingText] = useState(false);
   const activeTool: Mode = editingText ? "text" : mode;
   const modeRef = useRef<Mode>("select");
-  const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
+  const stroke = useFreehandStroke();
   const [snapShapes, setSnapShapes] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
   const [isGuest, setIsGuest] = useState(false);
@@ -344,25 +344,13 @@ export default function App() {
     return e.target === canvasRef.current || e.target === rootRef.current;
   }
 
-  function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (mode !== "draw" || !isCanvasBackground(e)) return;
-    const points: Point[] = [
-      { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
-    ];
-    setLiveStroke(points);
-
-    function onMouseMove(mv: MouseEvent) {
-      points.push({ x: (mv.clientX - offsetRef.current.x) / scaleRef.current, y: (mv.clientY - offsetRef.current.y) / scaleRef.current });
-      setLiveStroke([...points]);
-    }
-    function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      setLiveStroke(null);
-      finalizeDrawing(points);
-    }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+  function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (mode !== "draw" || e.button !== 0 || !isCanvasBackground(e)) return;
+    stroke.start(
+      e,
+      (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+      finalizeDrawing,
+    );
   }
 
   // Works like Excalidraw's text tool: a click makes a block with the cursor
@@ -803,6 +791,8 @@ export default function App() {
         backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
         backgroundSize: "28px 28px",
         cursor: mode === "erase" ? eraserCursor : undefined,
+        // touch screens: a finger drag draws instead of scrolling the page
+        touchAction: mode === "draw" ? "none" : undefined,
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
@@ -811,8 +801,8 @@ export default function App() {
       onMouseDown={(e) => {
         isMouseDown.current = true;
         handlePanStart(e);
-        handleDrawMouseDown(e);
       }}
+      onPointerDown={handleDrawPointerDown}
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
@@ -1033,13 +1023,14 @@ export default function App() {
           ),
         )}
 
-        {liveStroke && liveStroke.length > 1 && (
+        {stroke.drawing && (
           <svg
             className="absolute inset-0 pointer-events-none"
             style={{ overflow: "visible" }}
           >
+            {/* d is filled in by useFreehandStroke, once per frame */}
             <path
-              d={strokePath(liveStroke)}
+              ref={stroke.pathRef}
               fill="none"
               stroke={isDark ? "#f5f5f5" : "#1f2937"}
               strokeWidth={2}

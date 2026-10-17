@@ -16,13 +16,13 @@ import socket from "@/lib/guestSocket";
 import type { Mode } from "@/App";
 import { Pencil, Shapes } from "lucide-react";
 import { detectShape } from "@/lib/shapeDetection";
-import { strokePath } from "@/lib/smoothPath";
 import { parsePoints } from "@/lib/points";
 import { jsonOrThrow, saveErrorMessage } from "@/lib/saveErrors";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "@/hooks/useCanvasHistory";
+import { useFreehandStroke } from "@/hooks/useFreehandStroke";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
 // a block as this page holds it — see hooks/useCanvasHistory
@@ -120,7 +120,7 @@ export default function SharedCanvas() {
   // pans the canvas instead.
   const [mode, setMode] = useState<Mode>(canEdit ? "select" : "hand");
   const modeRef = useRef<Mode>(canEdit ? "select" : "hand");
-  const [liveStroke, setLiveStroke] = useState<Point[] | null>(null);
+  const stroke = useFreehandStroke();
   const [snapShapes, setSnapShapes] = useState(false);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -743,25 +743,13 @@ export default function SharedCanvas() {
     return e.target === canvasRef.current || e.target === rootRef.current;
   }
 
-  function handleDrawMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (!canEdit || modeRef.current !== "draw" || !isCanvasBackground(e)) return;
-    const points: Point[] = [
-      { x: (e.clientX - offsetRef.current.x) / scaleRef.current, y: (e.clientY - offsetRef.current.y) / scaleRef.current },
-    ];
-    setLiveStroke(points);
-
-    function onMouseMove(mv: MouseEvent) {
-      points.push({ x: (mv.clientX - offsetRef.current.x) / scaleRef.current, y: (mv.clientY - offsetRef.current.y) / scaleRef.current });
-      setLiveStroke([...points]);
-    }
-    function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      setLiveStroke(null);
-      finalizeDrawing(points);
-    }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+  function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!canEdit || modeRef.current !== "draw" || e.button !== 0 || !isCanvasBackground(e)) return;
+    stroke.start(
+      e,
+      (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+      finalizeDrawing,
+    );
   }
 
   // Works like Excalidraw's text tool: a click makes a block with the cursor
@@ -882,12 +870,15 @@ export default function SharedCanvas() {
         backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
         backgroundSize: "28px 28px",
         cursor: mode === "erase" ? eraserCursor : undefined,
+        // touch screens: a finger drag draws instead of scrolling the page
+        touchAction: mode === "draw" ? "none" : undefined,
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
       onClick={handleCanvasClick}
       onDoubleClick={handleCanvasDoubleClick}
-      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); handleDrawMouseDown(e); }}
+      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
+      onPointerDown={handleDrawPointerDown}
       onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* top-left: canvas info */}
@@ -1084,10 +1075,11 @@ export default function SharedCanvas() {
           ),
         )}
 
-        {liveStroke && liveStroke.length > 1 && (
+        {stroke.drawing && (
           <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>
+            {/* d is filled in by useFreehandStroke, once per frame */}
             <path
-              d={strokePath(liveStroke)}
+              ref={stroke.pathRef}
               fill="none"
               stroke={isDark ? "#f5f5f5" : "#1f2937"}
               strokeWidth={2}
