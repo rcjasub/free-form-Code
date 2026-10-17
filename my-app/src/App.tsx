@@ -836,7 +836,7 @@ export default function App() {
       {/* mode toolbar + run hint, centered as one column */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
         <div
-          className="flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]"
+          className="flex items-center gap-0.5 rounded-lg shadow-sm p-1 bg-white dark:bg-[#232329]"
         >
           {toolbarBtn(
             "select",
@@ -905,7 +905,7 @@ export default function App() {
             )
           }
           title="Run selected code"
-          className="w-8 h-8 flex items-center justify-center rounded transition-colors border bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+          className="w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5,3 19,12 5,21" />
@@ -914,7 +914,7 @@ export default function App() {
         <ShareDrawer shareId={shareId} canvasId={canvasId} onMakePublic={handleShare} isDark={isDark}>
           <button
             title="Share canvas"
-            className="h-8 flex items-center justify-center rounded transition-colors border px-2 text-xs bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+            className="h-8 flex items-center justify-center rounded shadow-sm transition-colors px-2 text-xs bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -925,10 +925,10 @@ export default function App() {
         <button
           onClick={() => setSnapShapes((v) => !v)}
           title="Snap drawings to perfect shapes"
-          className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
+          className={`w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors ${
             snapShapes
-              ? "bg-blue-500 border-blue-500 text-white"
-              : "bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+              ? "bg-blue-500 text-white"
+              : "bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           }`}
         >
           <Shapes size={14} />

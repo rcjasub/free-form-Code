@@ -1,4 +1,5 @@
 import { useState, useEffect, useId } from "react";
+import { animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
 
 const LogoutIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -58,12 +59,49 @@ const LIQUID_COLORS = {
   color17: "#3F4CC0",
 };
 
+// The letters' hover fill, timed like the Origin Button component's.
+const LETTER_FILL = { duration: 0.5, ease: [0.16, 1, 0.3, 1] as const };
+
+// Diameter of a circle centered at (x, y) that covers the whole w x h box.
+function coverDiameter(w: number, h: number, x: number, y: number) {
+  return 2 * Math.max(Math.hypot(x, y), Math.hypot(w - x, y), Math.hypot(x, h - y), Math.hypot(w - x, h - y));
+}
+
 // Dark-mode New canvas button: the ui-layouts liquid button, resized to sit
 // in the toolbar row. A blurred liquid glow behind, the liquid fill clipped
 // to the button, and a transparent <button> on top for clicks + hover.
+// On hover the letters fill with yellow in a circle that grows from where
+// the pointer came in (the Origin Button effect), instead of snapping.
 function LiquidNewCanvasButton({ onClick }: { onClick: () => void }) {
   const [isHovered, setIsHovered] = useState(false);
   const id = useId();
+  // Only the circle's size animates; its center jumps straight to where the
+  // pointer came in, so a new hover never slides over from the last one.
+  const radius = useMotionValue(0);
+  const originX = useMotionValue(0);
+  const originY = useMotionValue(0);
+  const clipPath = useMotionTemplate`circle(${radius}px at ${originX}px ${originY}px)`;
+
+  function startFill(e: React.PointerEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    originX.set(x);
+    originY.set(y);
+    animate(radius, coverDiameter(rect.width, rect.height, x, y) / 2, LETTER_FILL);
+    setIsHovered(true);
+  }
+
+  function endFill() {
+    animate(radius, 0, LETTER_FILL);
+    setIsHovered(false);
+  }
+
+  const label = (
+    <>
+      <span className="text-base leading-none">+</span> New canvas
+    </>
+  );
   return (
     <div className="relative inline-block w-36 h-10 shrink-0 bg-black border-2 border-white rounded-lg">
       {/* glow */}
@@ -92,11 +130,19 @@ function LiquidNewCanvasButton({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={onClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        className="absolute inset-0 flex items-center justify-center gap-1.5 rounded-lg bg-transparent text-sm font-semibold text-white hover:text-yellow-300 transition-colors whitespace-nowrap"
+        onPointerEnter={startFill}
+        onPointerLeave={endFill}
+        className="absolute inset-0 flex items-center justify-center gap-1.5 rounded-lg bg-transparent text-sm font-semibold text-white whitespace-nowrap"
       >
-        <span className="text-base leading-none">+</span> New canvas
+        {label}
+        {/* a yellow copy of the label, revealed through a growing circle */}
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 flex items-center justify-center gap-1.5 text-yellow-300 pointer-events-none"
+          style={{ clipPath }}
+        >
+          {label}
+        </motion.span>
       </button>
     </div>
   );
@@ -280,7 +326,7 @@ export default function Dashboard() {
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#1a1a22] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a] w-40"
+                className="pl-8 pr-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a] w-40"
               />
             </div>
           </div>
@@ -308,7 +354,7 @@ export default function Dashboard() {
               <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
               {/* dialog */}
-              <div className="relative w-full max-w-sm mx-4 rounded-xl border border-gray-200 dark:border-[#3c3c4a] bg-white dark:bg-[#1a1a22] shadow-xl">
+              <div className="relative w-full max-w-sm mx-4 rounded-xl bg-white dark:bg-[#1a1a22] shadow-xl">
                 {formState === "success" ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-2">
                     <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -381,7 +427,7 @@ export default function Dashboard() {
             {filtered.map((c, i) => (
               <div
                 key={c.id}
-                className="card-in relative group rounded-xl border border-gray-300 dark:border-[#2e2e3a] hover:border-gray-400 dark:hover:border-[#4e4e5a] hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-black/40 transition-all duration-200 cursor-pointer overflow-hidden"
+                className="card-in relative group rounded-xl shadow-md dark:shadow-black/40 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-black/40 transition-all duration-200 cursor-pointer overflow-hidden"
                 style={{ animationDelay: `${i * 60}ms` }}
                 onClick={() => navigate(`/canvas/${c.id}`)}
               >

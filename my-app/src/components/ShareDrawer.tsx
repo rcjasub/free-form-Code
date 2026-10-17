@@ -39,10 +39,10 @@ export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDra
     }
   }
 
-  const optionClass = `flex items-center justify-between w-full px-4 py-3 rounded-xl border transition-colors cursor-pointer ${
+  const optionClass = `flex items-center justify-between w-full px-4 py-3 rounded-xl transition-colors cursor-pointer ${
     isDark
-      ? "border-[#3c3c4a] bg-[#1a1a22] hover:border-[#5c5c6a]"
-      : "border-gray-200 bg-gray-50 hover:border-gray-300"
+      ? "bg-[#1a1a22] hover:bg-[#2c2c36]"
+      : "bg-gray-50 hover:bg-gray-100"
   }`;
 
   return (
@@ -63,10 +63,10 @@ export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDra
 
             {/* modal */}
             <motion.div
-              className={`fixed z-50 left-1/2 top-1/2 w-full max-w-sm rounded-2xl border shadow-xl p-6 ${
+              className={`fixed z-50 left-1/2 top-1/2 w-full max-w-sm rounded-2xl shadow-xl p-6 ${
                 isDark
-                  ? "bg-[#232329] border-[#3c3c4a]"
-                  : "bg-white border-gray-200"
+                  ? "bg-[#232329]"
+                  : "bg-white"
               }`}
               initial={{ opacity: 0, scale: 0.95, x: "-50%", y: "-50%" }}
               animate={{ opacity: 1, scale: 1, x: "-50%", y: "-50%" }}

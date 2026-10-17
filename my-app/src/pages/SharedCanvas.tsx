@@ -933,7 +933,7 @@ export default function SharedCanvas() {
       {/* mode toolbar + run hint, centered as one column — only in edit mode */}
       {canEdit && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
-          <div className="flex items-center gap-0.5 border rounded-lg shadow-sm p-1 bg-white border-gray-200 dark:bg-[#232329] dark:border-[#3c3c4a]">
+          <div className="flex items-center gap-0.5 rounded-lg shadow-sm p-1 bg-white dark:bg-[#232329]">
             {toolbarBtn(
               "select",
               <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>,
@@ -966,7 +966,7 @@ export default function SharedCanvas() {
               window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }))
             }
             title="Run selected code"
-            className="w-8 h-8 flex items-center justify-center rounded transition-colors border bg-white border-gray-200 text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:border-[#3c3c4a] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+            className="w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5,3 19,12 5,21" />
@@ -977,12 +977,12 @@ export default function SharedCanvas() {
           <button
             onClick={() => setSnapShapes((v) => !v)}
             title="Snap drawings to perfect shapes"
-            className={`w-8 h-8 flex items-center justify-center rounded transition-colors border ${
+            className={`w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors ${
               snapShapes
-                ? "bg-blue-500 border-blue-500 text-white"
+                ? "bg-blue-500 text-white"
                 : isDark
-                  ? "bg-[#232329] border-[#3c3c4a] text-[#9b9ba8] hover:text-[#f5f5f5]"
-                  : "bg-white border-gray-200 text-gray-400 hover:text-gray-700"
+                  ? "bg-[#232329] text-[#9b9ba8] hover:text-[#f5f5f5]"
+                  : "bg-white text-gray-400 hover:text-gray-700"
             }`}
           >
             <Shapes size={14} />
