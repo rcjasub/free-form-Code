@@ -19,6 +19,12 @@ describe("blockUpdatedEventSchema", () => {
     }
   });
 
+  test("relays a text block's size, and rejects sizes the REST route would", () => {
+    const data = { id: "b1", content: "x", wrapWidth: 300, fontSize: 24 };
+    expect(blockUpdatedEventSchema.parse(data)).toEqual(data);
+    expect(blockUpdatedEventSchema.safeParse({ id: "b1", content: "", fontSize: 9999 }).success).toBe(false);
+  });
+
   test("drops fields that aren't part of the event instead of relaying them", () => {
     const parsed = blockUpdatedEventSchema.parse({ id: "b1", content: "", evil: "<img onerror>" });
     expect(parsed).not.toHaveProperty("evil");

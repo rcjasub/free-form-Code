@@ -19,6 +19,27 @@ const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, la
 // and socket traffic on every client, which is what actually causes the lag.
 const DRAG_SYNC_INTERVAL_MS = 40;
 
+// Text size bounds for the resize handles; they match the backend's checks.
+const DEFAULT_FONT_SIZE = 14;
+const MIN_WRAP_WIDTH = 40;
+const MAX_WRAP_WIDTH = 4000;
+const MIN_FONT_SIZE = 6;
+const MAX_FONT_SIZE = 200;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+// Selection box offset and resize handles, sized like DrawingNode's.
+const BOX_PAD = 6;
+const HANDLE_SIZE = 8;
+
+// Excalidraw-style handles: a dot on each corner scales the text; the left
+// and right edges of the box can be grabbed anywhere to change the wrap width.
+type ResizeHandle = "left" | "right" | "nw" | "ne" | "sw" | "se";
+const CORNERS = [
+  { handle: "nw", cursor: "nwse-resize" },
+  { handle: "ne", cursor: "nesw-resize" },
+  { handle: "sw", cursor: "nesw-resize" },
+  { handle: "se", cursor: "nwse-resize" },
+] as const;
+
 interface Props {
   id: string;
   x: number;
@@ -36,7 +57,16 @@ interface Props {
   link?: string | null;
   // Put the cursor in the editor when it first appears (a just-made block).
   autoFocus?: boolean;
-  // Part of a multi-block selection (Select all): shows a dashed outline.
+  // Wrap lines at this width (pasted text, or set with the side handle).
+  // Without it the block grows to its longest line, so typing keeps going right.
+  wrapWidth?: number;
+  // px; the corner handle scales it. Defaults to 14.
+  fontSize?: number;
+  // Called while a resize handle is dragged (done on release), with the
+  // block's position, which moves when resizing from the left or top.
+  // Omitted for viewers, who get no handles.
+  onResize?: (id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => void;
+  // Selected (clicked, or Select all): a thin box and the resize handles.
   selected?: boolean;
   // Told when the cursor goes in/out of this block, so the toolbar can show T.
   onEditingChange?: (editing: boolean) => void;
@@ -49,8 +79,12 @@ function makeTheme(isDark: boolean) {
   return EditorView.theme({
     "&": {
       background: "transparent !important",
-      fontSize: "14px",
-      minWidth: "180px",
+      // set per block (see the container's style), so a resize doesn't have
+      // to rebuild the editor's theme on every frame
+      fontSize: `var(--block-font-size, ${DEFAULT_FONT_SIZE}px)`,
+      // just room for the cursor: the selection box hugs the text, and an
+      // empty block still has its placeholder's width
+      minWidth: "2ch",
       outline: "none !important",
     },
     ".cm-content": {
@@ -99,6 +133,9 @@ export default React.memo(function FloatingNode({
   onRun,
   link,
   autoFocus,
+  wrapWidth,
+  fontSize,
+  onResize,
   selected,
   onEditingChange,
   mode,
@@ -111,6 +148,10 @@ export default React.memo(function FloatingNode({
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
   const isFocused = useRef(false);
+  // Whether the cursor is in the editor. When it isn't, a cover over the
+  // block takes the mouse: drag to move, double-click (or a click in text
+  // mode) to start typing, like Excalidraw.
+  const [editing, setEditing] = useState(false);
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
@@ -147,11 +188,12 @@ export default React.memo(function FloatingNode({
   const highlight = useMemo(() => languageOption(language).highlight(), [language]);
   // Memoized: react-codemirror reconfigures the whole editor whenever these
   // props are new objects, which an inline array/object is on every render.
-  // No lineWrapping: a line keeps going right for as long as you type;
-  // Enter is the only thing that starts a new one.
+  // No lineWrapping unless the block has a wrap width: a line keeps going
+  // right for as long as you type; Enter is the only thing that starts a new one.
+  const wraps = wrapWidth !== undefined;
   const extensions = useMemo(
-    () => [highlight, isDark ? draculaDark : draculaLight, theme],
-    [highlight, isDark, theme],
+    () => [highlight, isDark ? draculaDark : draculaLight, theme, ...(wraps ? [EditorView.lineWrapping] : [])],
+    [highlight, isDark, theme, wraps],
   );
   const runnable = isRunnable(language);
   const basicSetup = useMemo(
@@ -237,8 +279,10 @@ export default React.memo(function FloatingNode({
     };
   }, [id]);
 
-  // Left-click drag from the drag handle (select and text mode)
-  function handleDragHandleMouseDown(e: React.MouseEvent) {
+  // Left-click drag on the block's cover (select and text mode). A press that
+  // never moves far enough to be a drag counts as a click: `onClick` runs.
+  function handleDragMouseDown(e: React.MouseEvent, onClick?: (e: MouseEvent) => void) {
+    if (e.button !== 0) return; // right-click drag has its own listener
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
@@ -272,17 +316,88 @@ export default React.memo(function FloatingNode({
       }
     }
 
-    function onMouseUp() {
+    function onMouseUp(up: MouseEvent) {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       if (isDragging) {
         onMoveRef.current(id, latest.x, latest.y);
         resumeGlide(containerRef.current);
+      } else {
+        onClick?.(up);
       }
     }
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
+  }
+
+  // Puts the cursor in the editor where the pointer is.
+  function startEditing(clientX: number, clientY: number) {
+    const view = editorRef.current?.view;
+    if (!view) return;
+    const pos = view.posAtCoords({ x: clientX, y: clientY }) ?? view.state.doc.length;
+    view.dispatch({ selection: { anchor: pos } });
+    view.focus();
+  }
+
+  // Dragging a resize handle. Edges set where lines wrap; corners scale the
+  // font (and the wrap width with it), like Excalidraw. Dragging from the
+  // left or top moves the block so the opposite side stays put. Sizes are in
+  // canvas units: the screen-to-canvas ratio is read off the element itself,
+  // so this works at any zoom.
+  function handleResizePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
+    const el = containerRef.current;
+    if (!el || !onResize || e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const startClientX = e.clientX;
+    const ratio = el.getBoundingClientRect().width / el.offsetWidth || 1;
+    const startWidth = el.offsetWidth;
+    const startHeight = el.offsetHeight;
+    const start = { x: xRef.current, y: yRef.current };
+    const startFont = fontSize ?? DEFAULT_FONT_SIZE;
+    const startWrap = wrapWidth ?? null;
+    const fromLeft = handle === "left" || handle === "nw" || handle === "sw";
+    const fromTop = handle === "nw" || handle === "ne";
+    let latest = { wrap: startWrap, font: fontSize ?? null, x: start.x, y: start.y };
+    let frame = 0;
+    pauseGlide(el); // the position follows the drag, not a glide
+
+    function onMove(mv: PointerEvent) {
+      // how far the dragged side moved outward
+      const out = ((mv.clientX - startClientX) / ratio) * (fromLeft ? -1 : 1);
+      if (handle === "left" || handle === "right") {
+        const wrap = Math.round(clamp(startWidth + out, MIN_WRAP_WIDTH, MAX_WRAP_WIDTH));
+        latest = { wrap, font: fontSize ?? null, x: fromLeft ? start.x + (startWidth - wrap) : start.x, y: start.y };
+      } else {
+        const factor = Math.max(0.1, (startWidth + out) / startWidth);
+        const font = Math.round(clamp(startFont * factor, MIN_FONT_SIZE, MAX_FONT_SIZE) * 10) / 10;
+        const scaled = font / startFont; // after clamping, so everything stays in step
+        latest = {
+          wrap: startWrap === null ? null : Math.round(clamp(startWrap * scaled, MIN_WRAP_WIDTH, MAX_WRAP_WIDTH)),
+          font,
+          x: fromLeft ? start.x + startWidth * (1 - scaled) : start.x,
+          y: fromTop ? start.y + startHeight * (1 - scaled) : start.y,
+        };
+      }
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          onResize?.(id, latest.wrap, latest.font, latest.x, latest.y, false);
+        });
+      }
+    }
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      cancelAnimationFrame(frame);
+      resumeGlide(el);
+      if (latest.wrap !== startWrap || latest.font !== (fontSize ?? null)) {
+        onResize?.(id, latest.wrap, latest.font, latest.x, latest.y, true);
+      }
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   }
 
   return (
@@ -293,14 +408,19 @@ export default React.memo(function FloatingNode({
       // w-max: size to the longest line. Otherwise the browser shrink-wraps an
       // absolute box to the room left before the canvas's right edge, and a
       // block placed far right gets squeezed into a narrow vertical column.
-      className="absolute group outline-none w-max"
+      className={`absolute group outline-none ${wraps ? "" : "w-max"}`}
       style={{
         left: x,
         top: y,
+        ["--block-font-size" as string]: fontSize ? `${fontSize}px` : undefined,
+        // a wrapping block is exactly its wrap width, so its edge follows
+        // the side handle both ways (like Excalidraw's text boxes)
+        width: wraps ? wrapWidth : undefined,
         opacity: pendingErase ? 0.3 : 1,
-        // same dashed outline images and drawings use when selected
+        // a dashed box tight around the text when selected, the same as
+        // drawings and images; the resize handles sit on its edge
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
-        outlineOffset: selected ? 4 : undefined,
+        outlineOffset: selected ? BOX_PAD : undefined,
         transition: GLIDE_TRANSITION, // see lib/glide
         // In draw mode, existing blocks shouldn't intercept clicks or steal
         // the crosshair cursor (e.g. via CodeMirror's own text cursor, or
@@ -320,16 +440,58 @@ export default React.memo(function FloatingNode({
         if (mode === "erase" && isMouseDown.current) onMarkErase(id);
       }}
     >
-      {/* drag handle — visible on hover in select and text mode */}
-      {(mode === "select" || mode === "text") && (
+      {/* cover while not typing: drag to move; double-click to type (in
+          text mode a single click does, like Excalidraw's text tool) */}
+      {!editing && (mode === "select" || mode === "text") && (
         <div
-          className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-          onMouseDown={handleDragHandleMouseDown}
-        >
-          <div
-            className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`}
-          />
-        </div>
+          // the grab hand, like drawings and images
+          className={`absolute inset-0 z-10 ${mode === "text" ? "cursor-text" : "cursor-grab active:cursor-grabbing"}`}
+          onMouseDown={(e) =>
+            handleDragMouseDown(e, mode === "text" ? (up) => startEditing(up.clientX, up.clientY) : undefined)
+          }
+          onDoubleClick={(e) => startEditing(e.clientX, e.clientY)}
+        />
+      )}
+
+      {/* resize handles — while selected in select and text mode, for
+          editors: grab the left/right edge of the box to change where lines
+          wrap, or a corner dot to scale the text */}
+      {onResize && selected && (mode === "select" || mode === "text") && (
+        <>
+          {(["left", "right"] as const).map((side) => (
+            // an invisible strip along the box's edge line
+            <div
+              key={side}
+              title="Drag to change where lines wrap"
+              className="absolute z-20 cursor-ew-resize"
+              style={{
+                [side]: -BOX_PAD - HANDLE_SIZE / 2,
+                top: -BOX_PAD,
+                bottom: -BOX_PAD,
+                width: HANDLE_SIZE,
+              }}
+              onPointerDown={(e) => handleResizePointerDown(e, side)}
+            />
+          ))}
+          {CORNERS.map(({ handle, cursor }) => (
+            // drawn like DrawingNode's handles, on the box's corners
+            <div
+              key={handle}
+              title="Drag to resize the text"
+              className="absolute rounded-sm border z-20"
+              style={{
+                [handle.includes("w") ? "left" : "right"]: -BOX_PAD - HANDLE_SIZE / 2,
+                [handle.includes("n") ? "top" : "bottom"]: -BOX_PAD - HANDLE_SIZE / 2,
+                width: HANDLE_SIZE,
+                height: HANDLE_SIZE,
+                background: isDark ? "#121212" : "#ffffff",
+                borderColor: "#4fb4f2",
+                cursor,
+              }}
+              onPointerDown={(e) => handleResizePointerDown(e, handle)}
+            />
+          ))}
+        </>
       )}
 
       {/* hand mode overlay */}
@@ -345,12 +507,15 @@ export default React.memo(function FloatingNode({
         </div>
       )}
 
-      {/* language picker — below the block in select and text mode (where
-          code gets written); always faintly visible, brighter on hover */}
+      {/* language picker — below the block (clear of the selection box) in
+          select and text mode; always faintly visible, brighter on hover */}
       {(mode === "select" || mode === "text") && (
         <div
-          // fully opaque while the menu is open, or it would inherit the fade
-          className={`absolute -bottom-5 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          // While the menu is open: fully opaque, or it would inherit the
+          // fade; and raised above other blocks. The menu's own z-50 only
+          // counts inside this wrapper, so at z-20 the next block's language
+          // label (also z-20, later in the page) drew on top of the menu.
+          className={`absolute -bottom-7 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
             <AnimatedDropdown
@@ -373,10 +538,12 @@ export default React.memo(function FloatingNode({
         extensions={extensions}
         onFocus={() => {
           isFocused.current = true;
+          setEditing(true);
           onEditingChange?.(true);
         }}
         onBlur={() => {
           isFocused.current = false;
+          setEditing(false);
           onEditingChange?.(false);
         }}
         onChange={(val) => onChange(id, val)}

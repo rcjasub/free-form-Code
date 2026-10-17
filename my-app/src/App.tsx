@@ -30,6 +30,7 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  updateBlockSize,
 } from "./API/block";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
@@ -56,7 +57,7 @@ function blockToNode(b: any): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
-  return { ...common, language: b.language };
+  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
 }
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
@@ -228,6 +229,8 @@ export default function App() {
                 // a drawing's stroke lives in its content (e.g. after a resize)
                 points: n.type === "draw" ? parsePoints(data.content) ?? n.points : n.points,
                 link: "link" in data ? data.link : n.link,
+                wrapWidth: "wrapWidth" in data ? data.wrapWidth : n.wrapWidth,
+                fontSize: "fontSize" in data ? data.fontSize : n.fontSize,
               }
             : n,
         );
@@ -611,6 +614,40 @@ export default function App() {
     errorToastTimer.current = setTimeout(() => setErrorToast(null), 4000);
   }
 
+  // Sets a text block's wrap width and font size — for its handles and for
+  // undo. `save` is false for the in-between frames of a drag.
+  const applySize = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, save = true) => {
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, wrapWidth, fontSize } : n)));
+    if (!canvasId) return;
+    // block:updated requires content; resending the current content changes nothing
+    socket.emit("block:updated", canvasId, { id, content: node.content, wrapWidth, fontSize });
+    if (save) {
+      updateBlockSize(canvasId, id, { wrapWidth, fontSize }).catch((err) =>
+        showError(saveErrorMessage(err, "Couldn't save the new size — check your connection and try again.")),
+      );
+    }
+  }, [canvasId, history]);
+
+  // One drag of a text block's handles: every call shows the new size here
+  // and to everyone else; the last one (done) saves it and records a single
+  // undo step back to the size it started at.
+  const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+    const before = history.nodesRef.current.find((n) => n.id === id);
+    if (!textResizeStart.current[id] && before) {
+      textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
+    }
+    applySize(id, wrapWidth, fontSize, done);
+    // resizing from the left or top moves the block (one undo step with the resize)
+    if (before && (before.x !== x || before.y !== y)) moveNode(id, x, y, false);
+    if (!done) return;
+    const start = textResizeStart.current[id];
+    delete textResizeStart.current[id];
+    if (start) history.record({ kind: "resize", id, ...start });
+  }, [history, applySize, moveNode]);
+
   // Sets or removes a block's link — for the right-click menu and for undo.
   const applyLink = useCallback((id: string, link: string | null) => {
     const node = history.nodesRef.current.find((n) => n.id === id);
@@ -635,7 +672,9 @@ export default function App() {
       // the create endpoint ignores language and link, so set them in follow-up calls
       if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
       if (src.link) await updateBlockLink(canvasId, data.id, src.link);
-      const block = { ...data, language: src.language, link: src.link ?? null };
+      const size = { wrapWidth: src.wrapWidth ?? null, fontSize: src.fontSize ?? null };
+      if (size.wrapWidth !== null || size.fontSize !== null) await updateBlockSize(canvasId, data.id, size);
+      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize };
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", canvasId, block);
       return String(data.id);
@@ -660,7 +699,7 @@ export default function App() {
     enabled: true,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock, clearOutputs },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -1016,8 +1055,10 @@ export default function App() {
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
               autoFocus={node.id === focusNodeId}
-              // only outlined in a multi-selection; a click to type shouldn't show one
-              selected={selectedIds.length > 1 && selectedIds.includes(node.id)}
+              wrapWidth={node.wrapWidth ?? undefined}
+              fontSize={node.fontSize ?? undefined}
+              onResize={resizeText}
+              selected={selectedIds.includes(node.id)}
               onEditingChange={setEditingText}
               link={node.link}
               mode={mode}

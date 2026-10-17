@@ -39,6 +39,8 @@ interface ApiBlock {
   language?: Language;
   width?: number;
   link?: string | null;
+  wrap_width?: number | null;
+  font_size?: number | null;
 }
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
@@ -46,7 +48,7 @@ function blockToNode(b: ApiBlock): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
-  return { ...common, language: b.language };
+  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
 }
 
 interface RemoteCursor {
@@ -232,6 +234,8 @@ export default function SharedCanvas() {
               // a drawing's stroke lives in its content (e.g. after a resize)
               points: n.type === "draw" ? parsePoints(data.content) ?? n.points : n.points,
               link: "link" in data ? data.link : n.link,
+              wrapWidth: "wrapWidth" in data ? data.wrapWidth : n.wrapWidth,
+              fontSize: "fontSize" in data ? data.fontSize : n.fontSize,
             }
           : n,
       ));
@@ -484,6 +488,45 @@ export default function SharedCanvas() {
 
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
+  // Sets a text block's wrap width and font size — for its handles and for
+  // undo. `save` is false for the in-between frames of a drag.
+  const applySize = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, save = true) => {
+    const cid = canvasIdRef.current;
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!canEdit || !cid || !node) return;
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, wrapWidth, fontSize } : n)));
+    // block:updated requires content; resending the current content changes nothing
+    socket.emit("block:updated", cid, { id, content: node.content, wrapWidth, fontSize });
+    if (save) {
+      fetch(`/api/canvases/${cid}/blocks/${id}/size`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ wrapWidth, fontSize }),
+      })
+        .then(jsonOrThrow)
+        .catch((err) => showError(saveErrorMessage(err, "Couldn't save the new size — check your connection and try again.")));
+    }
+  }, [canEdit, history]);
+
+  // One drag of a text block's handles: every call shows the new size here
+  // and to everyone else; the last one (done) saves it and records a single
+  // undo step back to the size it started at.
+  const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+    const before = history.nodesRef.current.find((n) => n.id === id);
+    if (!textResizeStart.current[id] && before) {
+      textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
+    }
+    applySize(id, wrapWidth, fontSize, done);
+    // resizing from the left or top moves the block (one undo step with the resize)
+    if (before && (before.x !== x || before.y !== y)) moveNode(id, x, y, false);
+    if (!done) return;
+    const start = textResizeStart.current[id];
+    delete textResizeStart.current[id];
+    if (start) history.record({ kind: "resize", id, ...start });
+  }, [history, applySize, moveNode]);
+
   // Sets or removes a block's link — for the right-click menu and for undo.
   const applyLink = useCallback((id: string, link: string | null) => {
     const cid = canvasIdRef.current;
@@ -528,7 +571,9 @@ export default function SharedCanvas() {
         });
       if (src.language) await patch("language", { language: src.language });
       if (src.link) await patch("link", { link: src.link });
-      const block = { ...data, language: src.language, link: src.link ?? null };
+      const size = { wrapWidth: src.wrapWidth ?? null, fontSize: src.fontSize ?? null };
+      if (size.wrapWidth !== null || size.fontSize !== null) await patch("size", size);
+      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize };
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", cid, block);
       return String(data.id);
@@ -561,7 +606,7 @@ export default function SharedCanvas() {
     enabled: canEdit,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock, clearOutputs },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -1067,8 +1112,11 @@ export default function SharedCanvas() {
               pendingErase={pendingErase.has(node.id)}
               onRun={handleRunNode}
               autoFocus={node.id === focusNodeId}
-              // only outlined in a multi-selection; a click to type shouldn't show one
-              selected={selectedIds.length > 1 && selectedIds.includes(node.id)}
+              wrapWidth={node.wrapWidth ?? undefined}
+              fontSize={node.fontSize ?? undefined}
+              // viewers can't resize
+              onResize={canEdit ? resizeText : undefined}
+              selected={selectedIds.includes(node.id)}
               onEditingChange={setEditingText}
               onSaveSelection={canEdit ? saveSelection : undefined}
               link={node.link}

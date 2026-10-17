@@ -50,6 +50,15 @@ export function updateBlockLink(canvasId: string, blockId: string, link: string 
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/link`, { link });
 }
 
+// A text block's wrap width and font size; null resets either.
+export function updateBlockSize(
+  canvasId: string,
+  blockId: string,
+  size: { wrapWidth: number | null; fontSize: number | null },
+) {
+  return api.patch(`/canvases/${canvasId}/blocks/${blockId}/size`, size);
+}
+
 export function updateBlockLanguage(canvasId: string, blockId: string, language: string) {
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/language`, { language });
 }

@@ -16,6 +16,9 @@ export interface CanvasNode {
   points?: Point[];
   width?: number; // images only — how wide they're shown
   link?: string | null;
+  // text blocks: where lines wrap (null: they don't) and font size (null: default)
+  wrapWidth?: number | null;
+  fontSize?: number | null;
 }
 
 // One entry per undoable canvas action, holding what's needed to reverse it.
@@ -28,9 +31,15 @@ export type HistoryEntry =
   | { kind: "language"; id: string; language: Language; content: string }
   // a drawing's position and stroke before it was resized
   | { kind: "reshape"; id: string; x: number; y: number; content: string }
-  | { kind: "link"; id: string; link: string | null };
+  | { kind: "link"; id: string; link: string | null }
+  // a text block's size (and position — resizing from the left/top moves it)
+  // before its handles were dragged
+  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number };
 
 const MAX_HISTORY = 100;
+// Text pasted from outside wraps at this width instead of running off to the
+// right as one long line (a paragraph from a web page is usually one line).
+const PASTE_WRAP_WIDTH = 480;
 // how far a duplicate lands from its original, so it doesn't hide under it
 const DUPLICATE_OFFSET = 24;
 
@@ -96,6 +105,7 @@ export interface CanvasOps {
   applyLanguage: (id: string, language: Language, content: string) => void;
   applyShape: (id: string, x: number, y: number, content: string) => void;
   applyLink: (id: string, link: string | null) => void;
+  applySize: (id: string, wrapWidth: number | null, fontSize: number | null) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
   // removes every run output, as part of "Delete all"
@@ -175,7 +185,9 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     ops.applyLink(node.id, link);
   }
 
-  // Text from outside becomes a text block; an image becomes an image block.
+  // Text from outside becomes a Plain text block, exactly as copied (no code
+  // highlighting or run button, like Excalidraw's pasted text), that wraps
+  // at PASTE_WRAP_WIDTH; an image becomes an image block.
   async function pasteExternal(source: { image?: Blob; text?: string }, at: { x: number; y: number }) {
     try {
       if (source.image) {
@@ -183,7 +195,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
         const image = { id: "", ...at, type: "image", content: dataUrl, width: Math.min(width, IMAGE_DISPLAY_WIDTH) };
         await placeCopy(image, at.x, at.y);
       } else if (source.text) {
-        await placeCopy({ id: "", ...at, content: source.text }, at.x, at.y);
+        const note = { id: "", ...at, content: source.text, language: "text" as const, wrapWidth: PASTE_WRAP_WIDTH };
+        await placeCopy(note, at.x, at.y);
       }
     } catch (err) {
       onError?.(err instanceof Error ? err.message : "Couldn't paste that.");
@@ -212,7 +225,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // and `selectedId` — never a stale copy from an earlier render.
 
   const undo = useEffectEvent(async () => {
-    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, recreateBlock } = ops;
+    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
     // Skip entries for blocks someone else has deleted since.
@@ -233,6 +246,10 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       } else if (entry.kind === "link") {
         if (!exists(entry.id)) continue;
         applyLink(entry.id, entry.link);
+      } else if (entry.kind === "resize") {
+        if (!exists(entry.id)) continue;
+        applySize(entry.id, entry.wrapWidth, entry.fontSize);
+        moveNode(entry.id, entry.x, entry.y, false);
       } else {
         for (const node of entry.nodes) {
           const newId = await recreateBlock(node, node.x, node.y);

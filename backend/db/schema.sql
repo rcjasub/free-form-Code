@@ -54,3 +54,9 @@ ALTER TABLE blocks ADD COLUMN IF NOT EXISTS language VARCHAR(20) NOT NULL DEFAUL
 
 -- optional web link attached to a block (right-click > Add link). Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS link TEXT;
+
+-- text block sizing, set by dragging its handles (and pasted text's wrap).
+-- wrap_width: where its lines wrap; NULL means they don't (the block grows
+-- with its longest line). font_size: in px; NULL means the default. Safe to re-run.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS wrap_width FLOAT;
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS font_size FLOAT;

@@ -6,12 +6,13 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  updateBlockSize,
   MAX_BLOCKS_PER_CANVAS,
   MAX_CANVAS_CONTENT,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
-import { updateBlockLinkSchema } from "../schemas/block.schema";
+import { updateBlockLinkSchema, updateBlockSizeSchema } from "../schemas/block.schema";
 
 jest.mock("../models/blocks");
 jest.mock("../redis", () => ({
@@ -32,6 +33,8 @@ const fakeBlock = {
   language: "javascript",
   content: "[]",
   link: null,
+  wrap_width: null,
+  font_size: null,
   x: 0,
   y: 0,
   width: 10,
@@ -319,5 +322,48 @@ describe("updateBlockLinkSchema", () => {
     expect(updateBlockLinkSchema.safeParse({ link: "javascript:alert(1)" }).success).toBe(false);
     expect(updateBlockLinkSchema.safeParse({ link: "data:text/html,<script>alert(1)</script>" }).success).toBe(false);
     expect(updateBlockLinkSchema.safeParse({ link: "not a url" }).success).toBe(false);
+  });
+});
+
+describe("updateBlockSize", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = { params: { id: "1", blockId: "b1" }, body: { wrapWidth: 320, fontSize: 20 } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("returns 200 and invalidates the cache on successful update", async () => {
+    mockBlocks.updateBlockSize.mockResolvedValue({ ...fakeBlock, wrap_width: 320, font_size: 20 });
+
+    await updateBlockSize(req, res);
+
+    expect(mockBlocks.updateBlockSize).toHaveBeenCalledWith("1", "b1", { wrapWidth: 320, fontSize: 20 });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+  });
+
+  test("returns 404 when the block doesn't exist", async () => {
+    mockBlocks.updateBlockSize.mockResolvedValue(undefined as any);
+
+    await updateBlockSize(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
+describe("updateBlockSizeSchema", () => {
+  test("accepts a width, a font size, either alone, and null (reset)", () => {
+    expect(updateBlockSizeSchema.safeParse({ wrapWidth: 480, fontSize: 18 }).success).toBe(true);
+    expect(updateBlockSizeSchema.safeParse({ fontSize: 32 }).success).toBe(true);
+    expect(updateBlockSizeSchema.safeParse({ wrapWidth: null }).success).toBe(true);
+  });
+
+  test("rejects an empty update and out-of-range sizes", () => {
+    expect(updateBlockSizeSchema.safeParse({}).success).toBe(false);
+    expect(updateBlockSizeSchema.safeParse({ wrapWidth: 5 }).success).toBe(false);
+    expect(updateBlockSizeSchema.safeParse({ fontSize: 1000 }).success).toBe(false);
+    expect(updateBlockSizeSchema.safeParse({ fontSize: "big" }).success).toBe(false);
   });
 });

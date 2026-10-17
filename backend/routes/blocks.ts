@@ -8,12 +8,13 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  updateBlockSize,
 } from "../controllers/blocksController";
 import { optionalAuthenticate } from "../middleware/auth";
 import { requireCanvasAccess } from "../middleware/canvasAccess";
 import { validate } from "../middleware/validate";
 import { userOrIpKey } from "../middleware/rateLimitKey";
-import { createSchema, updateBlockSchema, updateBlockContentSchema, updateBlockLanguageSchema, updateBlockLinkSchema } from "../schemas/block.schema"
+import { createSchema, updateBlockSchema, updateBlockContentSchema, updateBlockLanguageSchema, updateBlockLinkSchema, updateBlockSizeSchema } from "../schemas/block.schema"
 
 // Every write (typing saves are debounced to one per 800ms, moves to one per
 // drag) — generous for real editing, but stops a script hammering the DB.
@@ -49,5 +50,6 @@ router.put("/:blockId", writeLimiter, validate(updateBlockSchema), updateBlock);
 router.patch("/:blockId/content", writeLimiter, validate(updateBlockContentSchema), updateBlockContent);
 router.patch("/:blockId/language", writeLimiter, validate(updateBlockLanguageSchema), updateBlockLanguage);
 router.patch("/:blockId/link", writeLimiter, validate(updateBlockLinkSchema), updateBlockLink);
+router.patch("/:blockId/size", writeLimiter, validate(updateBlockSizeSchema), updateBlockSize);
 
 export default router;

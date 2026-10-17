@@ -50,3 +50,15 @@ export const updateBlockLanguageSchema = z.object({
 export const updateBlockLinkSchema = z.object({
     link: linkSchema,
 });
+
+// A text block's size. null resets: no wrap (grows with its longest line),
+// or the default font size. The bounds just keep a block usable on screen.
+export const wrapWidthSchema = z.number().min(40).max(4000).nullable();
+export const fontSizeSchema = z.number().min(6).max(200).nullable();
+
+export const updateBlockSizeSchema = z
+    .object({
+        wrapWidth: wrapWidthSchema.optional(),
+        fontSize: fontSizeSchema.optional(),
+    })
+    .refine((s) => s.wrapWidth !== undefined || s.fontSize !== undefined, "Nothing to update");

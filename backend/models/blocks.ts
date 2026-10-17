@@ -7,6 +7,8 @@ export interface Block {
   language: string;
   content: string;
   link: string | null;
+  wrap_width: number | null;
+  font_size: number | null;
   x: number;
   y: number;
   width: number;
@@ -118,6 +120,35 @@ export async function updateBlockLink(
   const result = await pool.query<Block>(
     `UPDATE blocks SET link = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
     [link, blockId, canvasId],
+  );
+  return result.rows[0];
+}
+
+export interface BlockSize {
+  wrapWidth?: number | null;
+  fontSize?: number | null;
+}
+
+// Updates only the size fields that were sent; the column names come from
+// this fixed list, never from the request.
+export async function updateBlockSize(
+  canvasId: string,
+  blockId: string,
+  size: BlockSize,
+): Promise<Block> {
+  const sets: string[] = [];
+  const values: (number | null)[] = [];
+  if (size.wrapWidth !== undefined) {
+    values.push(size.wrapWidth);
+    sets.push(`wrap_width = $${values.length}`);
+  }
+  if (size.fontSize !== undefined) {
+    values.push(size.fontSize);
+    sets.push(`font_size = $${values.length}`);
+  }
+  const result = await pool.query<Block>(
+    `UPDATE blocks SET ${sets.join(", ")} WHERE id = $${values.length + 1} AND canvas_id = $${values.length + 2} RETURNING *`,
+    [...values, blockId, canvasId],
   );
   return result.rows[0];
 }

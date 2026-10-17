@@ -13,8 +13,9 @@ export interface Point {
 // See FloatingNode.tsx for why dragging is throttled this way.
 const DRAG_SYNC_INTERVAL_MS = 40;
 
-// Resize handles: four corners stretch both ways, four edges stretch one way.
-// fx/fy place each handle on the selection box (0 = left/top, 1 = right/bottom).
+// Resize handles, like Excalidraw's: a dot on each corner stretches both
+// ways; each edge of the selection box can be grabbed anywhere along its line
+// to stretch one way. fx/fy place each on the box (0 = left/top, 1 = right/bottom).
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 const HANDLES: { handle: Handle; fx: number; fy: number; cursor: string }[] = [
   { handle: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
@@ -219,6 +220,18 @@ export default React.memo(function DrawingNode({
     >
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" style={{ pointerEvents: "auto" }} />}
 
+      {/* Once selected, the whole selection box moves the drawing, not just
+          the stroke (like Excalidraw). Unselected, only the stroke is
+          hit-testable — see pointerEvents above. Sits under the stroke's
+          hit-path and the resize handles. */}
+      {selected && (mode === "select" || mode === "text") && (
+        <div
+          className="absolute cursor-grab active:cursor-grabbing"
+          style={{ inset: -BOX_PAD, pointerEvents: "auto" }}
+          onMouseDown={handlePathMouseDown}
+        />
+      )}
+
       <svg
         width={width}
         height={height}
@@ -253,24 +266,31 @@ export default React.memo(function DrawingNode({
 
       {link && <LinkBadge link={link} isDark={isDark} />}
 
-      {selected && mode === "select" && onResize &&
-        HANDLES.map(({ handle, fx, fy, cursor }) => (
-          <div
-            key={handle}
-            onMouseDown={(e) => handleResizeMouseDown(e, handle)}
-            className="absolute rounded-sm border"
-            style={{
-              left: -BOX_PAD + fx * (width + 2 * BOX_PAD) - HANDLE_SIZE / 2,
-              top: -BOX_PAD + fy * (height + 2 * BOX_PAD) - HANDLE_SIZE / 2,
-              width: HANDLE_SIZE,
-              height: HANDLE_SIZE,
-              background: isDark ? "#121212" : "#ffffff",
-              borderColor: "#4fb4f2",
-              cursor,
-              pointerEvents: "auto", // the container itself ignores the mouse
-            }}
-          />
-        ))}
+      {selected && (mode === "select" || mode === "text") && onResize &&
+        HANDLES.map(({ handle, fx, fy, cursor }) => {
+          const boxW = width + 2 * BOX_PAD;
+          const boxH = height + 2 * BOX_PAD;
+          const corner = handle.length === 2;
+          return (
+            <div
+              key={handle}
+              onMouseDown={(e) => handleResizeMouseDown(e, handle)}
+              // corners: a visible dot; edges: an invisible strip along the line
+              className={corner ? "absolute rounded-sm border z-10" : "absolute"}
+              style={{
+                left: -BOX_PAD + (fx === 0.5 ? 0 : fx * boxW) - HANDLE_SIZE / 2,
+                top: -BOX_PAD + (fy === 0.5 ? 0 : fy * boxH) - HANDLE_SIZE / 2,
+                // an edge strip runs the whole side; a corner dot is a small square
+                width: corner || fx !== 0.5 ? HANDLE_SIZE : boxW + HANDLE_SIZE,
+                height: corner || fy !== 0.5 ? HANDLE_SIZE : boxH + HANDLE_SIZE,
+                background: corner ? (isDark ? "#121212" : "#ffffff") : undefined,
+                borderColor: corner ? "#4fb4f2" : undefined,
+                cursor,
+                pointerEvents: "auto", // the container itself ignores the mouse
+              }}
+            />
+          );
+        })}
     </div>
   );
 });
