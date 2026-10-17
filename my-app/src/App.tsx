@@ -768,13 +768,20 @@ export default function App() {
     lastSelection.current = { content, el };
   }, []);
 
-  function dismissOutput(id: number) {
+  // useCallback so OutputBubble's memo holds: other outputs don't re-render
+  // when one changes.
+  const dismissOutput = useCallback((id: number) => {
     setOutputs((prev) => prev.filter((o) => o.id !== id));
-  }
+  }, []);
 
-  function moveOutput(id: number, x: number, y: number) {
+  // Outputs only live on this screen, so a resize is just local state.
+  const resizeOutput = useCallback((id: number, width: number | null, fontSize: number | null, x: number, y: number) => {
+    setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, width, fontSize, x, y } : o)));
+  }, []);
+
+  const moveOutput = useCallback((id: number, x: number, y: number) => {
     setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
-  }
+  }, []);
 
   // nodes is the only real dependency — offset/scale are read from refs
   // so the function only recreates when blocks actually change, not on cursor moves.
@@ -1151,8 +1158,11 @@ export default function App() {
             y={out.y}
             text={out.text}
             isError={out.isError}
+            width={out.width}
+            fontSize={out.fontSize}
             onDelete={dismissOutput}
             onMove={moveOutput}
+            onResize={resizeOutput}
             mode={mode}
             isMouseDown={isMouseDown}
             isDark={isDark}

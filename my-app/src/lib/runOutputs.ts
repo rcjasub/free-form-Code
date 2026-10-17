@@ -11,6 +11,9 @@ export interface Output {
   y: number;
   text: string;
   isError: boolean;
+  // set with the resize handles (see OutputBubble)
+  width?: number | null;
+  fontSize?: number | null;
   // Block that produced it and the exact code/language it ran — absent for
   // runs that didn't come from a block.
   sourceId?: string;

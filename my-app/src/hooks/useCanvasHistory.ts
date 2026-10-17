@@ -432,6 +432,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     } else if (target === canvasRef.current || target === rootRef.current) {
       if (!e.shiftKey) setSelectedId(null);
       if (e.button === 0 && canMarquee?.()) startMarquee(e);
+    } else if (target.closest?.("[data-output-id]")) {
+      setSelectedId(null); // a run output has its own selection (see OutputBubble)
     }
     if (e.button === 2) rightDown.current = { x: e.clientX, y: e.clientY };
   });

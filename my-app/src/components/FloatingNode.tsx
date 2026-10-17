@@ -8,6 +8,8 @@ import AnimatedDropdown from "./ui/animated-dropdown";
 import { draculaDark, draculaLight } from "../lib/codeTheme";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
+import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
+import ResizeHandles from "./ResizeHandles";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
 
@@ -21,24 +23,7 @@ const DRAG_SYNC_INTERVAL_MS = 40;
 
 // Text size bounds for the resize handles; they match the backend's checks.
 const DEFAULT_FONT_SIZE = 14;
-const MIN_WRAP_WIDTH = 40;
-const MAX_WRAP_WIDTH = 4000;
-const MIN_FONT_SIZE = 6;
-const MAX_FONT_SIZE = 200;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-// Selection box offset and resize handles, sized like DrawingNode's.
-const BOX_PAD = 6;
-const HANDLE_SIZE = 8;
-
-// Excalidraw-style handles: a dot on each corner scales the text; the left
-// and right edges of the box can be grabbed anywhere to change the wrap width.
-type ResizeHandle = "left" | "right" | "nw" | "ne" | "sw" | "se";
-const CORNERS = [
-  { handle: "nw", cursor: "nwse-resize" },
-  { handle: "ne", cursor: "nesw-resize" },
-  { handle: "sw", cursor: "nesw-resize" },
-  { handle: "se", cursor: "nwse-resize" },
-] as const;
+const TEXT_LIMITS: ResizeLimits = { minWidth: 40, maxWidth: 4000, minFont: 6, maxFont: 200 };
 
 interface Props {
   id: string;
@@ -340,64 +325,26 @@ export default React.memo(function FloatingNode({
     view.focus();
   }
 
-  // Dragging a resize handle. Edges set where lines wrap; corners scale the
-  // font (and the wrap width with it), like Excalidraw. Dragging from the
-  // left or top moves the block so the opposite side stays put. Sizes are in
-  // canvas units: the screen-to-canvas ratio is read off the element itself,
-  // so this works at any zoom.
+  // Dragging a resize handle (see lib/resize).
   function handleResizePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
     const el = containerRef.current;
     if (!el || !onResize || e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const startClientX = e.clientX;
-    const ratio = el.getBoundingClientRect().width / el.offsetWidth || 1;
-    const startWidth = el.offsetWidth;
-    const startHeight = el.offsetHeight;
-    const start = { x: xRef.current, y: yRef.current };
-    const startFont = fontSize ?? DEFAULT_FONT_SIZE;
-    const startWrap = wrapWidth ?? null;
-    const fromLeft = handle === "left" || handle === "nw" || handle === "sw";
-    const fromTop = handle === "nw" || handle === "ne";
-    let latest = { wrap: startWrap, font: fontSize ?? null, x: start.x, y: start.y };
-    let frame = 0;
-    pauseGlide(el); // the position follows the drag, not a glide
-
-    function onMove(mv: PointerEvent) {
-      // how far the dragged side moved outward
-      const out = ((mv.clientX - startClientX) / ratio) * (fromLeft ? -1 : 1);
-      if (handle === "left" || handle === "right") {
-        const wrap = Math.round(clamp(startWidth + out, MIN_WRAP_WIDTH, MAX_WRAP_WIDTH));
-        latest = { wrap, font: fontSize ?? null, x: fromLeft ? start.x + (startWidth - wrap) : start.x, y: start.y };
-      } else {
-        const factor = Math.max(0.1, (startWidth + out) / startWidth);
-        const font = Math.round(clamp(startFont * factor, MIN_FONT_SIZE, MAX_FONT_SIZE) * 10) / 10;
-        const scaled = font / startFont; // after clamping, so everything stays in step
-        latest = {
-          wrap: startWrap === null ? null : Math.round(clamp(startWrap * scaled, MIN_WRAP_WIDTH, MAX_WRAP_WIDTH)),
-          font,
-          x: fromLeft ? start.x + startWidth * (1 - scaled) : start.x,
-          y: fromTop ? start.y + startHeight * (1 - scaled) : start.y,
-        };
-      }
-      if (!frame) {
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          onResize?.(id, latest.wrap, latest.font, latest.x, latest.y, false);
-        });
-      }
-    }
-    function onUp() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      cancelAnimationFrame(frame);
-      resumeGlide(el);
-      if (latest.wrap !== startWrap || latest.font !== (fontSize ?? null)) {
-        onResize?.(id, latest.wrap, latest.font, latest.x, latest.y, true);
-      }
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    startResizeDrag(
+      e,
+      el,
+      handle,
+      { x: xRef.current, y: yRef.current, font: fontSize ?? null, defaultFont: DEFAULT_FONT_SIZE, wrap: wrapWidth ?? null },
+      TEXT_LIMITS,
+      (r, done) => onResize?.(id, r.wrap, r.font, r.x, r.y, done),
+      {
+        preview: (r) => {
+          el.style.left = `${r.x}px`;
+          el.style.top = `${r.y}px`;
+          if (r.wrap !== null) el.style.width = `${r.wrap}px`;
+          el.style.setProperty("--block-font-size", `${r.font ?? DEFAULT_FONT_SIZE}px`);
+        },
+      },
+    );
   }
 
   return (
@@ -457,41 +404,7 @@ export default React.memo(function FloatingNode({
           editors: grab the left/right edge of the box to change where lines
           wrap, or a corner dot to scale the text */}
       {onResize && selected && (mode === "select" || mode === "text") && (
-        <>
-          {(["left", "right"] as const).map((side) => (
-            // an invisible strip along the box's edge line
-            <div
-              key={side}
-              title="Drag to change where lines wrap"
-              className="absolute z-20 cursor-ew-resize"
-              style={{
-                [side]: -BOX_PAD - HANDLE_SIZE / 2,
-                top: -BOX_PAD,
-                bottom: -BOX_PAD,
-                width: HANDLE_SIZE,
-              }}
-              onPointerDown={(e) => handleResizePointerDown(e, side)}
-            />
-          ))}
-          {CORNERS.map(({ handle, cursor }) => (
-            // drawn like DrawingNode's handles, on the box's corners
-            <div
-              key={handle}
-              title="Drag to resize the text"
-              className="absolute rounded-sm border z-20"
-              style={{
-                [handle.includes("w") ? "left" : "right"]: -BOX_PAD - HANDLE_SIZE / 2,
-                [handle.includes("n") ? "top" : "bottom"]: -BOX_PAD - HANDLE_SIZE / 2,
-                width: HANDLE_SIZE,
-                height: HANDLE_SIZE,
-                background: isDark ? "#121212" : "#ffffff",
-                borderColor: "#4fb4f2",
-                cursor,
-              }}
-              onPointerDown={(e) => handleResizePointerDown(e, handle)}
-            />
-          ))}
-        </>
+        <ResizeHandles isDark={isDark} onPointerDown={handleResizePointerDown} />
       )}
 
       {/* hand mode overlay */}
@@ -500,7 +413,7 @@ export default React.memo(function FloatingNode({
       {/* play button — plain text has nothing to run */}
       {isRunnable(language) && (
         <div
-          className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity z-20 ${isDark ? "text-gray-400" : "text-gray-400"}`}
+          className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity ${isDark ? "text-gray-400" : "text-gray-400"}`}
           onClick={() => onRun(id)}
         >
           ▶
@@ -513,11 +426,12 @@ export default React.memo(function FloatingNode({
           line it would otherwise wrap to the block's narrow width */}
       {(mode === "select" || mode === "text") && (
         <div
-          // While the menu is open: fully opaque, or it would inherit the
-          // fade; and raised above other blocks. The menu's own z-50 only
-          // counts inside this wrapper, so at z-20 the next block's language
-          // label (also z-20, later in the page) drew on top of the menu.
-          className={`absolute -bottom-7 left-0 w-max whitespace-nowrap text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          // No z-index while closed, so an image, output or block placed on
+          // top covers the label instead of it showing through. While the
+          // menu is open: fully opaque, or it would inherit the fade, and
+          // raised above everything (the menu's own z-50 only counts inside
+          // this wrapper).
+          className={`absolute -bottom-7 left-0 w-max whitespace-nowrap text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
             <AnimatedDropdown

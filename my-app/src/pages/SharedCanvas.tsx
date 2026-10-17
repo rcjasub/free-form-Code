@@ -805,6 +805,11 @@ export default function SharedCanvas() {
     setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, x, y } : o)));
   }, []);
 
+  // Outputs only live on this screen, so a resize is just local state.
+  const resizeOutput = useCallback((id: number, width: number | null, fontSize: number | null, x: number, y: number) => {
+    setOutputs((prev) => prev.map((o) => (o.id === id ? { ...o, width, fontSize, x, y } : o)));
+  }, []);
+
   function handleMouseMove(e: React.MouseEvent) {
     const x = (e.clientX - offsetRef.current.x) / scaleRef.current;
     const y = (e.clientY - offsetRef.current.y) / scaleRef.current;
@@ -1213,8 +1218,11 @@ export default function SharedCanvas() {
             y={out.y}
             text={out.text}
             isError={out.isError}
+            width={out.width}
+            fontSize={out.fontSize}
             onDelete={dismissOutput}
             onMove={moveOutput}
+            onResize={resizeOutput}
             mode={mode}
             isMouseDown={isMouseDown}
             isDark={isDark}

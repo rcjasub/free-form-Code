@@ -1,9 +1,18 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import React from "react";
 import type { Mode } from "../App";
+import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
+import ResizeHandles from "./ResizeHandles";
 
-// See FloatingNode.tsx for why dragging is throttled this way.
-const DRAG_SYNC_INTERVAL_MS = 40;
+// Outputs only live on this screen — nobody else sees them — so a drag or
+// resize is shown on this bubble alone while it happens, and the page only
+// hears the final position/size on release. Updating the page every frame
+// re-rendered the whole canvas and made resizing feel slow.
+
+// Unresized, an output wraps at this width; the handles change it.
+const DEFAULT_WIDTH = 320;
+const DEFAULT_FONT_SIZE = 12;
+const OUTPUT_LIMITS: ResizeLimits = { minWidth: 60, maxWidth: 2000, minFont: 6, maxFont: 120 };
 
 interface Props {
   id: number;
@@ -11,8 +20,13 @@ interface Props {
   y: number;
   text: string;
   isError: boolean;
+  // set with the resize handles; unset, it wraps at DEFAULT_WIDTH and uses
+  // DEFAULT_FONT_SIZE
+  width?: number | null;
+  fontSize?: number | null;
   onDelete: (id: number) => void;
   onMove: (id: number, x: number, y: number) => void;
+  onResize: (id: number, width: number | null, fontSize: number | null, x: number, y: number) => void;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -24,8 +38,11 @@ export default React.memo(function OutputBubble({
   y,
   text,
   isError,
+  width,
+  fontSize,
   onMove,
   onDelete,
+  onResize,
   mode,
   isMouseDown,
   isDark,
@@ -34,6 +51,10 @@ export default React.memo(function OutputBubble({
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
+  // Clicked: shows the dashed box and resize handles, like other blocks.
+  // Outputs aren't part of the canvas's block selection, so this is local;
+  // a press anywhere else clears it.
+  const [selected, setSelected] = useState(false);
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
@@ -50,7 +71,6 @@ export default React.memo(function OutputBubble({
       const startY = e.clientY;
       const offset = { x: startX - xRef.current, y: startY - yRef.current };
       let isDragging = false;
-      let lastSync = 0;
       let latest = { x: xRef.current, y: yRef.current };
 
       function onMouseMove(mv: MouseEvent) {
@@ -67,11 +87,6 @@ export default React.memo(function OutputBubble({
           el.style.top = `${latest.y}px`;
         }
 
-        const now = performance.now();
-        if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
-          lastSync = now;
-          onMoveRef.current(id, latest.x, latest.y);
-        }
       }
 
       function onMouseUp() {
@@ -96,14 +111,26 @@ export default React.memo(function OutputBubble({
     };
   }, [id]);
 
-  function handleDragHandleMouseDown(e: React.MouseEvent) {
+  useEffect(() => {
+    if (!selected) return;
+    function onPressElsewhere(e: MouseEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) setSelected(false);
+    }
+    window.addEventListener("mousedown", onPressElsewhere, true);
+    return () => window.removeEventListener("mousedown", onPressElsewhere, true);
+  }, [selected]);
+
+  // Left-drag anywhere on the output moves it (select and text mode); a
+  // press also selects it.
+  function handleDragMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0 || (e.target as Element).closest("button")) return; // the ✕
+    setSelected(true);
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
     const offset = { x: startX - xRef.current, y: startY - yRef.current };
     let isDragging = false;
-    let lastSync = 0;
     let latest = { x: xRef.current, y: yRef.current };
 
     function onMouseMove(mv: MouseEvent) {
@@ -120,11 +147,6 @@ export default React.memo(function OutputBubble({
         containerRef.current.style.top = `${latest.y}px`;
       }
 
-      const now = performance.now();
-      if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
-        lastSync = now;
-        onMoveRef.current(id, latest.x, latest.y);
-      }
     }
 
     function onMouseUp() {
@@ -137,39 +159,75 @@ export default React.memo(function OutputBubble({
     window.addEventListener("mouseup", onMouseUp);
   }
 
+  function handleResizePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
+    const el = containerRef.current;
+    if (!el || e.button !== 0) return;
+    startResizeDrag(
+      e,
+      el,
+      handle,
+      // an unresized output has no fixed width, so it starts from what's shown
+      { x: xRef.current, y: yRef.current, font: fontSize ?? null, defaultFont: DEFAULT_FONT_SIZE, wrap: width ?? el.offsetWidth },
+      OUTPUT_LIMITS,
+      (r, done) => {
+        if (done) onResize(id, r.wrap, r.font, r.x, r.y);
+      },
+      {
+        // shown on the element itself until it's committed on release
+        preview: (r) => {
+          el.style.left = `${r.x}px`;
+          el.style.top = `${r.y}px`;
+          el.style.width = `${r.wrap}px`;
+          el.style.maxWidth = "none";
+          el.style.fontSize = `${r.font ?? DEFAULT_FONT_SIZE}px`;
+        },
+        glides: false, // outputs don't glide
+      },
+    );
+  }
+
+  const canMove = mode === "select" || mode === "text";
+
   return (
     <div
       ref={containerRef}
       data-output-id={id} // lets the next output from the same block be placed beside this one
       // Matches the canvas: white text on the dark canvas black, black text on
       // white in light mode. Errors are the app's red, #FF3B6B.
-      className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap ${
+      className={`absolute group rounded-lg px-3 py-2 shadow-lg font-canvas whitespace-pre-wrap ${
         isDark ? "bg-[#121212]" : "bg-white"
       } ${
         isError ? "text-[#FF3B6B]" : isDark ? "text-white" : "text-black"
-      }`}
-      style={{ left: x, top: y, pointerEvents: mode === "draw" ? "none" : undefined }}
+      } ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}
+      style={{
+        left: x,
+        top: y,
+        // Sized to its own text, wrapping at DEFAULT_WIDTH — or exactly the
+        // width set with the handles. Without max-content, the browser
+        // squeezed an output into whatever room was left before the canvas's
+        // right edge.
+        width: width ?? "max-content",
+        maxWidth: width ? undefined : DEFAULT_WIDTH,
+        fontSize: fontSize ?? DEFAULT_FONT_SIZE,
+        lineHeight: 1.4,
+        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outlineOffset: selected ? BOX_PAD : undefined,
+        pointerEvents: mode === "draw" ? "none" : undefined,
+      }}
       onMouseDown={(e) => {
-        if (mode !== "hand") e.stopPropagation();
+        if (canMove) handleDragMouseDown(e);
+        else if (mode !== "hand") e.stopPropagation();
       }}
       onMouseEnter={() => {
         if (mode === "erase" && isMouseDown.current) onDelete(id);
       }}
     >
-      {/* drag handle — visible on hover in select and text mode */}
-      {(mode === "select" || mode === "text") && (
-        <div
-          className="absolute -top-4 left-0 right-0 h-4 flex items-center justify-center cursor-grab opacity-0 group-hover:opacity-100 transition-opacity"
-          onMouseDown={handleDragHandleMouseDown}
-        >
-          <div className={`w-8 h-1 rounded-full ${isDark ? "bg-[#3c3c4a]" : "bg-gray-300"}`} />
-        </div>
-      )}
+      {selected && canMove && <ResizeHandles isDark={isDark} onPointerDown={handleResizePointerDown} />}
 
       {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
-        className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#FF3B6B]" : "text-[#7A86b3]"}`}
+        className={`absolute top-1 right-1.5 text-[10px] cursor-pointer opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#FF3B6B]" : "text-[#7A86b3]"}`}
         onClick={() => onDelete(id)}
       >
         ✕
