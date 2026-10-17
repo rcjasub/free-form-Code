@@ -7,6 +7,11 @@ import { getMe, startGuest } from "@/API/auth";
 
 type AuthMode = "login" | "register";
 
+// No border or focus ring: a filled field reads as an input on its own (like
+// the dashboard's search bar); it lightens a little while you type in it.
+const FIELD =
+  "w-full px-3 py-2 text-sm rounded-lg border-0 outline-none bg-[#232329] focus:bg-[#2c2c36] transition-colors text-white placeholder:text-gray-400";
+
 export default function Home() {
   const location = useLocation();
   // The canvas page's "Sign up" link sends guests here with mode: "register";
@@ -134,7 +139,7 @@ export default function Home() {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-[#3c3c4a] bg-[#232329] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#5c5c6a]"
+              className={FIELD}
             />
           )}
           <input
@@ -142,14 +147,14 @@ export default function Home() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-[#3c3c4a] bg-[#232329] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#5c5c6a]"
+            className={FIELD}
           />
           <input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-[#3c3c4a] bg-[#232329] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#5c5c6a]"
+            className={FIELD}
           />
 
           {error && <p className="text-xs text-[#FF3B6B]">{error}</p>}
