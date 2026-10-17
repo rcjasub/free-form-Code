@@ -57,7 +57,10 @@ function makeTheme(isDark: boolean) {
       background: "transparent",
       color: isDark ? "#f5f5f5" : "#1f2937",
       caretColor: isDark ? "#f5f5f5" : "#1f2937",
-      padding: "0",
+      // Room on the right for the 2px cursor. Without it the cursor at the
+      // end of a line sticks out, CodeMirror scrolls the line 2px to show
+      // it, and typing to the right makes the text wobble back and forth.
+      padding: "0 4px 0 0",
     },
     ".cm-editor": { background: "transparent" },
     ".cm-focused": { outline: "none !important" },
