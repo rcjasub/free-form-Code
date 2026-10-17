@@ -277,6 +277,11 @@ html {
    JS-tracked element), so the dot *is* the pointer — no lag, no re-renders.
    Over anything clickable it swaps to a larger dot; text fields keep the
    I-beam. Unlayered on purpose so it beats Tailwind's cursor-* utilities. */
+/* View-only visitors: the blue dot over blocks too, instead of the grab
+   hand blocks show in hand mode (which is all a viewer has). */
+.viewer-cursor .cursor-grab {
+  cursor: inherit;
+}
 .dot-cursor {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%233d8bff' fill-opacity='0.75'/%3E%3C/svg%3E") 8 8, auto;
 }

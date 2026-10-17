@@ -948,7 +948,11 @@ export default function SharedCanvas() {
   const eraserCursor = `url('data:image/svg+xml;base64,${btoa(eraserSvg)}') 4 20, auto`;
 
   const cursorClass =
-    mode === "hand"
+    // viewers (always in hand mode) get the same blue dot as everyone else;
+    // dragging still pans
+    !canEdit
+      ? "dot-cursor viewer-cursor"
+      : mode === "hand"
       ? "cursor-grab"
       : mode === "draw"
         ? "cursor-crosshair"
@@ -999,36 +1003,31 @@ export default function SharedCanvas() {
       onPointerDown={handleDrawPointerDown}
       onMouseUp={() => (isMouseDown.current = false)}
     >
-      {/* top-left: canvas info */}
-      <div
-        className={`absolute top-3 left-4 z-20 flex items-center gap-3 border rounded-lg shadow-sm px-3 py-1.5 ${
-          isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"
-        }`}
-      >
-        {/* just "Shared" — the owner's canvas name (often the default
-            "My Canvas") read like a link to the visitor's own, and edit
-            access already shows through the toolbar */}
-        <span className={`text-xs font-medium ${isDark ? "text-[#9b9ba8]" : "text-gray-500"}`}>
-          Shared
+      {/* top-left: the same FREE-FORM branding as the host's canvas — its one
+          link: your canvases if you're logged in, otherwise sign up (coming
+          back to this exact link, incl. ?edit=true) — and a pill saying it's
+          shared and whether you can edit (viewers have no toolbar to tell
+          them). No canvas name: the owner's (often the default "My Canvas")
+          read like a link to the visitor's own. */}
+      <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-1.5">
+        <button
+          onClick={() =>
+            username
+              ? navigate("/dashboard")
+              : navigate("/", { state: { mode: "register", redirect: location.pathname + location.search } })
+          }
+          title={username ? "Go to your canvases" : "Sign up or log in to make your own canvases"}
+          className="text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white transition-colors"
+        >
+          free-form
+        </button>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            isDark ? "bg-[#232329] text-[#c8c8d2]" : "bg-white text-gray-600"
+          } shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]`}
+        >
+          Shared · {canEdit ? "can edit" : "view only"}
         </span>
-        {username ? (
-          <button
-            onClick={() => navigate("/dashboard")}
-            className="text-xs text-[#4fb4f2] hover:underline"
-          >
-            My canvases →
-          </button>
-        ) : (
-          <button
-            // come back to this exact link (incl. ?edit=true) after signing in
-            onClick={() =>
-              navigate("/", { state: { mode: "register", redirect: location.pathname + location.search } })
-            }
-            className="text-xs text-[#4fb4f2] hover:underline"
-          >
-            Register
-          </button>
-        )}
       </div>
 
       {/* transient error toast */}

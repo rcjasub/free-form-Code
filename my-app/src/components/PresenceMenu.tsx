@@ -36,7 +36,8 @@ export default function PresenceMenu({
 
   // you first, then everyone else in join order
   const sorted = [...people].sort((a, b) => Number(b.userId === myId) - Number(a.userId === myId));
-  const panel = isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200";
+  // no outline: background and soft shadow, like the toolbar and top-right buttons
+  const panel = `${isDark ? "bg-[#232329]" : "bg-white"} shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]`;
   const muted = isDark ? "text-[#9b9ba8]" : "text-gray-500";
 
   return (
@@ -44,7 +45,7 @@ export default function PresenceMenu({
       <button
         onClick={() => setOpen((v) => !v)}
         title="People on this canvas"
-        className={`h-8 flex items-center gap-2 border rounded shadow-sm px-2 ${panel}`}
+        className={`h-8 flex items-center gap-2 rounded px-2 ${panel}`}
       >
         <span className="flex -space-x-1.5">
           {sorted.slice(0, MAX_DOTS).map((p) => (
@@ -60,7 +61,7 @@ export default function PresenceMenu({
 
       {open && (
         // right-aligned: the menu sits at the right edge, under the theme toggle
-        <div className={`absolute top-full right-0 mt-1.5 min-w-40 max-h-64 overflow-y-auto border rounded-lg shadow-sm py-1 ${panel}`}>
+        <div className={`absolute top-full right-0 mt-1.5 min-w-40 max-h-64 overflow-y-auto rounded-lg py-1 ${panel}`}>
           {sorted.map((p) => (
             <div key={p.userId} className="flex items-center gap-2 px-3 py-1.5">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
