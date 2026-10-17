@@ -4,6 +4,7 @@ import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
+import type { DrawIn } from "../hooks/useSnapGhosts";
 
 export interface Point {
   x: number;
@@ -48,6 +49,8 @@ interface Props {
   link?: string | null;
   // clicked last — Ctrl+C copies this block
   selected?: boolean;
+  // just drawn with shape snapping on: animates in (see useSnapGhosts)
+  drawIn?: DrawIn;
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
@@ -67,6 +70,7 @@ export default React.memo(function DrawingNode({
   pendingErase,
   link,
   selected,
+  drawIn,
   mode,
   isMouseDown,
   isDark,
@@ -255,6 +259,9 @@ export default React.memo(function DrawingNode({
         )}
         <path
           d={pathData}
+          // pathLength=1 lets the trace animation draw it as 0 → 1
+          pathLength={drawIn === "trace" ? 1 : undefined}
+          className={drawIn === "trace" ? "snap-draw" : drawIn === "brighten" ? "snap-brighten" : undefined}
           fill="none"
           stroke={isDark ? "#f5f5f5" : "#1f2937"}
           strokeWidth={2}

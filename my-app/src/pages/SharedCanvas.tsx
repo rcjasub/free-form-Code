@@ -4,6 +4,8 @@ import { useTheme } from "next-themes";
 import { motion } from "motion/react";
 import FloatingNode from "@/components/FloatingNode";
 import EraserTrail from "@/components/EraserTrail";
+import SnapGhosts from "@/components/SnapGhost";
+import { useSnapGhosts, SNAP_FADED_OPACITY } from "@/hooks/useSnapGhosts";
 import ScrollToContent from "@/components/ScrollToContent";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
@@ -126,6 +128,7 @@ export default function SharedCanvas() {
   const [mode, setMode] = useState<Mode>(canEdit ? "select" : "hand");
   const modeRef = useRef<Mode>(canEdit ? "select" : "hand");
   const stroke = useFreehandStroke();
+  const { ghosts: snapGhosts, addGhost, drawingIn, drawIn } = useSnapGhosts();
   const [snapShapes, setSnapShapes] = useState(false);
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -842,7 +845,10 @@ export default function SharedCanvas() {
 
   async function finalizeDrawing(rawPoints: Point[]) {
     if (rawPoints.length < 2 || !canvasId) return;
-    const points = snapShapes ? detectShape(rawPoints) ?? rawPoints : rawPoints;
+    const snapped = snapShapes ? detectShape(rawPoints) : null;
+    // the stroke as drawn stays faded while the clean shape draws itself in
+    if (snapped) addGhost(rawPoints);
+    const points = snapped ?? rawPoints;
     const minX = Math.min(...points.map((p) => p.x));
     const minY = Math.min(...points.map((p) => p.y));
     const maxX = Math.max(...points.map((p) => p.x));
@@ -861,6 +867,7 @@ export default function SharedCanvas() {
         }),
       });
       const data = await jsonOrThrow(res);
+      if (snapShapes) drawIn(String(data.id), snapped ? "trace" : "brighten");
       setNodes((prev) => [...prev, blockToNode(data)]);
       socket.emit("block:created", canvasId, data);
       history.record({ kind: "create", id: String(data.id) });
@@ -1167,6 +1174,7 @@ export default function SharedCanvas() {
               onMove={moveSelection}
               onMarkErase={handleMarkErase}
               onResize={canEdit ? resizeDrawing : undefined}
+              drawIn={drawingIn.get(node.id)}
               link={node.link}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedIds.includes(node.id)}
@@ -1204,11 +1212,15 @@ export default function SharedCanvas() {
           ),
         )}
 
+        <SnapGhosts ghosts={snapGhosts} isDark={isDark} />
+
         {stroke.drawing && (
           <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>
             {/* d is filled in by useFreehandStroke, once per frame */}
             <path
               ref={stroke.pathRef}
+              // faded until it's done when snapping is on; it comes to life on release
+              opacity={snapShapes ? SNAP_FADED_OPACITY : 1}
               fill="none"
               stroke={isDark ? "#f5f5f5" : "#1f2937"}
               strokeWidth={2}

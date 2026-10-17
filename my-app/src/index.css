@@ -291,3 +291,34 @@ html {
 .dot-cursor :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) {
   cursor: text;
 }
+
+/* Shape snapping (see hooks/useSnapGhosts): the stroke as drawn holds,
+   faded, while the clean shape draws itself in over it, then fades away. */
+.snap-ghost {
+  animation: snap-ghost 1000ms ease-out forwards;
+}
+@keyframes snap-ghost {
+  0%, 60% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+.snap-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: snap-draw 650ms cubic-bezier(0.4, 0, 0.2, 1) 120ms forwards;
+}
+@keyframes snap-draw {
+  to { stroke-dashoffset: 0; }
+}
+/* a stroke that didn't snap: from the faded live stroke to full */
+.snap-brighten {
+  animation: snap-brighten 350ms ease-out;
+}
+@keyframes snap-brighten {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .snap-ghost { animation-duration: 300ms; }
+  .snap-draw { animation: none; stroke-dashoffset: 0; }
+  .snap-brighten { animation: none; }
+}

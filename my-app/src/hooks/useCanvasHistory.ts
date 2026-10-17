@@ -430,7 +430,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     } else if (nodeId) {
       setSelectedId(nodeId);
     } else if (target === canvasRef.current || target === rootRef.current) {
-      if (!e.shiftKey) setSelectedId(null);
+      // a right-click keeps the selection, so its menu can act on it
+      if (!e.shiftKey && e.button !== 2) setSelectedId(null);
       if (e.button === 0 && canMarquee?.()) startMarquee(e);
     } else if (target.closest?.("[data-output-id]")) {
       setSelectedId(null); // a run output has its own selection (see OutputBubble)
@@ -496,12 +497,22 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
 
   const closeMenu = useCallback(() => setMenu(null), []);
   const menuNode = menu?.nodeId ? nodes.find((n) => n.id === menu.nodeId) : undefined;
+  // What the menu's Delete removes: the whole selection when several blocks
+  // are selected and you right-clicked one of them or empty canvas (like
+  // Excalidraw); otherwise just the block you right-clicked.
+  const deleteTargets =
+    selectedIds.length > 1 && (!menuNode || selectedIds.includes(menuNode.id))
+      ? selectedIds
+      : menuNode
+        ? [menuNode.id]
+        : [];
 
   // Each action runs, then the menu closes.
   const contextMenu: ContextMenuProps | null = menu && {
     x: menu.x,
     y: menu.y,
     onBlock: !!menuNode,
+    deleteCount: deleteTargets.length,
     link: menuNode?.link ?? null,
     onCut: () => {
       if (menuNode) {
@@ -523,7 +534,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       setMenu(null);
     },
     onDelete: () => {
-      if (menuNode) ops.deleteNode(menuNode.id, true);
+      if (deleteTargets.length === 1) ops.deleteNode(deleteTargets[0], true);
+      else deleteMany(deleteTargets); // one undo step for the lot
       setMenu(null);
     },
     onSaveLink: (link) => {

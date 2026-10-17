@@ -30,6 +30,32 @@ function setup(nodes = NODES) {
   return { result, ops };
 }
 
+// Like setup, with the canvas element in the document so mouse events on it
+// reach the hook's window listeners with it as the target.
+function setupWithCanvas(nodes = NODES) {
+  const canvasEl = document.createElement("div");
+  document.body.appendChild(canvasEl);
+  const ops: CanvasOps = {
+    deleteNode: vi.fn(),
+    moveNode: vi.fn(),
+    applyLanguage: vi.fn(),
+    applyShape: vi.fn(),
+    applyLink: vi.fn(),
+    applySize: vi.fn(),
+    recreateBlock: vi.fn(async () => "copy"),
+    restoreBlocks: vi.fn(async (srcs: CanvasNode[]) => srcs.map((s) => `new-${s.id}`)),
+    clearOutputs: vi.fn(),
+  };
+  const canvasRef = { current: canvasEl };
+  const rootRef = { current: document.createElement("div") };
+  const { result } = renderHook(() => {
+    const history = useCanvasHistory(nodes);
+    const shortcuts = useCanvasShortcuts({ enabled: true, nodes, history, ops, canvasRef, rootRef });
+    return { history, ...shortcuts };
+  });
+  return { result, ops, canvasEl };
+}
+
 // Keys go to window, like real presses on the canvas. Undo is async.
 async function press(key: string, ctrl = false) {
   await act(async () => {
@@ -130,5 +156,34 @@ describe("select all / delete all", () => {
     await press("a", true);
     await press("Delete");
     expect(ops.deleteNode).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("right-click menu with a selection", () => {
+  // a real right-click on the canvas background: mousedown + mouseup (button 2)
+  async function rightClick(el: HTMLElement) {
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 5, clientY: 5, bubbles: true }));
+      el.dispatchEvent(new MouseEvent("mouseup", { button: 2, clientX: 5, clientY: 5, bubbles: true }));
+    });
+  }
+
+  test("right-clicking empty canvas keeps the selection, and Delete removes all of it in one undo step", async () => {
+    const { result, ops, canvasEl } = setupWithCanvas();
+    await press("a", true); // select all 3
+    await rightClick(canvasEl);
+    expect(result.current.selectedIds).toHaveLength(3);
+    expect(result.current.contextMenu?.deleteCount).toBe(3);
+
+    act(() => result.current.contextMenu!.onDelete());
+    expect(ops.deleteNode).toHaveBeenCalledTimes(3);
+    await press("z", true);
+    expect(ops.restoreBlocks).toHaveBeenCalledTimes(1);
+  });
+
+  test("with nothing selected, the empty-canvas menu has no Delete", async () => {
+    const { result, canvasEl } = setupWithCanvas();
+    await rightClick(canvasEl);
+    expect(result.current.contextMenu?.deleteCount).toBe(0);
   });
 });

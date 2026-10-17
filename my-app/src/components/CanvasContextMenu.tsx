@@ -7,6 +7,9 @@ export interface CanvasContextMenuProps {
   y: number;
   // false when right-clicking empty canvas — then only Paste applies
   onBlock: boolean;
+  // how many blocks Delete removes: several when a selection is right-clicked,
+  // 0 on empty canvas with nothing selected (Delete is then hidden)
+  deleteCount: number;
   link: string | null;
   isDark: boolean;
   onCut: () => void;
@@ -41,6 +44,7 @@ export default function CanvasContextMenu({
   x,
   y,
   onBlock,
+  deleteCount,
   link,
   isDark,
   onCut,
@@ -91,7 +95,8 @@ export default function CanvasContextMenu({
 
   // keep the whole menu on screen when opened near the right/bottom edge
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8);
-  const top = Math.min(y, window.innerHeight - (onBlock ? 360 : 120));
+  const top = Math.min(y, window.innerHeight - (onBlock ? 360 : deleteCount ? 150 : 120));
+  const deleteLabel = deleteCount > 1 ? `Delete ${deleteCount} items` : "Delete";
 
   const item = (label: string, icon: ReactNode, onClick: () => void, hint?: string, danger?: boolean) => (
     <button
@@ -168,7 +173,7 @@ export default function CanvasContextMenu({
           {link && item("Remove link", <Link2Off size={13} />, () => onSaveLink(null))}
           {divider}
           {item("Select all", <BoxSelect size={13} />, onSelectAll, "Ctrl+A")}
-          {item("Delete", <Trash2 size={13} />, onDelete, "Del", true)}
+          {item(deleteLabel, <Trash2 size={13} />, onDelete, "Del", true)}
           {item("Delete all", <Eraser size={13} />, onDeleteAll, "Ctrl+⌫", true)}
         </>
       ) : (
@@ -176,6 +181,8 @@ export default function CanvasContextMenu({
           {item("Paste", <ClipboardPaste size={13} />, onPaste, "Ctrl+V")}
           {item("Select all", <BoxSelect size={13} />, onSelectAll, "Ctrl+A")}
           {divider}
+          {/* a selection right-clicked from empty canvas */}
+          {deleteCount > 0 && item(deleteLabel, <Trash2 size={13} />, onDelete, "Del", true)}
           {item("Delete all", <Eraser size={13} />, onDeleteAll, "Ctrl+⌫", true)}
         </>
       )}
