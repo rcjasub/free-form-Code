@@ -60,10 +60,10 @@ export default function ScrollToContent({ nodeCount, offset, scale, lastTouchedI
   return (
     <button
       onClick={scrollBack}
-      className={`absolute bottom-16 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-lg border shadow-sm text-xs font-canvas transition-colors ${
+      className={`absolute bottom-16 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] text-xs font-canvas transition-colors ${
         isDark
-          ? "bg-[#232329] border-[#3c3c4a] text-[#e5e5e5] hover:bg-[#3c3c4a]"
-          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
+          ? "bg-[#232329] text-[#e5e5e5] hover:bg-[#3c3c4a]"
+          : "bg-white text-gray-700 hover:bg-gray-100"
       }`}
     >
       Scroll back to content

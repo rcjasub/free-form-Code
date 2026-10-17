@@ -933,7 +933,7 @@ export default function SharedCanvas() {
       {/* mode toolbar + run hint, centered as one column — only in edit mode */}
       {canEdit && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
-          <div className="flex items-center gap-0.5 rounded-lg shadow-sm p-1 bg-white dark:bg-[#232329]">
+          <div className="flex items-center gap-0.5 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] p-1 bg-white dark:bg-[#232329]">
             {toolbarBtn(
               "select",
               <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>,
@@ -966,7 +966,7 @@ export default function SharedCanvas() {
               window.dispatchEvent(new KeyboardEvent("keydown", { ctrlKey: true, key: "Enter", bubbles: true }))
             }
             title="Run selected code"
-            className="w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
+            className="w-8 h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5,3 19,12 5,21" />
@@ -977,7 +977,7 @@ export default function SharedCanvas() {
           <button
             onClick={() => setSnapShapes((v) => !v)}
             title="Snap drawings to perfect shapes"
-            className={`w-8 h-8 flex items-center justify-center rounded shadow-sm transition-colors ${
+            className={`w-8 h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors ${
               snapShapes
                 ? "bg-blue-500 text-white"
                 : isDark
@@ -1125,8 +1125,8 @@ export default function SharedCanvas() {
 
       {/* zoom controls */}
       <div
-        className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 border rounded-lg shadow-sm px-2 py-1 ${
-          isDark ? "bg-[#232329] border-[#3c3c4a]" : "bg-white border-gray-200"
+        className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] px-2 py-1 ${
+          isDark ? "bg-[#232329]" : "bg-white"
         }`}
       >
         <button
