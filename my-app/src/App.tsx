@@ -14,6 +14,7 @@ import CanvasContextMenu from "./components/CanvasContextMenu";
 import RemoteCursorMarker from "./components/RemoteCursorMarker";
 import OutputBubble from "./components/OutputBubble";
 import EraserTrail from "./components/EraserTrail";
+import ScrollToContent from "./components/ScrollToContent";
 import { ThemeToggleButton } from "./components/ThemeToggle";
 import ShareDrawer from "./components/ShareDrawer";
 import PresenceMenu from "./components/PresenceMenu";
@@ -539,6 +540,7 @@ export default function App() {
   // and re-render even though the node data didn't change.
   // With useCallback: same canvasId → same function reference → memo skips re-render.
   const updateNode = useCallback((id: string, content: string) => {
+    history.touch(id);
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
@@ -550,7 +552,7 @@ export default function App() {
         socket.emit("block:updated", canvasId, { id, content });
       }
     }, 800);
-  }, [canvasId]);
+  }, [canvasId, history]);
 
   // `record` is false when undo itself is doing the move/delete, so undoing
   // doesn't push a new history entry.
@@ -1074,6 +1076,15 @@ export default function App() {
       )}
 
       {contextMenu && <CanvasContextMenu {...contextMenu} isDark={isDark} />}
+
+      <ScrollToContent
+        nodeCount={nodes.length}
+        offset={offset}
+        scale={scale}
+        lastTouchedId={history.lastTouchedId}
+        onPan={setOffset}
+        isDark={isDark}
+      />
 
       {/* zoom controls */}
       <div

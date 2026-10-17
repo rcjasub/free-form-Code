@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { motion } from "motion/react";
 import FloatingNode from "@/components/FloatingNode";
 import EraserTrail from "@/components/EraserTrail";
+import ScrollToContent from "@/components/ScrollToContent";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
 import CanvasContextMenu from "@/components/CanvasContextMenu";
@@ -384,6 +385,7 @@ export default function SharedCanvas() {
   // the next reload.
   const updateNode = useCallback((id: string, content: string) => {
     if (!canEdit) return;
+    history.touch(id);
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, content } : n)));
     if (contentSaveTimer.current) clearTimeout(contentSaveTimer.current);
     contentSaveTimer.current = setTimeout(() => {
@@ -400,7 +402,7 @@ export default function SharedCanvas() {
         socket.emit("block:updated", cid, { id, content });
       }
     }, 800);
-  }, [canEdit]);
+  }, [canEdit, history]);
 
   // `record` is false when undo itself is doing the move/delete, so undoing
   // doesn't push a new history entry.
@@ -1115,6 +1117,15 @@ export default function SharedCanvas() {
       </div>
 
       {contextMenu && <CanvasContextMenu {...contextMenu} isDark={isDark} />}
+
+      <ScrollToContent
+        nodeCount={nodes.length}
+        offset={offset}
+        scale={scale}
+        lastTouchedId={history.lastTouchedId}
+        onPan={setOffset}
+        isDark={isDark}
+      />
 
       {/* zoom controls */}
       <div

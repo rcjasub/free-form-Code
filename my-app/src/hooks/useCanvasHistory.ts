@@ -57,9 +57,17 @@ export function useCanvasHistory(nodes: CanvasNode[]) {
     nodesRef.current = nodes;
   }, [nodes]);
 
+  // The block you last created, moved, typed in or otherwise changed, for
+  // "Scroll back to content". Every action that records history counts.
+  const lastTouchedId = useRef<string | null>(null);
+  const touch = useCallback((id: string) => {
+    lastTouchedId.current = id;
+  }, []);
+
   const record = useCallback((entry: HistoryEntry) => {
     stack.current.push(entry);
     if (stack.current.length > MAX_HISTORY) stack.current.shift();
+    if ("id" in entry) lastTouchedId.current = entry.id;
   }, []);
 
   const pop = useCallback(() => stack.current.pop(), []);
@@ -72,7 +80,10 @@ export function useCanvasHistory(nodes: CanvasNode[]) {
     );
   }, []);
 
-  return useMemo(() => ({ nodesRef, record, pop, remapId }), [record, pop, remapId]);
+  return useMemo(
+    () => ({ nodesRef, record, pop, remapId, lastTouchedId, touch }),
+    [record, pop, remapId, touch],
+  );
 }
 
 export type CanvasHistory = ReturnType<typeof useCanvasHistory>;
