@@ -145,6 +145,24 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const isMouseDown = useRef(false);
+  // Whether the left button is held, for erase-by-sweeping. Tracked on the
+  // window in the capture phase: blocks stop mousedown from bubbling, so a
+  // press that started on a block never reached the canvas, and sweeping on
+  // from it erased nothing but that first block.
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (e.button === 0) isMouseDown.current = true;
+    };
+    const up = (e: MouseEvent) => {
+      if (e.button === 0) isMouseDown.current = false;
+    };
+    window.addEventListener("mousedown", down, true);
+    window.addEventListener("mouseup", up, true);
+    return () => {
+      window.removeEventListener("mousedown", down, true);
+      window.removeEventListener("mouseup", up, true);
+    };
+  }, []);
   // undo stack — see hooks/useCanvasHistory
   const history = useCanvasHistory(nodes);
   // each drawing being resized right now -> how it looked before the drag
@@ -906,12 +924,8 @@ export default function App() {
       onMouseMove={handleMouseMove}
       onClick={handleCanvasClick}
       onDoubleClick={handleCanvasDoubleClick}
-      onMouseDown={(e) => {
-        isMouseDown.current = true;
-        handlePanStart(e);
-      }}
+      onMouseDown={handlePanStart}
       onPointerDown={handleDrawPointerDown}
-      onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* branding */}
       <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-1">

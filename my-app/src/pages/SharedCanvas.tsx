@@ -162,6 +162,24 @@ export default function SharedCanvas() {
   const scaleRef = useRef(1);
   const spaceHeld = useRef(false);
   const isMouseDown = useRef(false);
+  // Whether the left button is held, for erase-by-sweeping. Tracked on the
+  // window in the capture phase: blocks stop mousedown from bubbling, so a
+  // press that started on a block never reached the canvas, and sweeping on
+  // from it erased nothing but that first block.
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (e.button === 0) isMouseDown.current = true;
+    };
+    const up = (e: MouseEvent) => {
+      if (e.button === 0) isMouseDown.current = false;
+    };
+    window.addEventListener("mousedown", down, true);
+    window.addEventListener("mouseup", up, true);
+    return () => {
+      window.removeEventListener("mousedown", down, true);
+      window.removeEventListener("mouseup", up, true);
+    };
+  }, []);
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -999,9 +1017,8 @@ export default function SharedCanvas() {
       onMouseMove={handleMouseMove}
       onClick={handleCanvasClick}
       onDoubleClick={handleCanvasDoubleClick}
-      onMouseDown={(e) => { isMouseDown.current = true; handlePanStart(e); }}
+      onMouseDown={handlePanStart}
       onPointerDown={handleDrawPointerDown}
-      onMouseUp={() => (isMouseDown.current = false)}
     >
       {/* top-left: the same FREE-FORM branding as the host's canvas, and its
           only link — your canvases if you're logged in, otherwise sign up
