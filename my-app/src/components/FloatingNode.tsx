@@ -145,6 +145,32 @@ export default React.memo(function FloatingNode({
 
   const theme = useMemo(() => makeTheme(isDark), [isDark]);
   const highlight = useMemo(() => languageOption(language).highlight(), [language]);
+  // Memoized: react-codemirror reconfigures the whole editor whenever these
+  // props are new objects, which an inline array/object is on every render.
+  // No lineWrapping: a line keeps going right for as long as you type;
+  // Enter is the only thing that starts a new one.
+  const extensions = useMemo(
+    () => [highlight, isDark ? draculaDark : draculaLight, theme],
+    [highlight, isDark, theme],
+  );
+  const runnable = isRunnable(language);
+  const basicSetup = useMemo(
+    () => ({
+      lineNumbers: false,
+      foldGutter: false,
+      dropCursor: false,
+      allowMultipleSelections: false,
+      // code conveniences that just get in the way of prose
+      indentOnInput: runnable,
+      bracketMatching: runnable,
+      closeBrackets: runnable,
+      autocompletion: false,
+      highlightActiveLine: false,
+      highlightSelectionMatches: false,
+      searchKeymap: false,
+    }),
+    [runnable],
+  );
 
   useEffect(() => {
     const el = containerRef.current;
@@ -344,9 +370,7 @@ export default React.memo(function FloatingNode({
         ref={editorRef}
         value={initialContent}
         autoFocus={autoFocus}
-        // No lineWrapping: a line keeps going right for as long as you type;
-        // Enter is the only thing that starts a new one.
-        extensions={[highlight, isDark ? draculaDark : draculaLight, theme]}
+        extensions={extensions}
         onFocus={() => {
           isFocused.current = true;
           onEditingChange?.(true);
@@ -362,20 +386,7 @@ export default React.memo(function FloatingNode({
           const toSave = selected || content.trim();
           if (toSave) onSaveSelection?.(toSave, containerRef.current);
         }}
-        basicSetup={{
-          lineNumbers: false,
-          foldGutter: false,
-          dropCursor: false,
-          allowMultipleSelections: false,
-          // code conveniences that just get in the way of prose
-          indentOnInput: isRunnable(language),
-          bracketMatching: isRunnable(language),
-          closeBrackets: isRunnable(language),
-          autocompletion: false,
-          highlightActiveLine: false,
-          highlightSelectionMatches: false,
-          searchKeymap: false,
-        }}
+        basicSetup={basicSetup}
         placeholder="type here..."
       />
 

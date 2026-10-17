@@ -682,7 +682,9 @@ export default function App() {
   // nodes is the only real dependency — offset/scale are read from refs
   // so the function only recreates when blocks actually change, not on cursor moves.
   const handleRunNode = useCallback(async (id: string) => {
-    const node = nodes.find((n) => n.id === id);
+    // Latest nodes from the ref, not `nodes`: depending on `nodes` gave this a
+    // new identity on every drag update, which re-rendered every block.
+    const node = history.nodesRef.current.find((n) => n.id === id);
     if (!node || !node.content.trim() || !socket.id) return;
 
     const el = document.querySelector(
@@ -697,10 +699,12 @@ export default function App() {
     }
 
     await runAndPlace(id, node.content, node.language ?? "javascript", { x, y });
-  }, [nodes, runAndPlace]);
+  }, [history, runAndPlace]);
 
   const changeLanguage = useCallback((id: string, language: Language) => {
-    const node = nodes.find((n) => n.id === id);
+    // Latest nodes from the ref, not `nodes`: depending on `nodes` gave this a
+    // new identity on every drag update, which re-rendered every block.
+    const node = history.nodesRef.current.find((n) => n.id === id);
     if (!node || !canvasId) return;
 
     // Swap in the new language's starter if the block is empty or still holds
@@ -711,7 +715,7 @@ export default function App() {
 
     history.record({ kind: "language", id, language: node.language ?? "javascript", content: node.content });
     applyLanguage(id, language, content);
-  }, [nodes, canvasId, history, applyLanguage]);
+  }, [canvasId, history, applyLanguage]);
 
   // inline lambda in JSX would be a new reference every render — extracted so memo works
   const handleMarkErase = useCallback((id: string) => {

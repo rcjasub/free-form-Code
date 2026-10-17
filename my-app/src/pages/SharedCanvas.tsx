@@ -599,7 +599,9 @@ export default function SharedCanvas() {
 
   const handleRunNode = useCallback(async (id: string) => {
     if (!canEdit) return;
-    const node = nodes.find((n) => n.id === id);
+    // Latest nodes from the ref, not `nodes`: depending on `nodes` gave this a
+    // new identity on every drag update, which re-rendered every block.
+    const node = history.nodesRef.current.find((n) => n.id === id);
     if (!node || !node.content.trim() || !socket.id) return;
 
     const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
@@ -612,7 +614,7 @@ export default function SharedCanvas() {
     }
 
     await runAndPlace(id, node.content, node.language ?? "javascript", { x, y });
-  }, [canEdit, nodes, runAndPlace]);
+  }, [canEdit, history, runAndPlace]);
 
   // Ctrl+Enter runs the selected code, as on the main canvas: the selection
   // last saved from a block (saveSelection), else whatever text is selected.
@@ -666,7 +668,9 @@ export default function SharedCanvas() {
 
   const changeLanguage = useCallback((id: string, language: Language) => {
     if (!canEdit) return;
-    const node = nodes.find((n) => n.id === id);
+    // Latest nodes from the ref, not `nodes`: depending on `nodes` gave this a
+    // new identity on every drag update, which re-rendered every block.
+    const node = history.nodesRef.current.find((n) => n.id === id);
     if (!node || !canvasIdRef.current) return;
 
     // Swap in the new language's starter if the block is empty or still holds
@@ -677,7 +681,7 @@ export default function SharedCanvas() {
 
     history.record({ kind: "language", id, language: node.language ?? "javascript", content: node.content });
     applyLanguage(id, language, content);
-  }, [canEdit, nodes, history, applyLanguage]);
+  }, [canEdit, history, applyLanguage]);
 
   const handleMarkErase = useCallback((id: string) => {
     if (!canEdit) return;
