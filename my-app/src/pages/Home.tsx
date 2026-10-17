@@ -152,7 +152,7 @@ export default function Home() {
             className="w-full px-3 py-2 text-sm rounded-lg border border-[#3c3c4a] bg-[#232329] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#5c5c6a]"
           />
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && <p className="text-xs text-[#FF3B6B]">{error}</p>}
 
           <button
             type="submit"

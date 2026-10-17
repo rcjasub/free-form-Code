@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { RestorePayload } from "../lib/restore";
 
 const api = axios.create({ baseURL: "/api", withCredentials: true });
 
@@ -48,6 +49,11 @@ export function updateBlockContent(canvasId: string, blockId: string, content: s
 
 export function updateBlockLink(canvasId: string, blockId: string, link: string | null) {
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/link`, { link });
+}
+
+// Puts several deleted blocks back in one request (see lib/restore).
+export function restoreBlocks(canvasId: string, blocks: RestorePayload[]) {
+  return api.post(`/canvases/${canvasId}/blocks/restore`, { blocks });
 }
 
 // A text block's wrap width and font size; null resets either.

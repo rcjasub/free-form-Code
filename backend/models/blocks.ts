@@ -124,6 +124,44 @@ export async function updateBlockLink(
   return result.rows[0];
 }
 
+export interface RestoreBlockParams {
+  type: string;
+  content: string;
+  x: number;
+  y: number;
+  width: number;
+  language: string;
+  link: string | null;
+  wrapWidth: number | null;
+  fontSize: number | null;
+}
+
+// Inserts several blocks in one transaction: all of them, or none if any
+// insert fails. Returns the new rows in the order given.
+export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams[]): Promise<Block[]> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const rows: Block[] = [];
+    for (const b of blocks) {
+      const result = await client.query<Block>(
+        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize],
+      );
+      rows.push(result.rows[0]);
+    }
+    await client.query("COMMIT");
+    return rows;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export interface BlockSize {
   wrapWidth?: number | null;
   fontSize?: number | null;

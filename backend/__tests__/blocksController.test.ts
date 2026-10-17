@@ -7,12 +7,13 @@ import {
   updateBlockLanguage,
   updateBlockLink,
   updateBlockSize,
+  restoreBlocks,
   MAX_BLOCKS_PER_CANVAS,
   MAX_CANVAS_CONTENT,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
-import { updateBlockLinkSchema, updateBlockSizeSchema } from "../schemas/block.schema";
+import { updateBlockLinkSchema, updateBlockSizeSchema, restoreBlocksSchema, MAX_RESTORE_BLOCKS } from "../schemas/block.schema";
 
 jest.mock("../models/blocks");
 jest.mock("../redis", () => ({
@@ -365,5 +366,60 @@ describe("updateBlockSizeSchema", () => {
     expect(updateBlockSizeSchema.safeParse({ wrapWidth: 5 }).success).toBe(false);
     expect(updateBlockSizeSchema.safeParse({ fontSize: 1000 }).success).toBe(false);
     expect(updateBlockSizeSchema.safeParse({ fontSize: "big" }).success).toBe(false);
+  });
+});
+
+describe("restoreBlocks", () => {
+  let req: any;
+  let res: any;
+  const block = { type: "code", content: "hi", x: 1, y: 2, width: 300, language: "text", link: null, wrapWidth: 480, fontSize: null };
+
+  beforeEach(() => {
+    req = { params: { id: "1" }, body: { blocks: [block, { ...block, content: "there" }] } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("restores every block in one call and invalidates the cache", async () => {
+    mockBlocks.restoreBlocks.mockResolvedValue([fakeBlock, fakeBlock]);
+
+    await restoreBlocks(req, res);
+
+    expect(mockBlocks.restoreBlocks).toHaveBeenCalledWith("1", req.body.blocks);
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith([fakeBlock, fakeBlock]);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+  });
+
+  test("returns 413 without restoring when they'd push the canvas past its block cap", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: MAX_BLOCKS_PER_CANVAS - 1, chars: 0 });
+
+    await restoreBlocks(req, res); // 2 blocks, room for 1
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockBlocks.restoreBlocks).not.toHaveBeenCalled();
+  });
+
+  test("returns 413 without restoring when their content would go over the size cap", async () => {
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: 0, chars: MAX_CANVAS_CONTENT - 3 });
+
+    await restoreBlocks(req, res); // "hi" + "there" = 7 chars
+
+    expect(res.status).toHaveBeenCalledWith(413);
+    expect(mockBlocks.restoreBlocks).not.toHaveBeenCalled();
+  });
+});
+
+describe("restoreBlocksSchema", () => {
+  test("fills in what the single create route can't take", () => {
+    const parsed = restoreBlocksSchema.parse({ blocks: [{ type: "code", content: "x", x: 0, y: 0 }] });
+    expect(parsed.blocks[0]).toMatchObject({ language: "javascript", link: null, wrapWidth: null, fontSize: null, width: 300 });
+  });
+
+  test("rejects an empty list, too many blocks, and bad fields", () => {
+    const one = { type: "code", content: "x", x: 0, y: 0 };
+    expect(restoreBlocksSchema.safeParse({ blocks: [] }).success).toBe(false);
+    expect(restoreBlocksSchema.safeParse({ blocks: Array(MAX_RESTORE_BLOCKS + 1).fill(one) }).success).toBe(false);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, link: "javascript:alert(1)" }] }).success).toBe(false);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, language: "ruby" }] }).success).toBe(false);
   });
 });

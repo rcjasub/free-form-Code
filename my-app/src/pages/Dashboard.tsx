@@ -402,7 +402,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {error && <p className="text-xs text-red-500 mb-4">{error}</p>}
+        {error && <p className="text-xs text-[#FF3B6B] mb-4">{error}</p>}
 
         {loading ? (
           <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -455,7 +455,7 @@ export default function Dashboard() {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteCanvas(c.id); }}
-                    className="ml-2 shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                    className="ml-2 shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-[#FF3B6B] transition-all"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

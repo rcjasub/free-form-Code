@@ -25,7 +25,7 @@ const DARK: Palette = {
   number: "#ff1daf",
   constant: "#c299ff",
   comment: "#7A86b3",
-  invalid: "#FF5555",
+  invalid: "#FF3B6B",
 };
 
 const LIGHT: Palette = {
@@ -36,7 +36,7 @@ const LIGHT: Palette = {
   number: "#c0138a",
   constant: "#7c3aed",
   comment: "#5c6a99",
-  invalid: "#dc2626",
+  invalid: "#FF3B6B",
 };
 
 function highlightStyle(p: Palette) {

@@ -27,7 +27,9 @@ export interface CanvasNode {
 export type HistoryEntry =
   | { kind: "create"; id: string }
   | { kind: "delete"; nodes: CanvasNode[] } // one eraser drag can delete several
-  | { kind: "move"; id: string; x: number; y: number }
+  // `group` ties together the blocks of one multi-block drag, so a single
+  // undo puts them all back
+  | { kind: "move"; id: string; x: number; y: number; group?: number }
   | { kind: "language"; id: string; language: Language; content: string }
   // a drawing's position and stroke before it was resized
   | { kind: "reshape"; id: string; x: number; y: number; content: string }
@@ -80,6 +82,7 @@ export function useCanvasHistory(nodes: CanvasNode[]) {
   }, []);
 
   const pop = useCallback(() => stack.current.pop(), []);
+  const peek = useCallback(() => stack.current[stack.current.length - 1], []);
 
   // A restored block comes back from the server with a new id, so older
   // entries that still point at the deleted id get switched over to it.
@@ -90,8 +93,8 @@ export function useCanvasHistory(nodes: CanvasNode[]) {
   }, []);
 
   return useMemo(
-    () => ({ nodesRef, record, pop, remapId, lastTouchedId, touch }),
-    [record, pop, remapId, touch],
+    () => ({ nodesRef, record, pop, peek, remapId, lastTouchedId, touch }),
+    [record, pop, peek, remapId, touch],
   );
 }
 
@@ -108,6 +111,9 @@ export interface CanvasOps {
   applySize: (id: string, wrapWidth: number | null, fontSize: number | null) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
+  // puts deleted blocks back where they were, in as few requests as possible;
+  // resolves to each one's new id (null for any that failed)
+  restoreBlocks: (srcs: CanvasNode[]) => Promise<(string | null)[]>;
   // removes every run output, as part of "Delete all"
   clearOutputs: () => void;
 }
@@ -120,6 +126,17 @@ interface ShortcutOptions {
   canvasRef: RefObject<HTMLDivElement | null>;
   rootRef: RefObject<HTMLDivElement | null>;
   onError?: (message: string) => void;
+  // Whether a left-drag on empty canvas draws a selection box right now
+  // (select mode, not space-panning, allowed to edit).
+  canMarquee?: () => boolean;
+}
+
+// A selection box in screen pixels, from where the drag started to the pointer.
+export interface Marquee {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
 type ContextMenuProps = Omit<CanvasContextMenuProps, "isDark">;
@@ -129,7 +146,7 @@ type ContextMenuProps = Omit<CanvasContextMenuProps, "isDark">;
 // pasting text or images from outside the app. Returns the selected blocks'
 // ids, a ref the page keeps at the pointer's canvas position (where pastes
 // land), and the right-click menu's props while it's open.
-export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, rootRef, onError }: ShortcutOptions) {
+export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, rootRef, onError, canMarquee }: ShortcutOptions) {
   // Usually one block (a click); several after Select all. Copy, cut and
   // duplicate act on a single selected block only.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -140,6 +157,14 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   const pointer = useRef({ x: 100, y: 100 });
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null; at: { x: number; y: number } } | null>(null);
   const rightDown = useRef<{ x: number; y: number } | null>(null);
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
+  // "Delete all" asks first (it clears the board for everyone on a shared
+  // canvas); this is true while the confirmation is showing.
+  const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
+  // Pressing on a block that's part of a multi-selection keeps the group (so
+  // dragging moves them all); if it turns out to be a plain click, it
+  // narrows to that block on release, like Excalidraw.
+  const pendingSingle = useRef<{ id: string; x: number; y: number } | null>(null);
 
   // ---- actions, shared by the keyboard and the menu ----
 
@@ -171,6 +196,11 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     for (const node of doomed) ops.deleteNode(node.id, false);
     history.record({ kind: "delete", nodes: doomed });
     setSelectedIds([]);
+  }
+
+  // Opens the confirmation for "Delete all" — if there's anything to delete.
+  function requestDeleteAll() {
+    if (history.nodesRef.current.length) setConfirmingDeleteAll(true);
   }
 
   // Clears the board: every block (undoable) and every run output.
@@ -225,7 +255,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // and `selectedId` — never a stale copy from an earlier render.
 
   const undo = useEffectEvent(async () => {
-    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock } = ops;
+    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, restoreBlocks } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
     // Skip entries for blocks someone else has deleted since.
@@ -235,8 +265,15 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
         if (!exists(entry.id)) continue;
         deleteNode(entry.id, false);
       } else if (entry.kind === "move") {
-        if (!exists(entry.id)) continue;
-        moveNode(entry.id, entry.x, entry.y, false);
+        const group = entry.group;
+        if (exists(entry.id)) moveNode(entry.id, entry.x, entry.y, false);
+        // the rest of a multi-block drag goes back in the same undo
+        let next;
+        while (group !== undefined && (next = history.peek())?.kind === "move" && next.group === group) {
+          history.pop();
+          if (exists(next.id)) moveNode(next.id, next.x, next.y, false);
+        }
+        if (!exists(entry.id) && group === undefined) continue;
       } else if (entry.kind === "language") {
         if (!exists(entry.id)) continue;
         applyLanguage(entry.id, entry.language, entry.content);
@@ -251,11 +288,13 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
         applySize(entry.id, entry.wrapWidth, entry.fontSize);
         moveNode(entry.id, entry.x, entry.y, false);
       } else {
-        for (const node of entry.nodes) {
-          const newId = await recreateBlock(node, node.x, node.y);
-          if (!newId) return;
-          history.remapId(node.id, newId);
-        }
+        // one request for the lot (a big "Delete all" would otherwise hit
+        // the per-minute create limit one block at a time)
+        const newIds = await restoreBlocks(entry.nodes);
+        entry.nodes.forEach((node, i) => {
+          const newId = newIds[i];
+          if (newId) history.remapId(node.id, newId);
+        });
       }
       return;
     }
@@ -264,6 +303,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   const onKeyDown = useEffectEvent((e: KeyboardEvent) => {
     // inside a block or a text box, keys belong to the typing
     if (inEditor(e.target)) return;
+    // while the Delete all confirmation is open, keys belong to it
+    if (confirmingDeleteAll) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && !e.shiftKey && key === "z") {
@@ -278,7 +319,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     }
     if (ctrl && e.key === "Backspace") {
       e.preventDefault();
-      deleteAll();
+      requestDeleteAll();
       return;
     }
     if (!ctrl && selectedIds.length > 1 && (e.key === "Delete" || e.key === "Backspace")) {
@@ -335,16 +376,72 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
 
   // Clicking a block selects it; clicking empty canvas clears it.
   // Right-clicking (without dragging) opens the menu.
+  // Drag on empty canvas: everything the box touches gets selected, live as
+  // the box grows (Shift adds to what's already selected).
+  function startMarquee(e: MouseEvent) {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const keep = e.shiftKey ? selectedIds : [];
+    // blocks don't move during the drag, so measure them once
+    const rects = [...document.querySelectorAll<HTMLElement>("[data-node-id]")]
+      .filter((el) => history.nodesRef.current.some((n) => n.id === el.dataset.nodeId))
+      .map((el) => ({ id: el.dataset.nodeId!, r: el.getBoundingClientRect() }));
+    let frame = 0;
+    let latest: Marquee = { x0, y0, x1: x0, y1: y0 };
+
+    function update() {
+      frame = 0;
+      setMarquee(latest);
+      const left = Math.min(latest.x0, latest.x1);
+      const right = Math.max(latest.x0, latest.x1);
+      const top = Math.min(latest.y0, latest.y1);
+      const bottom = Math.max(latest.y0, latest.y1);
+      if (right - left < 4 && bottom - top < 4) return; // still just a click
+      const hit = rects
+        .filter(({ r }) => r.right > left && r.left < right && r.bottom > top && r.top < bottom)
+        .map(({ id }) => id);
+      setSelectedIds([...new Set([...keep, ...hit])]);
+    }
+    function onMove(mv: MouseEvent) {
+      latest = { x0, y0, x1: mv.clientX, y1: mv.clientY };
+      if (!frame) frame = requestAnimationFrame(update);
+    }
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      cancelAnimationFrame(frame);
+      update();
+      setMarquee(null);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   const onMouseDown = useEffectEvent((e: MouseEvent) => {
     const target = e.target as Element;
     if (target.closest?.("[data-context-menu]")) return;
     const nodeEl = target.closest?.("[data-node-id]") as HTMLElement | null;
-    if (nodeEl) setSelectedId(nodeEl.dataset.nodeId ?? null);
-    else if (target === canvasRef.current || target === rootRef.current) setSelectedId(null);
+    const nodeId = nodeEl?.dataset.nodeId ?? null;
+    if (nodeId && e.button === 0 && e.shiftKey) {
+      // Shift+click adds or removes one block
+      setSelectedIds((ids) => (ids.includes(nodeId) ? ids.filter((i) => i !== nodeId) : [...ids, nodeId]));
+    } else if (nodeId && selectedIds.length > 1 && selectedIds.includes(nodeId)) {
+      if (e.button === 0) pendingSingle.current = { id: nodeId, x: e.clientX, y: e.clientY };
+    } else if (nodeId) {
+      setSelectedId(nodeId);
+    } else if (target === canvasRef.current || target === rootRef.current) {
+      if (!e.shiftKey) setSelectedId(null);
+      if (e.button === 0 && canMarquee?.()) startMarquee(e);
+    }
     if (e.button === 2) rightDown.current = { x: e.clientX, y: e.clientY };
   });
 
   const onMouseUp = useEffectEvent((e: MouseEvent) => {
+    const single = pendingSingle.current;
+    pendingSingle.current = null;
+    if (e.button === 0 && single && Math.hypot(e.clientX - single.x, e.clientY - single.y) <= 3) {
+      setSelectedId(single.id);
+    }
     if (e.button !== 2) return;
     const start = rightDown.current;
     rightDown.current = null;
@@ -436,11 +533,23 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       setMenu(null);
     },
     onDeleteAll: () => {
-      deleteAll();
+      requestDeleteAll();
       setMenu(null);
     },
     onClose: closeMenu,
   };
 
-  return { selectedIds, pointer, contextMenu };
+  // The Delete all confirmation's props while it's showing.
+  const deleteAllPrompt = confirmingDeleteAll
+    ? {
+        count: nodes.length,
+        onConfirm: () => {
+          setConfirmingDeleteAll(false);
+          deleteAll();
+        },
+        onCancel: () => setConfirmingDeleteAll(false),
+      }
+    : null;
+
+  return { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt };
 }

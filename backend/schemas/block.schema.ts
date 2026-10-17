@@ -62,3 +62,23 @@ export const updateBlockSizeSchema = z
         fontSize: fontSizeSchema.optional(),
     })
     .refine((s) => s.wrapWidth !== undefined || s.fontSize !== undefined, "Nothing to update");
+
+// Puts several blocks back at once (undoing a big delete), as one request:
+// recreating them one by one would hit the per-minute create limit. Each
+// block carries everything the single create route can't take (language,
+// link, size), so nothing needs a follow-up call.
+export const MAX_RESTORE_BLOCKS = 200;
+
+export const restoreBlocksSchema = z.object({
+    blocks: z
+        .array(
+            createSchema.extend({
+                language: languageSchema.default("javascript"),
+                link: linkSchema.default(null),
+                wrapWidth: wrapWidthSchema.default(null),
+                fontSize: fontSizeSchema.default(null),
+            }),
+        )
+        .min(1)
+        .max(MAX_RESTORE_BLOCKS),
+});

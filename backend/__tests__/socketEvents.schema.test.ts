@@ -25,6 +25,10 @@ describe("blockUpdatedEventSchema", () => {
     expect(blockUpdatedEventSchema.safeParse({ id: "b1", content: "", fontSize: 9999 }).success).toBe(false);
   });
 
+  test("allows a size-only update without content (a resize doesn't resend it)", () => {
+    expect(blockUpdatedEventSchema.parse({ id: "b1", wrapWidth: 300 })).toEqual({ id: "b1", wrapWidth: 300 });
+  });
+
   test("drops fields that aren't part of the event instead of relaying them", () => {
     const parsed = blockUpdatedEventSchema.parse({ id: "b1", content: "", evil: "<img onerror>" });
     expect(parsed).not.toHaveProperty("evil");

@@ -7,6 +7,7 @@
     "dev": "concurrently \"cd ../backend && npx ts-node server.ts\" \"vite\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -48,6 +49,8 @@
     "@eslint/js": "^9.39.4",
     "@rolldown/plugin-babel": "^0.2.0",
     "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
@@ -59,9 +62,11 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "^5.0.5"
   }
 }

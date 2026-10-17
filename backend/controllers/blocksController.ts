@@ -67,6 +67,28 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
   }
 }
 
+// Undoing a big delete: puts the blocks back in one request (see
+// restoreBlocksSchema). The quota counts all of them together.
+export async function restoreBlocks(req: AuthRequest, res: Response): Promise<void> {
+  const { id: canvasId } = req.params;
+  const { blocks } = req.body as { blocks: Blocks.RestoreBlockParams[] };
+
+  try {
+    const usage = await Blocks.getCanvasUsage(canvasId);
+    const chars = blocks.reduce((sum, b) => sum + b.content.length, 0);
+    if (usage.count + blocks.length > MAX_BLOCKS_PER_CANVAS || exceedsQuota(usage, chars, false)) {
+      res.status(413).json({ error: QUOTA_ERROR });
+      return;
+    }
+
+    const rows = await Blocks.restoreBlocks(canvasId, blocks);
+    await cacheDel(`blocks:${canvasId}`);
+    res.status(201).json(rows);
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}
+
 export async function deleteBlock(req: AuthRequest, res: Response): Promise<void> {
   const { id: canvasId, blockId } = req.params;
 

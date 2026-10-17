@@ -98,7 +98,7 @@ export default function CanvasContextMenu({
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-left transition-colors ${
         danger
-          ? isDark ? "text-[#f5b5b5] hover:bg-[#3a1f1f]" : "text-red-600 hover:bg-red-50"
+          ? "text-[#FF3B6B] hover:bg-[#FF3B6B]/10"
           : isDark ? "text-[#e5e5e5] hover:bg-[#3c3c4a]" : "text-gray-700 hover:bg-gray-100"
       }`}
     >
@@ -143,7 +143,7 @@ export default function CanvasContextMenu({
             }`}
           />
           {linkError && (
-            <span className={isDark ? "text-[#f5b5b5]" : "text-red-600"}>Enter a web address (http or https)</span>
+            <span className="text-[#FF3B6B]">Enter a web address (http or https)</span>
           )}
           <div className="flex justify-end gap-1">
             <button

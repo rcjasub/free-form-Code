@@ -30,9 +30,11 @@ export const blockMovedEventSchema = z.object({
   y: z.number(),
 });
 
+// content is optional: a resize only sends the new size, not the (possibly
+// large) content again
 export const blockUpdatedEventSchema = z.object({
   id: blockId,
-  content: contentSchema,
+  content: contentSchema.optional(),
   language: languageSchema.optional(),
   link: linkSchema.optional(),
   wrapWidth: wrapWidthSchema.optional(),

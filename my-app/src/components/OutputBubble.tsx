@@ -142,11 +142,11 @@ export default React.memo(function OutputBubble({
       ref={containerRef}
       data-output-id={id} // lets the next output from the same block be placed beside this one
       // Matches the canvas: white text on the dark canvas black, black text on
-      // white in light mode. Errors stay red (a darker red on white).
+      // white in light mode. Errors are the app's red, #FF3B6B.
       className={`absolute group max-w-xs rounded-lg px-3 py-2 shadow-lg text-xs font-canvas whitespace-pre-wrap ${
         isDark ? "bg-[#121212]" : "bg-white"
       } ${
-        isError ? (isDark ? "text-[#ff5555]" : "text-[#dc2626]") : isDark ? "text-white" : "text-black"
+        isError ? "text-[#FF3B6B]" : isDark ? "text-white" : "text-black"
       }`}
       style={{ left: x, top: y, pointerEvents: mode === "draw" ? "none" : undefined }}
       onMouseDown={(e) => {
@@ -169,7 +169,7 @@ export default React.memo(function OutputBubble({
       {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
-        className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#ff5555]" : "text-[#7A86b3]"}`}
+        className={`absolute top-1 right-1.5 text-[10px] opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#FF3B6B]" : "text-[#7A86b3]"}`}
         onClick={() => onDelete(id)}
       >
         ✕

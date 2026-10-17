@@ -10,6 +10,7 @@ import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
 import ImageNode from "./components/ImageNode";
 import CanvasContextMenu from "./components/CanvasContextMenu";
+import ConfirmDialog from "./components/ConfirmDialog";
 import RemoteCursorMarker from "./components/RemoteCursorMarker";
 import OutputBubble from "./components/OutputBubble";
 import EraserTrail from "./components/EraserTrail";
@@ -31,7 +32,10 @@ import {
   updateBlockLanguage,
   updateBlockLink,
   updateBlockSize,
+  restoreBlocks as restoreBlocksApi,
 } from "./API/block";
+import { createKeyedThrottle } from "./lib/throttle";
+import { chunkForRestore, toRestorePayload } from "./lib/restore";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
@@ -106,6 +110,9 @@ export default function App() {
   const pendingRunKeys = useRef(new Set<string>());
   const contentSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Live socket updates while dragging/resizing, at most every 40ms per block
+  // (the rate drags already send at), always ending on the final value.
+  const [emitThrottle] = useState(() => createKeyedThrottle(40));
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -224,10 +231,10 @@ export default function App() {
           n.id === data.id
             ? {
                 ...n,
-                content: data.content,
+                content: "content" in data ? data.content : n.content,
                 language: data.language ?? n.language,
                 // a drawing's stroke lives in its content (e.g. after a resize)
-                points: n.type === "draw" ? parsePoints(data.content) ?? n.points : n.points,
+                points: n.type === "draw" && "content" in data ? parsePoints(data.content) ?? n.points : n.points,
                 link: "link" in data ? data.link : n.link,
                 wrapWidth: "wrapWidth" in data ? data.wrapWidth : n.wrapWidth,
                 fontSize: "fontSize" in data ? data.fontSize : n.fontSize,
@@ -547,20 +554,19 @@ export default function App() {
 
   // `record` is false when undo itself is doing the move/delete, so undoing
   // doesn't push a new history entry.
-  const moveNode = useCallback((id: string, x: number, y: number, record = true) => {
+  const moveNode = useCallback((id: string, x: number, y: number, record = true, group?: number) => {
     // A drag calls this many times; only its first call (no save pending
     // yet) records where the block started.
     if (record && !moveSaveTimers.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
-      if (before) history.record({ kind: "move", id, x: before.x, y: before.y });
+      if (before) history.record({ kind: "move", id, x: before.x, y: before.y, group });
     }
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y } : n)));
     if (!canvasId) return;
-    // socket emit stays immediate so other viewers see live drag movement;
-    // only the DB write is debounced, since dragging fires this on every
-    // mousemove (tens of times/sec) and only the settled position needs
-    // to be persisted.
-    socket.emit("block:moved", canvasId, { id, x, y });
+    // Other viewers see the drag live (throttled, ending on the final
+    // position); only the DB write is debounced, since only the settled
+    // position needs to be persisted.
+    emitThrottle(`move:${id}`, () => socket.emit("block:moved", canvasId, { id, x, y }));
     clearTimeout(moveSaveTimers.current[id]);
     moveSaveTimers.current[id] = setTimeout(() => {
       delete moveSaveTimers.current[id];
@@ -621,8 +627,9 @@ export default function App() {
     if (!node) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, wrapWidth, fontSize } : n)));
     if (!canvasId) return;
-    // block:updated requires content; resending the current content changes nothing
-    socket.emit("block:updated", canvasId, { id, content: node.content, wrapWidth, fontSize });
+    // just the size (not the content again), throttled while dragging and
+    // sent right away for the final one
+    emitThrottle(`size:${id}`, () => socket.emit("block:updated", canvasId, { id, wrapWidth, fontSize }), save);
     if (save) {
       updateBlockSize(canvasId, id, { wrapWidth, fontSize }).catch((err) =>
         showError(saveErrorMessage(err, "Couldn't save the new size — check your connection and try again.")),
@@ -684,6 +691,28 @@ export default function App() {
     }
   }, [canvasId]);
 
+  // Puts deleted blocks back (undoing a delete), as few requests as the
+  // restore route allows. Resolves to each block's new id, null if it failed.
+  const restoreBlocks = useCallback(async (srcs: Node[]) => {
+    const ids: (string | null)[] = [];
+    if (canvasId) {
+      try {
+        for (const chunk of chunkForRestore(srcs.map(toRestorePayload))) {
+          const { data } = await restoreBlocksApi(canvasId, chunk);
+          setNodes((prev) => [...prev, ...data.map(blockToNode)]);
+          for (const row of data) {
+            socket.emit("block:created", canvasId, row);
+            ids.push(String(row.id));
+          }
+        }
+      } catch (err) {
+        showError(saveErrorMessage(err, "Couldn't restore the blocks — check your connection and try again."));
+      }
+    }
+    while (ids.length < srcs.length) ids.push(null);
+    return ids;
+  }, [canvasId]);
+
   // Sets a block's language and content — saving content only if it changed.
   const applyLanguage = useCallback((id: string, language: Language, content: string) => {
     if (!canvasId) return;
@@ -695,15 +724,44 @@ export default function App() {
   }, [canvasId, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedIds, pointer, contextMenu } = useCanvasShortcuts({
+  const { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt } = useCanvasShortcuts({
     enabled: true,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, clearOutputs },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, restoreBlocks, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
+    canMarquee: () => modeRef.current === "select" && !spaceHeld.current,
   });
+
+  // Dragging one block of a multi-selection moves the whole selection by the
+  // same amount; one undo puts them all back.
+  const selectedIdsRef = useRef(selectedIds);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+  const groupDrag = useRef<{ id: string; group: number } | null>(null);
+  const moveSelection = useCallback((id: string, x: number, y: number) => {
+    const sel = selectedIdsRef.current;
+    if (sel.length < 2 || !sel.includes(id)) {
+      moveNode(id, x, y);
+      return;
+    }
+    const all = history.nodesRef.current;
+    const dragged = all.find((n) => n.id === id);
+    if (!dragged) return;
+    const dx = x - dragged.x;
+    const dy = y - dragged.y;
+    // a new drag starts once the last one's position has been saved
+    if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) groupDrag.current = { id, group: Date.now() };
+    const group = groupDrag.current.group;
+    for (const n of all) {
+      if (!sel.includes(n.id)) continue;
+      if (n.id === id) moveNode(id, x, y, true, group);
+      else moveNode(n.id, n.x + dx, n.y + dy, true, group);
+    }
+  }, [moveNode, history]);
 
   // saveSelection only writes to a ref — no canvasId dependency, always stable.
   const saveSelection = useCallback((content: string, el: HTMLElement) => {
@@ -1014,7 +1072,7 @@ export default function App() {
               width={node.width ?? 300}
               src={node.content}
               link={node.link}
-              onMove={moveNode}
+              onMove={moveSelection}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
               selected={selectedIds.includes(node.id)}
@@ -1029,7 +1087,7 @@ export default function App() {
               x={node.x}
               y={node.y}
               points={node.points ?? []}
-              onMove={moveNode}
+              onMove={moveSelection}
               onMarkErase={handleMarkErase}
               onResize={resizeDrawing}
               link={node.link}
@@ -1049,7 +1107,7 @@ export default function App() {
               language={node.language ?? "javascript"}
               onChange={updateNode}
               onLanguageChange={changeLanguage}
-              onMove={moveNode}
+              onMove={moveSelection}
               onSaveSelection={saveSelection}
               onMarkErase={handleMarkErase}
               pendingErase={pendingErase.has(node.id)}
@@ -1106,12 +1164,35 @@ export default function App() {
 
       {/* transient error toast */}
       {errorToast && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 text-xs px-3 py-2 rounded-lg shadow-sm border bg-red-50 border-red-200 text-red-600 dark:bg-[#3a1f1f] dark:border-[#5c2c2c] dark:text-[#f5b5b5]">
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 text-xs px-3 py-2 rounded-lg shadow-sm border bg-[#FFEEF2] border-[#FF3B6B]/30 text-[#FF3B6B] dark:bg-[#2B1520] dark:border-[#FF3B6B]/40">
           {errorToast}
         </div>
       )}
 
       {contextMenu && <CanvasContextMenu {...contextMenu} isDark={isDark} />}
+
+      {deleteAllPrompt && (
+        <ConfirmDialog
+          title="Delete everything?"
+          message={`This removes ${deleteAllPrompt.count === 1 ? "the only item" : `all ${deleteAllPrompt.count} items`} on the canvas, and any run output. You can undo with Ctrl+Z.`}
+          confirmLabel="Delete all"
+          onConfirm={deleteAllPrompt.onConfirm}
+          onCancel={deleteAllPrompt.onCancel}
+        />
+      )}
+
+      {/* selection box while dragging on empty canvas */}
+      {marquee && (
+        <div
+          className="fixed pointer-events-none z-30 border border-[#4fb4f2] bg-[#4fb4f2]/10"
+          style={{
+            left: Math.min(marquee.x0, marquee.x1),
+            top: Math.min(marquee.y0, marquee.y1),
+            width: Math.abs(marquee.x1 - marquee.x0),
+            height: Math.abs(marquee.y1 - marquee.y0),
+          }}
+        />
+      )}
 
       <ScrollToContent
         nodeCount={nodes.length}

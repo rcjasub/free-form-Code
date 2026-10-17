@@ -508,14 +508,16 @@ export default React.memo(function FloatingNode({
       )}
 
       {/* language picker — below the block (clear of the selection box) in
-          select and text mode; always faintly visible, brighter on hover */}
+          select and text mode; always faintly visible, brighter on hover.
+          w-max + nowrap: it's positioned inside the block, so under a short
+          line it would otherwise wrap to the block's narrow width */}
       {(mode === "select" || mode === "text") && (
         <div
           // While the menu is open: fully opaque, or it would inherit the
           // fade; and raised above other blocks. The menu's own z-50 only
           // counts inside this wrapper, so at z-20 the next block's language
           // label (also z-20, later in the page) drew on top of the menu.
-          className={`absolute -bottom-7 left-0 text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          className={`absolute -bottom-7 left-0 w-max whitespace-nowrap text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity z-20 has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
             <AnimatedDropdown
