@@ -419,39 +419,76 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // Clicking a block selects it; clicking empty canvas clears it.
   // Right-clicking (without dragging) opens the menu.
   // Drag on empty canvas: everything the box touches gets selected, live as
-  // the box grows (Shift adds to what's already selected).
+  // the box grows (Shift adds to what's already selected). The corner you
+  // started from is pinned to the canvas, so scrolling or zooming mid-drag
+  // stretches the box over whatever comes into view, like Excalidraw.
   function startMarquee(e: MouseEvent) {
-    const x0 = e.clientX;
-    const y0 = e.clientY;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // where the panned and zoomed canvas sits on screen right now
+    const view = () => {
+      const r = canvas.getBoundingClientRect();
+      return { left: r.left, top: r.top, scale: canvas.offsetWidth ? r.width / canvas.offsetWidth : 1 };
+    };
+    let v = view();
+    // the start corner and the blocks, in canvas coordinates (blocks don't
+    // move during the drag, so they're measured once)
+    const start = { x: (e.clientX - v.left) / v.scale, y: (e.clientY - v.top) / v.scale };
     const keep = e.shiftKey ? selectedIds : [];
-    // blocks don't move during the drag, so measure them once
     const rects = [...document.querySelectorAll<HTMLElement>("[data-node-id]")]
       .filter((el) => history.nodesRef.current.some((n) => n.id === el.dataset.nodeId))
-      .map((el) => ({ id: el.dataset.nodeId!, r: el.getBoundingClientRect() }));
-    let frame = 0;
-    let latest: Marquee = { x0, y0, x1: x0, y1: y0 };
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          id: el.dataset.nodeId!,
+          left: (r.left - v.left) / v.scale,
+          right: (r.right - v.left) / v.scale,
+          top: (r.top - v.top) / v.scale,
+          bottom: (r.bottom - v.top) / v.scale,
+        };
+      });
+    const mouse = { x: e.clientX, y: e.clientY };
+    let drawn = "";
 
     function update() {
-      frame = 0;
+      const latest: Marquee = {
+        x0: v.left + start.x * v.scale,
+        y0: v.top + start.y * v.scale,
+        x1: mouse.x,
+        y1: mouse.y,
+      };
       setMarquee(latest);
-      const left = Math.min(latest.x0, latest.x1);
-      const right = Math.max(latest.x0, latest.x1);
-      const top = Math.min(latest.y0, latest.y1);
-      const bottom = Math.max(latest.y0, latest.y1);
-      if (right - left < 4 && bottom - top < 4) return; // still just a click
+      if (Math.abs(latest.x1 - latest.x0) < 4 && Math.abs(latest.y1 - latest.y0) < 4) return; // still just a click
+      const end = { x: (mouse.x - v.left) / v.scale, y: (mouse.y - v.top) / v.scale };
+      const left = Math.min(start.x, end.x);
+      const right = Math.max(start.x, end.x);
+      const top = Math.min(start.y, end.y);
+      const bottom = Math.max(start.y, end.y);
       const hit = rects
-        .filter(({ r }) => r.right > left && r.left < right && r.bottom > top && r.top < bottom)
+        .filter((r) => r.right > left && r.left < right && r.bottom > top && r.top < bottom)
         .map(({ id }) => id);
       setSelectedIds([...new Set([...keep, ...hit])]);
     }
+    // Checked every frame rather than on mousemove alone: scrolling moves
+    // the canvas under a still mouse, and no mousemove fires for that.
+    let frame = requestAnimationFrame(function tick() {
+      v = view();
+      const now = `${v.left},${v.top},${v.scale},${mouse.x},${mouse.y}`;
+      if (now !== drawn) {
+        drawn = now;
+        update();
+      }
+      frame = requestAnimationFrame(tick);
+    });
     function onMove(mv: MouseEvent) {
-      latest = { x0, y0, x1: mv.clientX, y1: mv.clientY };
-      if (!frame) frame = requestAnimationFrame(update);
+      mouse.x = mv.clientX;
+      mouse.y = mv.clientY;
     }
     function onUp() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       cancelAnimationFrame(frame);
+      v = view();
       update();
       setMarquee(null);
     }
