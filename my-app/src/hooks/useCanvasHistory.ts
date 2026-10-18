@@ -3,6 +3,8 @@ import type { Point } from "../components/DrawingNode";
 import type { CanvasContextMenuProps } from "../components/CanvasContextMenu";
 import type { Language } from "../lib/languages";
 import { imageToDataUrl, IMAGE_DISPLAY_WIDTH } from "../lib/images";
+import { detectLanguage } from "../lib/detectLanguage";
+import { FONT_SIZE, measureCanvasText, splitLines } from "../lib/splitLines";
 
 // The block fields undo and copy/paste need — both canvas pages' node types
 // have this shape.
@@ -36,12 +38,16 @@ export type HistoryEntry =
   | { kind: "link"; id: string; link: string | null }
   // a text block's size (and position — resizing from the left/top moves it)
   // before its handles were dragged
-  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number };
+  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number }
+  // a block split into one block per line: the block as it was, and the pieces
+  | { kind: "split"; original: CanvasNode; ids: string[] };
 
 const MAX_HISTORY = 100;
 // Text pasted from outside wraps at this width instead of running off to the
 // right as one long line (a paragraph from a web page is usually one line).
 const PASTE_WRAP_WIDTH = 480;
+// the narrowest wrap width the backend accepts (wrapWidthSchema)
+const MIN_WRAP_WIDTH = 40;
 // how far a duplicate lands from its original, so it doesn't hide under it
 const DUPLICATE_OFFSET = 24;
 
@@ -215,9 +221,10 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     ops.applyLink(node.id, link);
   }
 
-  // Text from outside becomes a Plain text block, exactly as copied (no code
-  // highlighting or run button, like Excalidraw's pasted text), that wraps
-  // at PASTE_WRAP_WIDTH; an image becomes an image block.
+  // Text from outside becomes one block, exactly as copied. If it looks like
+  // code it gets that language (see lib/detectLanguage); otherwise it's Plain
+  // text, which wraps at PASTE_WRAP_WIDTH if a line is wider than that.
+  // "Split into lines" breaks it up afterwards. An image becomes an image block.
   async function pasteExternal(source: { image?: Blob; text?: string }, at: { x: number; y: number }) {
     try {
       if (source.image) {
@@ -225,12 +232,42 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
         const image = { id: "", ...at, type: "image", content: dataUrl, width: Math.min(width, IMAGE_DISPLAY_WIDTH) };
         await placeCopy(image, at.x, at.y);
       } else if (source.text) {
-        const note = { id: "", ...at, content: source.text, language: "text" as const, wrapWidth: PASTE_WRAP_WIDTH };
+        const language = detectLanguage(source.text);
+        // code keeps each line whole, however long
+        const tooWide = language === "text" && source.text.split("\n").some((l) => measureCanvasText(l) > PASTE_WRAP_WIDTH);
+        const note = { id: "", ...at, content: source.text, language, wrapWidth: tooWide ? PASTE_WRAP_WIDTH : null };
         await placeCopy(note, at.x, at.y);
       }
     } catch (err) {
       onError?.(err instanceof Error ? err.message : "Couldn't paste that.");
     }
+  }
+
+  // "Split into lines": the block becomes one block per line, laid out where
+  // its lines were (see lib/splitLines). One undo puts the original back.
+  async function splitNode(node: CanvasNode) {
+    // laid out at the default font size, then scaled to the block's
+    const scale = (node.fontSize ?? FONT_SIZE) / FONT_SIZE;
+    const pieces = splitLines(node.content, (node.wrapWidth ?? Infinity) / scale, measureCanvasText);
+    if (pieces.length < 2) return;
+    const parts = pieces.map((p) => ({
+      ...node,
+      id: "",
+      content: p.content,
+      x: node.x + p.dx * scale,
+      y: node.y + p.dy * scale,
+      wrapWidth: p.wrapWidth === null ? null : Math.max(p.wrapWidth * scale, MIN_WRAP_WIDTH),
+    }));
+    const ids = await ops.restoreBlocks(parts);
+    const made = ids.filter((id): id is string => id !== null);
+    if (made.length < ids.length) {
+      // a half-done split would lose lines once the original is gone
+      for (const id of made) ops.deleteNode(id, false);
+      return;
+    }
+    ops.deleteNode(node.id, false);
+    history.record({ kind: "split", original: node, ids: made });
+    setSelectedIds(made);
   }
 
   // Menu paste has no paste event to read from, so it uses what was copied
@@ -287,6 +324,11 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
         if (!exists(entry.id)) continue;
         applySize(entry.id, entry.wrapWidth, entry.fontSize);
         moveNode(entry.id, entry.x, entry.y, false);
+      } else if (entry.kind === "split") {
+        // the pieces go and the block they came from comes back
+        for (const id of entry.ids) if (exists(id)) deleteNode(id, false);
+        const [newId] = await restoreBlocks([entry.original]);
+        if (newId) history.remapId(entry.original.id, newId);
       } else {
         // one request for the lot (a big "Delete all" would otherwise hit
         // the per-minute create limit one block at a time)
@@ -514,6 +556,14 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     onBlock: !!menuNode,
     deleteCount: deleteTargets.length,
     link: menuNode?.link ?? null,
+    // a text or code block with more than one line
+    onSplit:
+      menuNode && menuNode.type !== "draw" && menuNode.type !== "image" && menuNode.content.trim().includes("\n")
+        ? () => {
+            splitNode(menuNode);
+            setMenu(null);
+          }
+        : undefined,
     onCut: () => {
       if (menuNode) {
         copyNode(menuNode);

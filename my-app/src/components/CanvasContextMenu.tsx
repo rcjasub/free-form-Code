@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Copy, CopyPlus, Link, Link2Off, Scissors, ClipboardPaste, Trash2, BoxSelect, Eraser } from "lucide-react";
+import { Copy, CopyPlus, Link, Link2Off, Scissors, ClipboardPaste, Trash2, BoxSelect, Eraser, Rows3 } from "lucide-react";
 
 export interface CanvasContextMenuProps {
   // where it opens, in screen pixels
@@ -16,6 +16,8 @@ export interface CanvasContextMenuProps {
   onCopy: () => void;
   onPaste: () => void;
   onDuplicate: () => void;
+  // only for a block with more than one line
+  onSplit?: () => void;
   onDelete: () => void;
   onSaveLink: (link: string | null) => void;
   onSelectAll: () => void;
@@ -51,6 +53,7 @@ export default function CanvasContextMenu({
   onCopy,
   onPaste,
   onDuplicate,
+  onSplit,
   onDelete,
   onSaveLink,
   onSelectAll,
@@ -95,7 +98,7 @@ export default function CanvasContextMenu({
 
   // keep the whole menu on screen when opened near the right/bottom edge
   const left = Math.min(x, window.innerWidth - MENU_WIDTH - 8);
-  const top = Math.min(y, window.innerHeight - (onBlock ? 360 : deleteCount ? 150 : 120));
+  const top = Math.min(y, window.innerHeight - (onBlock ? 390 : deleteCount ? 150 : 120));
   const deleteLabel = deleteCount > 1 ? `Delete ${deleteCount} items` : "Delete";
 
   const item = (label: string, icon: ReactNode, onClick: () => void, hint?: string, danger?: boolean) => (
@@ -168,6 +171,7 @@ export default function CanvasContextMenu({
           {item("Copy", <Copy size={13} />, onCopy, "Ctrl+C")}
           {item("Paste", <ClipboardPaste size={13} />, onPaste, "Ctrl+V")}
           {item("Duplicate", <CopyPlus size={13} />, onDuplicate, "Ctrl+D")}
+          {onSplit && item("Split into lines", <Rows3 size={13} />, onSplit)}
           {divider}
           {item(link ? "Edit link" : "Add link", <Link size={13} />, () => setEditingLink(true))}
           {link && item("Remove link", <Link2Off size={13} />, () => onSaveLink(null))}
