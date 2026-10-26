@@ -77,6 +77,9 @@ export const restoreBlocksSchema = z.object({
                 link: linkSchema.default(null),
                 wrapWidth: wrapWidthSchema.default(null),
                 fontSize: fontSizeSchema.default(null),
+                // its id in the browser it came from; a block already saved
+                // with the same one is returned instead of added again
+                clientId: z.string().min(1).max(64).optional(),
             }),
         )
         .min(1)

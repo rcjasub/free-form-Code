@@ -8,6 +8,7 @@ export interface User {
   password_hash: string | null;
   is_guest: boolean;
   created_at: string;
+  last_active_at: string;
 }
 
 export interface CreateUserParams {
@@ -64,4 +65,31 @@ export async function findUserByEmail(email: string): Promise<User | null> {
     [email],
   );
   return result.rows[0] ?? null;
+}
+
+// Marks a guest as active, at most once an hour so a busy guest isn't a
+// write per request. Resolves to true when it wrote.
+export async function touchGuest(id: string): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE users SET last_active_at = NOW()
+     WHERE id = $1 AND is_guest = true AND last_active_at < NOW() - INTERVAL '1 hour'`,
+    [id],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// Deletes guests idle for `days`; their canvases, blocks and share links go
+// with them (ON DELETE CASCADE). Resolves to the deleted canvases' ids, read
+// in the same statement — it sees the rows as they were before the delete.
+export async function deleteInactiveGuests(days: number): Promise<string[]> {
+  const result = await pool.query<{ id: string }>(
+    `WITH gone AS (
+       DELETE FROM users
+       WHERE is_guest = true AND last_active_at < NOW() - make_interval(days => $1)
+       RETURNING id
+     )
+     SELECT c.id FROM canvases c WHERE c.user_id IN (SELECT id FROM gone)`,
+    [days],
+  );
+  return result.rows.map((r) => r.id);
 }

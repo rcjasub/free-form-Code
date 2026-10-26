@@ -39,6 +39,7 @@ const fakeBlock = {
   x: 0,
   y: 0,
   width: 10,
+  client_id: null,
   created_at: new Date(),
   updated_at: new Date(),
 };
@@ -47,6 +48,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // an empty canvas unless a test says otherwise, so the quota check passes
   mockBlocks.getCanvasUsage.mockResolvedValue({ count: 0, chars: 0 });
+  mockBlocks.existingClientIds.mockResolvedValue(new Set());
 });
 
 describe("getAllBlocks", () => {
@@ -132,6 +134,40 @@ describe("createBlock", () => {
 
     expect(res.status).toHaveBeenCalledWith(413);
     expect(mockBlocks.CreateBlock).not.toHaveBeenCalled();
+  });
+
+  describe("images", () => {
+    const image = { type: "image", content: "data:image/webp;base64,AAAA", x: 0, y: 0, width: 480 };
+
+    test.each([
+      ["a guest", { id: "u1", username: "guest_x", isGuest: true }],
+      ["someone with no account (a share-link visitor)", undefined],
+    ])("returns 403 without creating for %s", async (_who, user) => {
+      req = { ...req, user, body: image };
+
+      await createBlock(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockBlocks.CreateBlock).not.toHaveBeenCalled();
+    });
+
+    test("creates it for a real account", async () => {
+      req = { ...req, user: { id: "u1", username: "ana", isGuest: false }, body: image };
+      mockBlocks.CreateBlock.mockResolvedValue(fakeBlock);
+
+      await createBlock(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    test("guests can still create other blocks", async () => {
+      req = { ...req, user: { id: "u1", username: "guest_x", isGuest: true } };
+      mockBlocks.CreateBlock.mockResolvedValue(fakeBlock);
+
+      await createBlock(req, res); // the default body is a drawing
+
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
   });
 
   test("returns 413 without creating when the new content would push the canvas over its size cap", async () => {
@@ -390,6 +426,16 @@ describe("restoreBlocks", () => {
     expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
   });
 
+  test("returns 403 without restoring anything when a guest's blocks include an image", async () => {
+    const image = { ...block, type: "image", content: "data:image/webp;base64,AAAA" };
+    req = { ...req, user: { id: "u1", username: "guest_x", isGuest: true }, body: { blocks: [block, image] } };
+
+    await restoreBlocks(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockBlocks.restoreBlocks).not.toHaveBeenCalled();
+  });
+
   test("returns 413 without restoring when they'd push the canvas past its block cap", async () => {
     mockBlocks.getCanvasUsage.mockResolvedValue({ count: MAX_BLOCKS_PER_CANVAS - 1, chars: 0 });
 
@@ -407,6 +453,21 @@ describe("restoreBlocks", () => {
     expect(res.status).toHaveBeenCalledWith(413);
     expect(mockBlocks.restoreBlocks).not.toHaveBeenCalled();
   });
+
+  test("doesn't count blocks already uploaded (same clientId) against the cap", async () => {
+    req.body.blocks = [
+      { ...block, clientId: "local-a" },
+      { ...block, clientId: "local-b" },
+    ];
+    mockBlocks.getCanvasUsage.mockResolvedValue({ count: MAX_BLOCKS_PER_CANVAS - 1, chars: 0 });
+    mockBlocks.existingClientIds.mockResolvedValue(new Set(["local-a"]));
+    mockBlocks.restoreBlocks.mockResolvedValue([fakeBlock, fakeBlock]);
+
+    await restoreBlocks(req, res); // only local-b is new, and there's room for 1
+
+    expect(mockBlocks.existingClientIds).toHaveBeenCalledWith("1", ["local-a", "local-b"]);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
 });
 
 describe("restoreBlocksSchema", () => {
@@ -421,5 +482,7 @@ describe("restoreBlocksSchema", () => {
     expect(restoreBlocksSchema.safeParse({ blocks: Array(MAX_RESTORE_BLOCKS + 1).fill(one) }).success).toBe(false);
     expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, link: "javascript:alert(1)" }] }).success).toBe(false);
     expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, language: "ruby" }] }).success).toBe(false);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, clientId: "x".repeat(65) }] }).success).toBe(false);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, clientId: "local-1" }] }).success).toBe(true);
   });
 });

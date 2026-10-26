@@ -10,6 +10,8 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { setUpSockets } from "./socket";
 import { startWorker } from "./worker";
+import { startGuestCleanup } from "./cleanup";
+import { runMigrations } from "./db/migrate";
 
 import canvasRoutes from "./routes/canvas";
 import blockRoutes from "./routes/blocks";
@@ -59,7 +61,19 @@ setUpSockets(io);
 // start the BullMQ worker — passes io so it can emit results back to clients
 startWorker(io);
 
-// start the http server (not app.listen — socket.io needs control of the server)
-httpServer.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
-});
+// daily deletion of idle guests (cleanup.ts)
+startGuestCleanup().catch((err) => console.error("[cleanup] could not schedule:", err));
+
+// update the database schema, then start the http server (not app.listen —
+// socket.io needs control of the server). A failed update stops the server:
+// running against an outdated schema would fail on the first save instead.
+runMigrations()
+  .then(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`Backend running on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("[db] schema update failed, not starting:", err);
+    process.exit(1);
+  });

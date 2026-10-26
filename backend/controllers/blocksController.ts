@@ -12,6 +12,16 @@ export const MAX_CANVAS_CONTENT = 50_000_000; // characters, ~50 MB
 
 const QUOTA_ERROR = "This canvas is full — delete some blocks (large images count the most) and try again";
 
+// Images are by far the biggest blocks, so only real accounts store them on
+// the server. A guest's images stay in their own browser (the frontend keeps
+// them in IndexedDB), and anyone without an account — including visitors
+// editing through a share link — can't add them here.
+const IMAGE_ERROR = "Sign up to add images to a shared canvas";
+
+function canStoreImages(req: AuthRequest): boolean {
+  return !!req.user && !req.user.isGuest;
+}
+
 function exceedsQuota(usage: Blocks.CanvasUsage, newContentLength: number, addingBlock: boolean): boolean {
   if (addingBlock && usage.count >= MAX_BLOCKS_PER_CANVAS) return true;
   return usage.chars + newContentLength > MAX_CANVAS_CONTENT;
@@ -44,6 +54,11 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
   const { id: canvasId } = req.params;
   const { type, content, x, y, width } = req.body;
 
+  if (type === "image" && !canStoreImages(req)) {
+    res.status(403).json({ error: IMAGE_ERROR });
+    return;
+  }
+
   try {
     const usage = await Blocks.getCanvasUsage(canvasId);
     if (exceedsQuota(usage, content.length, true)) {
@@ -67,16 +82,27 @@ export async function createBlock(req: AuthRequest, res: Response): Promise<void
   }
 }
 
-// Undoing a big delete: puts the blocks back in one request (see
-// restoreBlocksSchema). The quota counts all of them together.
+// Undoing a big delete, or uploading a browser canvas: puts the blocks back
+// in one request (see restoreBlocksSchema). The quota counts all of them
+// together, except ones already uploaded (same clientId), which aren't added.
 export async function restoreBlocks(req: AuthRequest, res: Response): Promise<void> {
   const { id: canvasId } = req.params;
   const { blocks } = req.body as { blocks: Blocks.RestoreBlockParams[] };
 
+  if (blocks.some((b) => b.type === "image") && !canStoreImages(req)) {
+    res.status(403).json({ error: IMAGE_ERROR });
+    return;
+  }
+
   try {
     const usage = await Blocks.getCanvasUsage(canvasId);
-    const chars = blocks.reduce((sum, b) => sum + b.content.length, 0);
-    if (usage.count + blocks.length > MAX_BLOCKS_PER_CANVAS || exceedsQuota(usage, chars, false)) {
+    const saved = await Blocks.existingClientIds(
+      canvasId,
+      blocks.flatMap((b) => (b.clientId ? [b.clientId] : [])),
+    );
+    const fresh = blocks.filter((b) => !b.clientId || !saved.has(b.clientId));
+    const chars = fresh.reduce((sum, b) => sum + b.content.length, 0);
+    if (usage.count + fresh.length > MAX_BLOCKS_PER_CANVAS || exceedsQuota(usage, chars, false)) {
       res.status(413).json({ error: QUOTA_ERROR });
       return;
     }
