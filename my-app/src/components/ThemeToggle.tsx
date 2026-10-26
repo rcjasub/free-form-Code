@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { flushSync } from "react-dom";
 
 export const useThemeToggle = () => {
@@ -61,48 +61,57 @@ export function ThemeToggleButton({ className = "" }: { className?: string }) {
       aria-label="Toggle theme"
       style={{ viewTransitionName: "theme-toggle" }}
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-        fill="currentColor"
-        strokeLinecap="round"
-        viewBox="0 0 32 32"
-      >
-        <clipPath id="skiper-btn-2">
-          <motion.path
-            animate={{ y: isDark ? 10 : 0, x: isDark ? -12 : 0 }}
-            transition={{ ease: "easeInOut", duration: 0.35 }}
-            d="M0-5h30a1 1 0 0 0 9 13v24H0Z"
-          />
-        </clipPath>
-        <g clipPath="url(#skiper-btn-2)">
-          <motion.circle
-            animate={{ r: isDark ? 10 : 8 }}
-            transition={{ ease: "easeInOut", duration: 0.35 }}
-            cx="16"
-            cy="16"
-          />
-          <motion.g
-            animate={{
-              rotate: isDark ? -100 : 0,
-              scale: isDark ? 0.5 : 1,
-              opacity: isDark ? 0 : 1,
-            }}
-            transition={{ ease: "easeInOut", duration: 0.35 }}
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <path d="M16 5.5v-4" />
-            <path d="M16 30.5v-4" />
-            <path d="M1.5 16h4" />
-            <path d="M26.5 16h4" />
-            <path d="m23.4 8.6 2.8-2.8" />
-            <path d="m5.7 26.3 2.9-2.9" />
-            <path d="m5.8 5.8 2.8 2.8" />
-            <path d="m23.4 23.4 2.9 2.9" />
-          </motion.g>
-        </g>
-      </svg>
+      <ThemeIcon isDark={isDark} />
     </button>
+  );
+}
+
+// The sun/moon that morphs between themes, sized by its container. The
+// clip-path id is per instance, since the toggle can be on screen twice.
+export function ThemeIcon({ isDark }: { isDark: boolean }) {
+  const clipId = `theme-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      fill="currentColor"
+      strokeLinecap="round"
+      viewBox="0 0 32 32"
+    >
+      <clipPath id={clipId}>
+        <motion.path
+          animate={{ y: isDark ? 10 : 0, x: isDark ? -12 : 0 }}
+          transition={{ ease: "easeInOut", duration: 0.35 }}
+          d="M0-5h30a1 1 0 0 0 9 13v24H0Z"
+        />
+      </clipPath>
+      <g clipPath={`url(#${clipId})`}>
+        <motion.circle
+          animate={{ r: isDark ? 10 : 8 }}
+          transition={{ ease: "easeInOut", duration: 0.35 }}
+          cx="16"
+          cy="16"
+        />
+        <motion.g
+          animate={{
+            rotate: isDark ? -100 : 0,
+            scale: isDark ? 0.5 : 1,
+            opacity: isDark ? 0 : 1,
+          }}
+          transition={{ ease: "easeInOut", duration: 0.35 }}
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <path d="M16 5.5v-4" />
+          <path d="M16 30.5v-4" />
+          <path d="M1.5 16h4" />
+          <path d="M26.5 16h4" />
+          <path d="m23.4 8.6 2.8-2.8" />
+          <path d="m5.7 26.3 2.9-2.9" />
+          <path d="m5.8 5.8 2.8 2.8" />
+          <path d="m23.4 23.4 2.9 2.9" />
+        </motion.g>
+      </g>
+    </svg>
   );
 }
