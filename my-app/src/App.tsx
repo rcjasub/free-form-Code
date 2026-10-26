@@ -35,13 +35,16 @@ import {
   updateBlockLink,
   updateBlockSize,
   restoreBlocks as restoreBlocksApi,
-} from "./API/block";
+} from "./lib/blockStore";
 import { createKeyedThrottle } from "./lib/throttle";
 import { chunkForRestore, toRestorePayload } from "./lib/restore";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
-import { getMe } from "./API/auth";
+import { getMe, type Me } from "./API/auth";
+import { isLocalBlockId, isLocalCanvas, parseCanvasFile, requestPersistentStorage, toCanvasFile } from "./lib/localCanvas";
+import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
+import { announceMoved } from "./hooks/useActiveTab";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "./hooks/useCanvasHistory";
 import { useFreehandStroke } from "./hooks/useFreehandStroke";
 import "./App.css";
@@ -64,6 +67,19 @@ function blockToNode(b: any): Node {
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
   return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
+}
+
+const GUEST_LINK =
+  "underline underline-offset-2 hover:text-gray-800 dark:hover:text-white transition-colors";
+
+// Live updates for everyone else on the canvas. Nothing is sent for the
+// browser-only guest canvas (nobody else is on it), or for a block kept in
+// this browser — a guest's image, which only they see (lib/blockStore).
+function broadcast(event: string, canvasId: string, payload: unknown) {
+  if (isLocalCanvas(canvasId)) return;
+  const blockId = typeof payload === "string" ? payload : (payload as { id?: unknown } | null)?.id;
+  if (typeof blockId === "string" && isLocalBlockId(blockId)) return;
+  socket.emit(event, canvasId, payload);
 }
 
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
@@ -131,7 +147,12 @@ export default function App() {
   const { ghosts: snapGhosts, addGhost, drawingIn, drawIn } = useSnapGhosts();
   const [snapShapes, setSnapShapes] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
+  // the guest canvas kept in this browser (lib/localCanvas), not on the server
+  const isLocal = isLocalCanvas(canvasId);
+  const [isGuest, setIsGuest] = useState(isLocal);
+  const [me, setMe] = useState<Me | null>(null);
+  const [uploadingKept, setUploadingKept] = useState(false);
+  const importInput = useRef<HTMLInputElement>(null);
   const [pendingErase, setPendingErase] = useState<Set<string>>(new Set());
   const [remoteCursors, setRemoteCursors] = useState<Map<string, RemoteCursor>>(new Map());
   // everyone in the room right now, from the server's "presence" broadcasts
@@ -207,23 +228,38 @@ export default function App() {
       });
     };
 
-    socket.on("connect", joinCanvas);
+    // A browser-only canvas has no room to join, but still connects: run
+    // results come back over the socket.
+    const local = isLocalCanvas(canvasId);
+    if (!local) socket.on("connect", joinCanvas);
     // fresh handshake on every canvas visit, so it carries the current cookie
     socket.connect();
 
-    // fetch canvas metadata to get share_id
-    fetch(`/api/canvases/${canvasId}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setShareId(data.share_id));
+    if (local) {
+      requestPersistentStorage();
+    } else {
+      // fetch canvas metadata to get share_id
+      fetch(`/api/canvases/${canvasId}`, { credentials: "include" })
+        .then((r) => r.json())
+        .then((data) => setShareId(data.share_id));
+    }
 
     getMe()
-      .then((me) => setIsGuest(!!me?.isGuest))
+      .then((me) => {
+        setMe(me);
+        setIsGuest(local || !!me?.isGuest);
+      })
       .catch(() => {});
 
-    // load blocks from DB on mount
-    getAllBlocks(canvasId).then(({ data }) => {
-      setNodes(data.map(blockToNode));
-    });
+    // load blocks on mount (from the DB, or this browser's storage)
+    getAllBlocks(canvasId)
+      .then(({ data }) => {
+        setNodes(data.map(blockToNode));
+      })
+      .catch(() => {
+        // IndexedDB can be off (some private windows, blocked site data)
+        if (local) showError("This browser won't let the canvas be saved here — sign up to keep your work online.");
+      });
 
     // someone else created a block
     socket.on("block:created", (block) => {
@@ -362,7 +398,7 @@ export default function App() {
       const node = blockToNode(data);
       if (snapShapes) drawIn(node.id, snapped ? "trace" : "brighten");
       setNodes((prev) => [...prev, node]);
-      socket.emit("block:created", canvasId, data);
+      broadcast("block:created", canvasId, data);
       history.record({ kind: "create", id: node.id });
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't save your drawing — check your connection and try again."));
@@ -429,7 +465,7 @@ export default function App() {
         { id: block.id, x: block.x, y: block.y, content: block.content, language: block.language },
       ]);
       console.log("[socket] emitting block:created", block);
-      socket.emit("block:created", canvasId, block);
+      broadcast("block:created", canvasId, block);
       history.record({ kind: "create", id: data.id });
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
@@ -572,7 +608,7 @@ export default function App() {
           showError(saveErrorMessage(err, "Couldn't save your changes — check your connection and try again.")),
         );
         console.log("[socket] emitting block:updated", { id, content });
-        socket.emit("block:updated", canvasId, { id, content });
+        broadcast("block:updated", canvasId, { id, content });
       }
     }, 800);
   }, [canvasId, history]);
@@ -591,7 +627,7 @@ export default function App() {
     // Other viewers see the drag live (throttled, ending on the final
     // position); only the DB write is debounced, since only the settled
     // position needs to be persisted.
-    emitThrottle(`move:${id}`, () => socket.emit("block:moved", canvasId, { id, x, y }));
+    emitThrottle(`move:${id}`, () => broadcast("block:moved", canvasId, { id, x, y }));
     clearTimeout(moveSaveTimers.current[id]);
     moveSaveTimers.current[id] = setTimeout(() => {
       delete moveSaveTimers.current[id];
@@ -605,7 +641,7 @@ export default function App() {
     setNodes((prev) => prev.filter((n) => n.id !== id));
     if (canvasId) {
       deleteBlock(canvasId, id);
-      socket.emit("block:deleted", canvasId, id);
+      broadcast("block:deleted", canvasId, id);
     }
   }, [canvasId, history]);
 
@@ -614,8 +650,8 @@ export default function App() {
   const applyShape = useCallback((id: string, x: number, y: number, content: string, save = true) => {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: JSON.parse(content) } : n)));
     if (!canvasId) return;
-    socket.emit("block:moved", canvasId, { id, x, y });
-    socket.emit("block:updated", canvasId, { id, content });
+    broadcast("block:moved", canvasId, { id, x, y });
+    broadcast("block:updated", canvasId, { id, content });
     if (save) {
       updateBlockPosition(canvasId, id, x, y);
       updateBlockContent(canvasId, id, content);
@@ -654,7 +690,7 @@ export default function App() {
     if (!canvasId) return;
     // just the size (not the content again), throttled while dragging and
     // sent right away for the final one
-    emitThrottle(`size:${id}`, () => socket.emit("block:updated", canvasId, { id, wrapWidth, fontSize }), save);
+    emitThrottle(`size:${id}`, () => broadcast("block:updated", canvasId, { id, wrapWidth, fontSize }), save);
     if (save) {
       updateBlockSize(canvasId, id, { wrapWidth, fontSize }).catch((err) =>
         showError(saveErrorMessage(err, "Couldn't save the new size — check your connection and try again.")),
@@ -687,7 +723,7 @@ export default function App() {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, link } : n)));
     updateBlockLink(canvasId, id, link);
     // block:updated requires content; resending the current content changes nothing
-    socket.emit("block:updated", canvasId, { id, content: node.content, link });
+    broadcast("block:updated", canvasId, { id, content: node.content, link });
   }, [canvasId, history]);
 
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
@@ -700,7 +736,7 @@ export default function App() {
         x,
         y,
         width: type === "draw" ? Math.max(...(src.points ?? []).map((p) => p.x), 1) : src.width ?? 300,
-      });
+      }, isGuest);
       // the create endpoint ignores language and link, so set them in follow-up calls
       if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
       if (src.link) await updateBlockLink(canvasId, data.id, src.link);
@@ -708,13 +744,13 @@ export default function App() {
       if (size.wrapWidth !== null || size.fontSize !== null) await updateBlockSize(canvasId, data.id, size);
       const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize };
       setNodes((prev) => [...prev, blockToNode(block)]);
-      socket.emit("block:created", canvasId, block);
+      broadcast("block:created", canvasId, block);
       return String(data.id);
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't save the block — check your connection and try again."));
       return null;
     }
-  }, [canvasId]);
+  }, [canvasId, isGuest]);
 
   // Puts deleted blocks back (undoing a delete), as few requests as the
   // restore route allows. Resolves to each block's new id, null if it failed.
@@ -723,10 +759,10 @@ export default function App() {
     if (canvasId) {
       try {
         for (const chunk of chunkForRestore(srcs.map(toRestorePayload))) {
-          const { data } = await restoreBlocksApi(canvasId, chunk);
+          const { data } = await restoreBlocksApi(canvasId, chunk, isGuest);
           setNodes((prev) => [...prev, ...data.map(blockToNode)]);
           for (const row of data) {
-            socket.emit("block:created", canvasId, row);
+            broadcast("block:created", canvasId, row);
             ids.push(String(row.id));
           }
         }
@@ -736,7 +772,7 @@ export default function App() {
     }
     while (ids.length < srcs.length) ids.push(null);
     return ids;
-  }, [canvasId]);
+  }, [canvasId, isGuest]);
 
   // Sets a block's language and content — saving content only if it changed.
   const applyLanguage = useCallback((id: string, language: Language, content: string) => {
@@ -745,7 +781,7 @@ export default function App() {
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, language, content } : n)));
     updateBlockLanguage(canvasId, id, language);
     if (content !== before?.content) updateBlockContent(canvasId, id, content);
-    socket.emit("block:updated", canvasId, { id, content, language });
+    broadcast("block:updated", canvasId, { id, content, language });
   }, [canvasId, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
@@ -859,7 +895,7 @@ export default function App() {
     const now = Date.now();
     if (now - lastCursorEmit.current < 50) return;
     lastCursorEmit.current = now;
-    socket.emit("cursor:move", canvasId, { x, y });
+    broadcast("cursor:move", canvasId, { x, y });
   }
 
   async function handleShare(): Promise<string | null> {
@@ -876,6 +912,73 @@ export default function App() {
       return data.share_id;
     }
     return null;
+  }
+
+  // Browser-only canvas → the server (to share it, or into the account the
+  // user is logged in to), then over to its server page.
+  async function moveOnline() {
+    const id = await moveLocalCanvasOnline(
+      history.nodesRef.current.map((n) => ({ id: n.id, block: toRestorePayload(n) })),
+    );
+    announceMoved(id);
+    navigate(`/canvas/${id}`, { replace: true });
+  }
+
+  // Blocks this browser still keeps for this canvas although the user has an
+  // account now: what uploading after sign-up couldn't finish.
+  const keptHere = !isLocal && me && !me.isGuest ? nodes.filter((n) => isLocalBlockId(n.id)).length : 0;
+
+  async function retryKept() {
+    if (!canvasId || uploadingKept) return;
+    setUploadingKept(true);
+    try {
+      const rows = await uploadKept(canvasId);
+      rows.forEach((row) => broadcast("block:created", canvasId, row));
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't upload them — check your connection and try again."));
+    } finally {
+      // what made it now has a server id, whether or not all of it did
+      await getAllBlocks(canvasId)
+        .then(({ data }) => setNodes(data.map(blockToNode)))
+        .catch(() => {});
+      setUploadingKept(false);
+    }
+  }
+
+  function handleMoveToAccount() {
+    moveOnline().catch((err) =>
+      showError(saveErrorMessage(err, "Couldn't move the canvas to your account. Check your connection and try again.")),
+    );
+  }
+
+  // A JSON backup of what's on screen (a guest's images included).
+  function exportCanvas() {
+    const blob = new Blob([toCanvasFile(history.nodesRef.current.map(toRestorePayload))], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `free-form-canvas-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Adds a backup's blocks to the canvas (nothing already on it is removed).
+  // On a server canvas they're sent in as few requests as the restore route
+  // allows, a guest's images stay in this browser, and others see them live.
+  async function importCanvas(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so picking the same file again still fires
+    if (!file || !canvasId) return;
+    try {
+      const blocks = parseCanvasFile(await file.text());
+      for (const chunk of chunkForRestore(blocks)) {
+        const { data } = await restoreBlocksApi(canvasId, chunk, isGuest);
+        setNodes((prev) => [...prev, ...data.map(blockToNode)]);
+        for (const row of data) broadcast("block:created", canvasId, row);
+      }
+    } catch (err) {
+      showError(saveErrorMessage(err, err instanceof Error && err.message ? err.message : "Couldn't import that file."));
+    }
   }
 
   const isDark = resolvedTheme === "dark";
@@ -945,14 +1048,50 @@ export default function App() {
         >
           free-form
         </span>
-        {isGuest && (
-          <button
-            onClick={() => navigate("/", { state: { mode: "register" } })}
-            // Same hand-drawn font as the text blocks, a size down from their 14px.
-            className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white underline underline-offset-2 transition-colors"
-          >
-            Sign up to save more canvases
-          </button>
+        {isGuest && !isLocal && (
+          // Same hand-drawn font as the text blocks, a size down from their 14px.
+          <span className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex items-center gap-3">
+            <button onClick={() => navigate("/", { state: { mode: "register" } })} className={GUEST_LINK}>
+              Sign up to save more canvases
+            </button>
+            <button onClick={exportCanvas} className={GUEST_LINK} title="Download a backup file">
+              Export
+            </button>
+            <button onClick={() => importInput.current?.click()} className={GUEST_LINK} title="Add blocks from a backup file">
+              Import
+            </button>
+          </span>
+        )}
+        {isLocal && (
+          <div className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex flex-col items-start gap-0.5">
+            <span>Saved in this browser only. Clearing browser data deletes it.</span>
+            <span className="flex items-center gap-3">
+              <button onClick={exportCanvas} className={GUEST_LINK} title="Download a backup file">
+                Export
+              </button>
+              <button onClick={() => importInput.current?.click()} className={GUEST_LINK} title="Add blocks from a backup file">
+                Import
+              </button>
+              {me && !me.isGuest ? (
+                <button onClick={handleMoveToAccount} className={GUEST_LINK}>
+                  Move to my account
+                </button>
+              ) : (
+                <button onClick={() => navigate("/", { state: { mode: "register" } })} className={GUEST_LINK}>
+                  Sign up to keep it
+                </button>
+              )}
+            </span>
+          </div>
+        )}
+        <input ref={importInput} type="file" accept="application/json,.json" hidden onChange={importCanvas} />
+        {keptHere > 0 && (
+          <div className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex items-center gap-3">
+            <span>{keptHere === 1 ? "1 item is" : `${keptHere} items are`} still only in this browser.</span>
+            <button onClick={retryKept} disabled={uploadingKept} className={GUEST_LINK}>
+              {uploadingKept ? "Uploading…" : "Retry"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -1036,7 +1175,13 @@ export default function App() {
             <polygon points="5,3 19,12 5,21" />
           </svg>
         </button>
-        <ShareDrawer shareId={shareId} canvasId={canvasId} onMakePublic={handleShare} isDark={isDark}>
+        <ShareDrawer
+          shareId={shareId}
+          canvasId={canvasId}
+          onMakePublic={handleShare}
+          onMoveOnline={isLocal ? moveOnline : undefined}
+          isDark={isDark}
+        >
           <button
             title="Share canvas"
             className="h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors px-2 text-xs bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"

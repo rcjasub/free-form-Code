@@ -12,6 +12,9 @@ export interface RestorePayload {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  // its id in this browser, when uploading a browser canvas: the server
+  // skips one it already has, so a retried upload can't duplicate it
+  clientId?: string;
 }
 
 // Must match the backend's MAX_RESTORE_BLOCKS and stay under the 3mb body

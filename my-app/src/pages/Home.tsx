@@ -3,7 +3,10 @@ import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import { TextRoll } from "@/components/TextRoll";
 import Particles from "@/components/Particles";
-import { getMe, startGuest } from "@/API/auth";
+import { getMe } from "@/API/auth";
+import { getMyCanvases } from "@/API/canvas";
+import { LOCAL_CANVAS_ID, getAllBlocks, hasBlocks } from "@/lib/localCanvas";
+import { moveLocalCanvasOnline, uploadAfterSignUp } from "@/lib/moveOnline";
 
 type AuthMode = "login" | "register";
 
@@ -27,6 +30,9 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // Logged in with a guest canvas still in this browser: offer to add it.
+  const [offerBrowserCanvas, setOfferBrowserCanvas] = useState(false);
+  const [adding, setAdding] = useState(false);
   const navigate = useNavigate();
 
   function showError(err: unknown) {
@@ -48,20 +54,51 @@ export default function Home() {
   async function handleTryAsGuest() {
     setError("");
     try {
-      // Returning guest: reopen their canvas instead of minting a new guest
-      // and orphaning the old one.
+      // A guest from before canvases lived in the browser: reopen their
+      // server canvas.
       const me = await getMe();
       if (me?.isGuest) {
-        const { data } = await axios.get("/api/canvases", { withCredentials: true });
+        const { data } = await getMyCanvases();
         if (data[0]) {
           navigate(`/canvas/${data[0].id}`);
           return;
         }
       }
-      const { data } = await startGuest();
-      navigate(`/canvas/${data.canvasId}`);
+      // Still logged in to an account: log out first, so the guest canvas
+      // isn't tied to it (sharing it would otherwise land in that account).
+      if (me && !me.isGuest) {
+        await axios.post("/api/auth/logout", {}, { withCredentials: true });
+      }
+      // Everyone else gets a canvas kept in this browser — nothing is made
+      // on the server until they sign up or share it (lib/localCanvas).
+      navigate(`/canvas/${LOCAL_CANVAS_ID}`);
     } catch (err) {
       showError(err);
+    }
+  }
+
+  // After sign-up, what they made as a guest (their browser canvas, and
+  // images kept in the browser) goes into the account. If that fails it stays
+  // in the browser, and the canvas page offers "Move to my account" to retry.
+  async function uploadBrowserCanvas() {
+    try {
+      const { data } = await getMyCanvases();
+      const id = await uploadAfterSignUp(data[0].id);
+      navigate(navState?.redirect ? redirect : id ? `/canvas/${id}` : "/dashboard");
+    } catch {
+      navigate(`/canvas/${LOCAL_CANVAS_ID}`);
+    }
+  }
+
+  async function addBrowserCanvas() {
+    setAdding(true);
+    setError("");
+    try {
+      const id = await moveLocalCanvasOnline();
+      navigate(navState?.redirect ? redirect : `/canvas/${id}`);
+    } catch (err) {
+      showError(err);
+      setAdding(false);
     }
   }
 
@@ -72,9 +109,20 @@ export default function Home() {
     try {
       if (mode === "register") {
         await axios.post("/api/auth/register", { username, email, password }, { withCredentials: true });
+        if (await hasBlocks()) {
+          await uploadBrowserCanvas();
+          return;
+        }
         navigate(redirect);
       } else {
         await axios.post("/api/auth/login", { email, password }, { withCredentials: true });
+        // Unlike sign-up, logging in doesn't take it on its own: this may be
+        // someone else's guest canvas on a shared computer.
+        const local = await getAllBlocks().catch(() => ({ data: [] }));
+        if (local.data.length > 0) {
+          setOfferBrowserCanvas(true);
+          return;
+        }
         navigate(redirect);
       }
     } catch (err) {
@@ -131,6 +179,31 @@ export default function Home() {
           </button>
         </div>
 
+        {offerBrowserCanvas ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-gray-300">
+              You have a canvas saved in this browser. Add it to your account?
+            </p>
+            {error && <p className="text-xs text-[#FF3B6B]">{error}</p>}
+            <button
+              type="button"
+              onClick={addBrowserCanvas}
+              disabled={adding}
+              className="w-full py-2 text-sm font-medium rounded-lg bg-white text-gray-900 hover:opacity-90 transition-opacity disabled:opacity-60"
+            >
+              {adding ? "Adding…" : "Add to my account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(redirect)}
+              disabled={adding}
+              className="w-full text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Not now
+            </button>
+          </div>
+        ) : (
+        <>
         {/* form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           {mode === "register" && (
@@ -174,6 +247,8 @@ export default function Home() {
         >
           Try without an account →
         </button>
+        </>
+        )}
       </div>
     </div>
   );
