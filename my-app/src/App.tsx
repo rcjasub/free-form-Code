@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { Pencil, Shapes } from "lucide-react";
+import { CloudUpload, Download, HardDrive, LayoutDashboard, LogOut, Pencil, RefreshCw, Shapes, Upload, UserPlus } from "lucide-react";
 import { motion } from "motion/react";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
@@ -17,7 +17,8 @@ import EraserTrail from "./components/EraserTrail";
 import SnapGhosts from "./components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "./hooks/useSnapGhosts";
 import ScrollToContent from "./components/ScrollToContent";
-import { ThemeToggleButton } from "./components/ThemeToggle";
+import { ThemeIcon, useThemeToggle } from "./components/ThemeToggle";
+import { Sidebar, SidebarBrand, SidebarItem, SidebarNote, SidebarSeparator } from "./components/ui/sidebar";
 import ShareDrawer from "./components/ShareDrawer";
 import PresenceMenu from "./components/PresenceMenu";
 import socket from "./lib/socket";
@@ -68,9 +69,6 @@ function blockToNode(b: any): Node {
   if (b.type === "image") return { ...common, type: "image", width: b.width };
   return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
 }
-
-const GUEST_LINK =
-  "underline underline-offset-2 hover:text-gray-800 dark:hover:text-white transition-colors";
 
 // Live updates for everyone else on the canvas. Nothing is sent for the
 // browser-only guest canvas (nobody else is on it), or for a block kept in
@@ -161,6 +159,7 @@ export default function App() {
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const errorToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { resolvedTheme } = useTheme();
+  const { toggleTheme } = useThemeToggle();
   const lastSelection = useRef<{
     content: string;
     el: HTMLElement;
@@ -945,6 +944,11 @@ export default function App() {
     }
   }
 
+  async function logOut() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+    navigate("/");
+  }
+
   function handleMoveToAccount() {
     moveOnline().catch((err) =>
       showError(saveErrorMessage(err, "Couldn't move the canvas to your account. Check your connection and try again.")),
@@ -1037,63 +1041,72 @@ export default function App() {
       onMouseDown={handlePanStart}
       onPointerDown={handleDrawPointerDown}
     >
-      {/* branding */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-1">
-        <span
-          // Guests have no dashboard, so the logo is just a label for them.
-          onClick={() => !isGuest && navigate("/dashboard")}
-          className={`text-xs font-semibold tracking-widest uppercase text-gray-500 dark:text-gray-300 transition-colors ${
-            isGuest ? "" : "cursor-pointer hover:text-gray-800 dark:hover:text-white"
-          }`}
-        >
-          free-form
-        </span>
-        {isGuest && !isLocal && (
-          // Same hand-drawn font as the text blocks, a size down from their 14px.
-          <span className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex items-center gap-3">
-            <button onClick={() => navigate("/", { state: { mode: "register" } })} className={GUEST_LINK}>
-              Sign up to save more canvases
-            </button>
-            <button onClick={exportCanvas} className={GUEST_LINK} title="Download a backup file">
-              Export
-            </button>
-            <button onClick={() => importInput.current?.click()} className={GUEST_LINK} title="Add blocks from a backup file">
-              Import
-            </button>
-          </span>
-        )}
+      {/* left: canvas actions, account and theme */}
+      <Sidebar
+        header={
+          // Guests have no dashboard, so it takes them back to the start page.
+          <SidebarBrand
+            name="free-form"
+            title={isGuest ? "Back to the start page" : "Dashboard"}
+            onClick={() => navigate(isGuest ? "/" : "/dashboard")}
+          />
+        }
+        footer={
+          <>
+            <SidebarItem
+              icon={
+                <span className="size-4 shrink-0">
+                  <ThemeIcon isDark={isDark} />
+                </span>
+              }
+              label={isDark ? "Light mode" : "Dark mode"}
+              onClick={() => toggleTheme()}
+            />
+            {me && !me.isGuest && <SidebarItem icon={<LogOut />} label="Log out" onClick={logOut} />}
+          </>
+        }
+      >
         {isLocal && (
-          <div className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex flex-col items-start gap-0.5">
-            <span>Saved in this browser only. Clearing browser data deletes it.</span>
-            <span className="flex items-center gap-3">
-              <button onClick={exportCanvas} className={GUEST_LINK} title="Download a backup file">
-                Export
-              </button>
-              <button onClick={() => importInput.current?.click()} className={GUEST_LINK} title="Add blocks from a backup file">
-                Import
-              </button>
-              {me && !me.isGuest ? (
-                <button onClick={handleMoveToAccount} className={GUEST_LINK}>
-                  Move to my account
-                </button>
-              ) : (
-                <button onClick={() => navigate("/", { state: { mode: "register" } })} className={GUEST_LINK}>
-                  Sign up to keep it
-                </button>
-              )}
-            </span>
-          </div>
+          <SidebarNote icon={<HardDrive />}>
+            Saved in this browser only. Clearing browser data deletes it.
+          </SidebarNote>
         )}
-        <input ref={importInput} type="file" accept="application/json,.json" hidden onChange={importCanvas} />
+        {!isGuest && <SidebarItem icon={<LayoutDashboard />} label="Dashboard" onClick={() => navigate("/dashboard")} />}
+        {isGuest && (
+          <>
+            <SidebarItem icon={<Download />} label="Export" title="Download a backup file" onClick={exportCanvas} />
+            <SidebarItem
+              icon={<Upload />}
+              label="Import"
+              title="Add blocks from a backup file"
+              onClick={() => importInput.current?.click()}
+            />
+            <SidebarSeparator />
+          </>
+        )}
+        {isLocal && me && !me.isGuest ? (
+          <SidebarItem icon={<CloudUpload />} label="Save to my account" onClick={handleMoveToAccount} />
+        ) : (
+          isGuest && (
+            <SidebarItem
+              icon={<UserPlus />}
+              label="Sign up"
+              title={isLocal ? "Sign up to keep this canvas" : "Sign up to save more canvases"}
+              onClick={() => navigate("/", { state: { mode: "register" } })}
+            />
+          )
+        )}
         {keptHere > 0 && (
-          <div className="font-canvas text-[13px] text-gray-500 dark:text-gray-400 flex items-center gap-3">
-            <span>{keptHere === 1 ? "1 item is" : `${keptHere} items are`} still only in this browser.</span>
-            <button onClick={retryKept} disabled={uploadingKept} className={GUEST_LINK}>
-              {uploadingKept ? "Uploading…" : "Retry"}
-            </button>
-          </div>
+          <SidebarItem
+            icon={<RefreshCw />}
+            label={uploadingKept ? "Uploading…" : `Retry (${keptHere})`}
+            title={`${keptHere === 1 ? "1 item is" : `${keptHere} items are`} still only in this browser`}
+            onClick={retryKept}
+            disabled={uploadingKept}
+          />
         )}
-      </div>
+      </Sidebar>
+      <input ref={importInput} type="file" accept="application/json,.json" hidden onChange={importCanvas} />
 
       <EraserTrail active={mode === "erase"} isDark={isDark} />
 
@@ -1156,7 +1169,7 @@ export default function App() {
         </span>
       </div>
 
-      {/* top-right: run button, share, dark/light toggle */}
+      {/* top-right: run button, share, shape snapping */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
         <button
           onClick={() =>
@@ -1203,10 +1216,9 @@ export default function App() {
         >
           <Shapes size={14} />
         </button>
-        <ThemeToggleButton />
       </div>
 
-      {/* who's here, under the theme toggle — only once someone else has
+      {/* who's here, under the top-right buttons — only once someone else has
           joined through the share link; alone, it's just you */}
       {people.length > 1 && (
         <div className="absolute top-[60px] right-4 z-20">
