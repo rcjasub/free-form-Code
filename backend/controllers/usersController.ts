@@ -6,20 +6,13 @@ import * as Users from "../models/users";
 import * as Canvas from "../models/canvas";
 import pool from "../db";
 import { handleServerError } from "../utils/errors";
-import { AuthRequest, TokenPayload } from "../middleware/auth";
+import { AuthRequest, TokenPayload, COOKIE_OPTIONS, setGuestCookie } from "../middleware/auth";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
 }
 
 const JWT_SECRET = process.env.JWT_SECRET!;
-
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
-  maxAge: 24 * 60 * 60 * 1000, // 24 hours
-};
 
 export async function register(req: AuthRequest, res: Response): Promise<void> {
   const { username, email, password } = req.body;
@@ -95,13 +88,8 @@ export async function guest(_req: Request, res: Response): Promise<void> {
     );
     await client.query("COMMIT");
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, isGuest: true },
-      JWT_SECRET,
-      { expiresIn: "30d" },
-    );
-    // Cookie must outlive the default 24h, or the browser drops the guest's only way back in.
-    res.cookie("token", token, { ...COOKIE_OPTIONS, maxAge: 30 * 24 * 60 * 60 * 1000 });
+    // Outlives the default 24h, or the browser drops the guest's only way back in.
+    setGuestCookie(res, user);
     res.status(201).json({
       user: { id: user.id, username: user.username, isGuest: true },
       canvasId: canvas.id,

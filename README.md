@@ -27,7 +27,7 @@ An infinite canvas where you can write and run code freely — inspired by Excal
 
 ## Database Schema
 
-Defined in [`backend/db/schema.sql`](backend/db/schema.sql).
+Defined in [`backend/db/schema.sql`](backend/db/schema.sql), which the backend runs on every startup (`db/migrate.ts`); every statement is safe to re-run.
 
 | Table      | Key columns                                                                 |
 |------------|-----------------------------------------------------------------------------|
@@ -70,12 +70,7 @@ Deleting a user deletes their canvases, and deleting a canvas deletes its blocks
    docker compose up --build
    ```
 
-4. Create the database tables (first run only — safe to re-run after pulling schema changes):
-   ```bash
-   docker exec -i postgres psql -U postgres -d freeformcode < backend/db/schema.sql
-   ```
-
-5. Open [http://localhost](http://localhost) in your browser.
+4. Open [http://localhost](http://localhost) in your browser.
 
 To stop:
 ```bash
@@ -92,10 +87,7 @@ docker compose down
    cd ../my-app && npm install
    ```
 
-2. Make sure PostgreSQL and Redis are running locally, then create `backend/.env` (see below) and the tables:
-   ```bash
-   psql -U postgres -d freeformcode -f backend/db/schema.sql
-   ```
+2. Make sure PostgreSQL and Redis are running locally, then create `backend/.env` (see below). The backend creates and updates the tables itself on startup (it runs `backend/db/schema.sql`).
 
 3. Start the code sandbox and install its languages (first time only — see [Code Sandbox](#code-sandbox)):
    ```bash
@@ -155,8 +147,7 @@ The app is deployed on an Oracle Cloud free-tier VM (ARM, Ampere A1) with Docker
 
 ```bash
 git pull
-docker compose up -d --build
-docker exec -i postgres psql -U postgres -d freeformcode < backend/db/schema.sql  # after schema changes
+docker compose up -d --build  # the backend applies backend/db/schema.sql on startup
 ```
 
 On the VM, `PISTON_URL` is left unset, so code running is disabled there until an ARM-compatible sandbox is in place. `CLIENT_URL` must be set to the exact origin users open (IP or domain), or the browser will block API requests via CORS.

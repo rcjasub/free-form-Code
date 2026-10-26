@@ -60,3 +60,14 @@ ALTER TABLE blocks ADD COLUMN IF NOT EXISTS link TEXT;
 -- with its longest line). font_size: in px; NULL means the default. Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS wrap_width FLOAT;
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS font_size FLOAT;
+
+-- guest cleanup: when a guest last used the app, refreshed at most hourly
+-- (middleware/auth). Guests idle for 15 days are deleted with everything
+-- they own (cleanup.ts). Safe to re-run.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+-- a block's id in the browser it was uploaded from (local-…), so uploading
+-- the same block again — a retry after a lost response — is a no-op instead
+-- of a duplicate. NULL for blocks made on the server. Safe to re-run.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS client_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_client_id ON blocks(canvas_id, client_id) WHERE client_id IS NOT NULL;

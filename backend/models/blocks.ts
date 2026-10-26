@@ -12,6 +12,7 @@ export interface Block {
   x: number;
   y: number;
   width: number;
+  client_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -134,10 +135,22 @@ export interface RestoreBlockParams {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  clientId?: string;
+}
+
+// Which of these browser ids this canvas already has a block for.
+export async function existingClientIds(canvasId: string, clientIds: string[]): Promise<Set<string>> {
+  if (clientIds.length === 0) return new Set();
+  const result = await pool.query<{ client_id: string }>(
+    "SELECT client_id FROM blocks WHERE canvas_id = $1 AND client_id = ANY($2)",
+    [canvasId, clientIds],
+  );
+  return new Set(result.rows.map((r) => r.client_id));
 }
 
 // Inserts several blocks in one transaction: all of them, or none if any
-// insert fails. Returns the new rows in the order given.
+// insert fails. Returns the rows in the order given. A block whose clientId
+// is already on the canvas isn't added again; its existing row is returned.
 export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams[]): Promise<Block[]> {
   const client = await pool.connect();
   try {
@@ -145,12 +158,21 @@ export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams
     const rows: Block[] = [];
     for (const b of blocks) {
       const result = await client.query<Block>(
-        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size, client_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (canvas_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
          RETURNING *`,
-        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize],
+        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize, b.clientId ?? null],
       );
-      rows.push(result.rows[0]);
+      const row =
+        result.rows[0] ??
+        (
+          await client.query<Block>("SELECT * FROM blocks WHERE canvas_id = $1 AND client_id = $2", [
+            canvasId,
+            b.clientId,
+          ])
+        ).rows[0];
+      rows.push(row);
     }
     await client.query("COMMIT");
     return rows;
