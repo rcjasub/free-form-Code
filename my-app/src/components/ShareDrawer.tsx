@@ -1,19 +1,39 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Eye, Pencil, Check, Link2, X } from "lucide-react";
+import { saveErrorMessage } from "../lib/saveErrors";
 
 interface ShareDrawerProps {
   shareId: string | null;
   canvasId: string | undefined;
   onMakePublic: () => Promise<string | null>;
+  // Set for a canvas that only lives in this browser: others can't open it,
+  // so instead of links this offers to move it to the server first.
+  onMoveOnline?: () => Promise<void>;
   isDark: boolean;
   children: React.ReactNode;
 }
 
-export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDrawerProps) {
+export default function ShareDrawer({ onMakePublic, onMoveOnline, isDark, children }: ShareDrawerProps) {
   const [open, setOpen] = useState(false);
   const [copiedView, setCopiedView] = useState(false);
   const [copiedEdit, setCopiedEdit] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState("");
+
+  async function moveOnline() {
+    if (!onMoveOnline || moving) return;
+    setMoving(true);
+    setMoveError("");
+    try {
+      // the page moves to the uploaded canvas, where sharing works as usual
+      await onMoveOnline();
+    } catch (err) {
+      setMoveError(saveErrorMessage(err, "Couldn't move the canvas online. Check your connection and try again."));
+    } finally {
+      setMoving(false);
+    }
+  }
 
   async function copyLink(mode: "view" | "edit") {
     const latestShareId = await onMakePublic();
@@ -85,6 +105,27 @@ export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDra
                   <X className="w-4 h-4" />
                 </button>
               </div>
+              {onMoveOnline ? (
+                <>
+                  <p className={`text-xs mb-4 ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
+                    This canvas is saved only in your browser, so nobody else can open it. To share it, move it
+                    online first. It's then saved on the server instead of here.
+                  </p>
+                  <p className={`text-xs mb-4 ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
+                    Images stay in your browser: you'll still see them, but the people you share with won't
+                    until you sign up.
+                  </p>
+                  <button
+                    onClick={moveOnline}
+                    disabled={moving}
+                    className="w-full py-2 text-sm font-medium rounded-lg bg-white text-gray-900 border border-gray-200 dark:border-transparent hover:opacity-90 transition-opacity disabled:opacity-60"
+                  >
+                    {moving ? "Moving…" : "Move online"}
+                  </button>
+                  {moveError && <p className="text-xs text-[#FF3B6B] mt-2">{moveError}</p>}
+                </>
+              ) : (
+              <>
               <p className={`text-xs mb-4 ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
                 Choose how others can access this canvas
               </p>
@@ -134,6 +175,8 @@ export default function ShareDrawer({ onMakePublic, isDark, children }: ShareDra
                   )}
                 </button>
               </div>
+              </>
+              )}
             </motion.div>
           </>
         )}
