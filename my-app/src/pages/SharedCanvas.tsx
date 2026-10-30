@@ -18,6 +18,9 @@ import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket from "@/lib/guestSocket";
 import type { Mode } from "@/App";
 import { Pencil, Shapes } from "lucide-react";
+import BackgroundPicker from "../components/BackgroundPicker";
+import { useCanvasBackground } from "../hooks/useCanvasBackground";
+import { canvasBackgroundStyle } from "../lib/canvasBackground";
 import { detectShape } from "@/lib/shapeDetection";
 import { parsePoints } from "@/lib/points";
 import { jsonOrThrow, saveErrorMessage } from "@/lib/saveErrors";
@@ -161,6 +164,7 @@ export default function SharedCanvas() {
 
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const { background, setBackground } = useCanvasBackground();
   const offsetRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
   const spaceHeld = useRef(false);
@@ -1013,9 +1017,7 @@ export default function SharedCanvas() {
       ref={rootRef}
       className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
       style={{
-        backgroundColor: isDark ? "#121212" : "#ffffff",
-        backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
-        backgroundSize: "28px 28px",
+        ...canvasBackgroundStyle(background, isDark, scale, offset),
         cursor: mode === "erase" ? eraserCursor : undefined,
         // touch screens: a finger drag draws instead of scrolling the page
         touchAction: mode === "draw" ? "none" : undefined,
@@ -1117,6 +1119,11 @@ export default function SharedCanvas() {
             <Shapes size={14} />
           </button>
         )}
+        <BackgroundPicker
+          value={background}
+          onChange={setBackground}
+          className="bg-white shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:bg-[#232329] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]"
+        />
         <ThemeToggleButton />
       </div>
 
