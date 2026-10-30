@@ -141,6 +141,29 @@ export function SidebarNote({ icon, children }: { icon: React.ReactNode; childre
   );
 }
 
+// A setting with its own control (a picker, a switch): the icon on the rail,
+// the label and control once open.
+export function SidebarControl({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const collapsed = useContext(CollapsedContext);
+  return (
+    <div title={collapsed ? label : undefined} className={cn(ROW, "[&>svg]:size-4 [&>svg]:shrink-0")}>
+      {icon}
+      <Label>{label}</Label>
+      <motion.div variants={labelVariants} className="ml-auto">
+        {!collapsed && children}
+      </motion.div>
+    </div>
+  );
+}
+
 export function SidebarSeparator() {
   return <div className="my-1 h-px w-full shrink-0 bg-gray-200 dark:bg-[#2e2e3a]" />;
 }

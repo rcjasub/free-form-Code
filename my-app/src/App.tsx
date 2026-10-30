@@ -18,7 +18,10 @@ import SnapGhosts from "./components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "./hooks/useSnapGhosts";
 import ScrollToContent from "./components/ScrollToContent";
 import { ThemeIcon, useThemeToggle } from "./components/ThemeToggle";
-import { Sidebar, SidebarBrand, SidebarItem, SidebarNote, SidebarSeparator } from "./components/ui/sidebar";
+import { Sidebar, SidebarBrand, SidebarControl, SidebarItem, SidebarNote, SidebarSeparator } from "./components/ui/sidebar";
+import BackgroundPicker, { BackgroundIcon } from "./components/BackgroundPicker";
+import { useCanvasBackground } from "./hooks/useCanvasBackground";
+import { canvasBackgroundStyle } from "./lib/canvasBackground";
 import ShareDrawer from "./components/ShareDrawer";
 import PresenceMenu from "./components/PresenceMenu";
 import socket from "./lib/socket";
@@ -131,6 +134,7 @@ export default function App() {
   const [emitThrottle] = useState(() => createKeyedThrottle(40));
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const { background, setBackground } = useCanvasBackground();
   const offsetRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
   const [mode, setMode] = useState<Mode>("select");
@@ -1027,9 +1031,7 @@ export default function App() {
       ref={rootRef}
       className={`relative w-screen h-screen overflow-hidden select-none ${cursorClass}`}
       style={{
-        backgroundColor: isDark ? "#121212" : "#ffffff",
-        backgroundImage: `radial-gradient(circle, ${isDark ? "#2c2c2c" : "#d1d5db"} 1px, transparent 1px)`,
-        backgroundSize: "28px 28px",
+        ...canvasBackgroundStyle(background, isDark, scale, offset),
         cursor: mode === "erase" ? eraserCursor : undefined,
         // touch screens: a finger drag draws instead of scrolling the page
         touchAction: mode === "draw" ? "none" : undefined,
@@ -1053,6 +1055,9 @@ export default function App() {
         }
         footer={
           <>
+            <SidebarControl icon={<BackgroundIcon background={background} />} label="Background">
+              <BackgroundPicker value={background} onChange={setBackground} />
+            </SidebarControl>
             <SidebarItem
               icon={
                 <span className="size-4 shrink-0">
