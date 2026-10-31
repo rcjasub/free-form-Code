@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { contentSchema, fontSizeSchema, languageSchema, linkSchema, wrapWidthSchema } from "./block.schema";
+import { contentSchema, fontSizeSchema, languageSchema, linkSchema, wrapWidthSchema, zIndexSchema } from "./block.schema";
 
 // Validates payloads relayed between clients over sockets. Unlike the REST
 // schemas in block.schema.ts, these don't apply defaults — they're checking
@@ -22,6 +22,7 @@ export const blockCreatedEventSchema = z.object({
   link: linkSchema.optional(),
   wrap_width: wrapWidthSchema.optional(),
   font_size: fontSizeSchema.optional(),
+  z_index: zIndexSchema.optional(),
 });
 
 export const blockMovedEventSchema = z.object({
@@ -42,6 +43,12 @@ export const blockUpdatedEventSchema = z.object({
 });
 
 export const blockDeletedEventSchema = blockId;
+
+// blocks raised to the front (selected), with their new stacking positions
+export const blocksStackedEventSchema = z
+  .array(z.object({ id: blockId, zIndex: zIndexSchema }))
+  .min(1)
+  .max(500);
 
 export const cursorMoveEventSchema = z.object({
   x: z.number(),

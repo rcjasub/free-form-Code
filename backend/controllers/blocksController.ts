@@ -250,3 +250,18 @@ export async function updateBlockLink(
     handleServerError(res, err);
   }
 }
+
+// Raising blocks: sets their stacking positions in one go. Ids that aren't
+// on this canvas are skipped, so the response lists only what changed.
+export async function updateBlockStack(req: AuthRequest, res: Response): Promise<void> {
+  const { id: canvasId } = req.params;
+  const { blocks } = req.body as { blocks: Blocks.StackEntry[] };
+
+  try {
+    const rows = await Blocks.updateBlockStack(canvasId, blocks);
+    if (rows.length > 0) await cacheDel(`blocks:${canvasId}`);
+    res.status(200).json(rows);
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}

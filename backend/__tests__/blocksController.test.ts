@@ -7,13 +7,14 @@ import {
   updateBlockLanguage,
   updateBlockLink,
   updateBlockSize,
+  updateBlockStack,
   restoreBlocks,
   MAX_BLOCKS_PER_CANVAS,
   MAX_CANVAS_CONTENT,
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
-import { updateBlockLinkSchema, updateBlockSizeSchema, restoreBlocksSchema, MAX_RESTORE_BLOCKS } from "../schemas/block.schema";
+import { updateBlockLinkSchema, updateBlockSizeSchema, updateBlockStackSchema, restoreBlocksSchema, MAX_RESTORE_BLOCKS } from "../schemas/block.schema";
 
 jest.mock("../models/blocks");
 jest.mock("../redis", () => ({
@@ -40,6 +41,7 @@ const fakeBlock = {
   y: 0,
   width: 10,
   client_id: null,
+  z_index: 0,
   created_at: new Date(),
   updated_at: new Date(),
 };
@@ -484,5 +486,60 @@ describe("restoreBlocksSchema", () => {
     expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, language: "ruby" }] }).success).toBe(false);
     expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, clientId: "x".repeat(65) }] }).success).toBe(false);
     expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, clientId: "local-1" }] }).success).toBe(true);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, zIndex: 1.7e12 }] }).success).toBe(true);
+    expect(restoreBlocksSchema.safeParse({ blocks: [{ ...one, zIndex: -1 }] }).success).toBe(false);
+  });
+});
+
+describe("updateBlockStack", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = { params: { id: "1" }, body: { blocks: [{ id: "b1", zIndex: 5 }, { id: "b2", zIndex: 6 }] } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("saves every position in one call and invalidates the cache", async () => {
+    mockBlocks.updateBlockStack.mockResolvedValue([{ id: "b1", z_index: 5 }, { id: "b2", z_index: 6 }]);
+
+    await updateBlockStack(req, res);
+
+    expect(mockBlocks.updateBlockStack).toHaveBeenCalledWith("1", req.body.blocks);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith([{ id: "b1", z_index: 5 }, { id: "b2", z_index: 6 }]);
+  });
+
+  test("leaves the cache alone when none of the blocks are on this canvas", async () => {
+    mockBlocks.updateBlockStack.mockResolvedValue([]);
+
+    await updateBlockStack(req, res);
+
+    expect(mockCacheDel).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  test("returns 500 when the database fails", async () => {
+    mockBlocks.updateBlockStack.mockRejectedValue(new Error("db down"));
+
+    await updateBlockStack(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+});
+
+describe("updateBlockStackSchema", () => {
+  test("accepts positions from 0 up to creation-time scale", () => {
+    expect(updateBlockStackSchema.safeParse({ blocks: [{ id: "b1", zIndex: 0 }, { id: "b2", zIndex: 1.7e12 + 1 }] }).success).toBe(true);
+  });
+
+  test("rejects an empty list, too many blocks, and bad positions", () => {
+    expect(updateBlockStackSchema.safeParse({ blocks: [] }).success).toBe(false);
+    expect(updateBlockStackSchema.safeParse({ blocks: Array(501).fill({ id: "b1", zIndex: 1 }) }).success).toBe(false);
+    expect(updateBlockStackSchema.safeParse({ blocks: [{ id: "b1", zIndex: -1 }] }).success).toBe(false);
+    expect(updateBlockStackSchema.safeParse({ blocks: [{ id: "b1", zIndex: 1e300 }] }).success).toBe(false);
+    expect(updateBlockStackSchema.safeParse({ blocks: [{ id: "b1", zIndex: "top" }] }).success).toBe(false);
+    expect(updateBlockStackSchema.safeParse({ blocks: [{ id: "", zIndex: 1 }] }).success).toBe(false);
   });
 });

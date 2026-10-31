@@ -68,3 +68,8 @@ export function updateBlockSize(
 export function updateBlockLanguage(canvasId: string, blockId: string, language: string) {
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/language`, { language });
 }
+
+// Raised blocks' new stacking positions, in one request (see hooks/useStackOrder).
+export function updateBlockStack(canvasId: string, blocks: { id: string; zIndex: number }[]) {
+  return api.patch(`/canvases/${canvasId}/blocks/stack`, { blocks });
+}

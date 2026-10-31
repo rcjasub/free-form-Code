@@ -7,6 +7,7 @@ import {
   blockMovedEventSchema,
   blockUpdatedEventSchema,
   blockDeletedEventSchema,
+  blocksStackedEventSchema,
   cursorMoveEventSchema,
 } from "./schemas/socketEvents.schema";
 
@@ -165,6 +166,13 @@ export function setUpSockets(io: Server) {
       const parsed = blockDeletedEventSchema.safeParse(blockId);
       if (!parsed.success) return;
       socket.to(canvasId).emit("block:deleted", parsed.data);
+    });
+
+    socket.on("blocks:stacked", (canvasId, data) => {
+      if (!inJoinedCanvas(canvasId)) return;
+      const parsed = blocksStackedEventSchema.safeParse(data);
+      if (!parsed.success) return;
+      socket.to(canvasId).emit("blocks:stacked", parsed.data);
     });
 
     socket.on("cursor:move", (canvasId, data) => {
