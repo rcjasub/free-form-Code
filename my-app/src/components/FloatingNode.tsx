@@ -58,6 +58,8 @@ interface Props {
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
+  // stacking depth among blocks, from useStackOrder
+  zIndex: number;
 }
 
 function makeTheme(isDark: boolean) {
@@ -126,6 +128,7 @@ export default React.memo(function FloatingNode({
   mode,
   isMouseDown,
   isDark,
+  zIndex,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
@@ -355,7 +358,10 @@ export default React.memo(function FloatingNode({
       // w-max: size to the longest line. Otherwise the browser shrink-wraps an
       // absolute box to the room left before the canvas's right edge, and a
       // block placed far right gets squeezed into a narrow vertical column.
-      className={`absolute group outline-none ${wraps ? "" : "w-max"}`}
+      // While the language menu is open, the block goes above every other
+      // block (beating the inline zIndex), or a block stacked higher would
+      // cover the menu where it hangs below this one.
+      className={`absolute group outline-none has-[[data-state=open]]:z-[1000000]! ${wraps ? "" : "w-max"}`}
       style={{
         left: x,
         top: y,
@@ -363,6 +369,7 @@ export default React.memo(function FloatingNode({
         // a wrapping block is exactly its wrap width, so its edge follows
         // the side handle both ways (like Excalidraw's text boxes)
         width: wraps ? wrapWidth : undefined,
+        zIndex,
         opacity: pendingErase ? 0.3 : 1,
         // a dashed box tight around the text when selected, the same as
         // drawings and images; the resize handles sit on its edge
