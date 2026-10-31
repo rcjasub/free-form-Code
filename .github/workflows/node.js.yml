@@ -71,7 +71,7 @@ jobs:
 
   # ── Frontend ──────────────────────────────────────────────────────────────
   frontend:
-    name: Frontend — type check & build
+    name: Frontend — tests, type check & build
     runs-on: ubuntu-latest
 
     steps:
@@ -85,6 +85,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
+        working-directory: my-app
+
+      - name: Run tests
+        run: npm test
         working-directory: my-app
 
       - name: Type check & build

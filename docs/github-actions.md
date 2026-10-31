@@ -139,7 +139,7 @@ Runs on every push to `main` and every pull request targeting `main`.
 | Job | Steps |
 |---|---|
 | backend | checkout → install deps → `tsc --noEmit` (type check) → `npm test` (against real Postgres + Redis) |
-| frontend | checkout → install deps → `npm run build` (type check + bundle) |
+| frontend | checkout → install deps → `npm test` (Vitest) → `npm run build` (type check + bundle) |
 
 Both jobs run in parallel.
 
