@@ -51,6 +51,7 @@ import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
 import { announceMoved } from "./hooks/useActiveTab";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "./hooks/useCanvasHistory";
 import { useFreehandStroke } from "./hooks/useFreehandStroke";
+import { useStackOrder } from "./hooks/useStackOrder";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw";
@@ -799,6 +800,9 @@ export default function App() {
     canMarquee: () => modeRef.current === "select" && !spaceHeld.current,
   });
 
+  // which block draws over which: selecting one brings it to the front
+  const stackOrder = useStackOrder(nodes.map((n) => n.id), selectedIds);
+
   // Dragging one block of a multi-selection moves the whole selection by the
   // same amount; one undo puts them all back.
   const selectedIdsRef = useRef(selectedIds);
@@ -1252,70 +1256,77 @@ export default function App() {
           </div>
         )}
 
-        {nodes.map((node) =>
-          node.type === "image" ? (
-            <ImageNode
-              key={node.id}
-              id={node.id}
-              x={node.x}
-              y={node.y}
-              width={node.width ?? 300}
-              src={node.content}
-              link={node.link}
-              onMove={moveSelection}
-              onMarkErase={handleMarkErase}
-              pendingErase={pendingErase.has(node.id)}
-              selected={selectedIds.includes(node.id)}
-              mode={mode}
-              isMouseDown={isMouseDown}
-              isDark={isDark}
-            />
-          ) : node.type === "draw" ? (
-            <DrawingNode
-              key={node.id}
-              id={node.id}
-              x={node.x}
-              y={node.y}
-              points={node.points ?? []}
-              onMove={moveSelection}
-              onMarkErase={handleMarkErase}
-              onResize={resizeDrawing}
-              drawIn={drawingIn.get(node.id)}
-              link={node.link}
-              pendingErase={pendingErase.has(node.id)}
-              selected={selectedIds.includes(node.id)}
-              mode={mode}
-              isMouseDown={isMouseDown}
-              isDark={isDark}
-            />
-          ) : (
-            <FloatingNode
-              key={node.id}
-              id={node.id}
-              x={node.x}
-              y={node.y}
-              content={node.content}
-              language={node.language ?? "javascript"}
-              onChange={updateNode}
-              onLanguageChange={changeLanguage}
-              onMove={moveSelection}
-              onSaveSelection={saveSelection}
-              onMarkErase={handleMarkErase}
-              pendingErase={pendingErase.has(node.id)}
-              onRun={handleRunNode}
-              autoFocus={node.id === focusNodeId}
-              wrapWidth={node.wrapWidth ?? undefined}
-              fontSize={node.fontSize ?? undefined}
-              onResize={resizeText}
-              selected={selectedIds.includes(node.id)}
-              onEditingChange={setEditingText}
-              link={node.link}
-              mode={mode}
-              isMouseDown={isMouseDown}
-              isDark={isDark}
-            />
-          ),
-        )}
+        {/* isolate: the blocks' z-indexes only order them among each other,
+            so snap ghosts, strokes, outputs and cursors still draw on top */}
+        <div className="isolate">
+          {nodes.map((node) =>
+            node.type === "image" ? (
+              <ImageNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                width={node.width ?? 300}
+                src={node.content}
+                link={node.link}
+                onMove={moveSelection}
+                onMarkErase={handleMarkErase}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                zIndex={stackOrder.get(node.id) ?? 0}
+              />
+            ) : node.type === "draw" ? (
+              <DrawingNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                points={node.points ?? []}
+                onMove={moveSelection}
+                onMarkErase={handleMarkErase}
+                onResize={resizeDrawing}
+                drawIn={drawingIn.get(node.id)}
+                link={node.link}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                zIndex={stackOrder.get(node.id) ?? 0}
+              />
+            ) : (
+              <FloatingNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                content={node.content}
+                language={node.language ?? "javascript"}
+                onChange={updateNode}
+                onLanguageChange={changeLanguage}
+                onMove={moveSelection}
+                onSaveSelection={saveSelection}
+                onMarkErase={handleMarkErase}
+                pendingErase={pendingErase.has(node.id)}
+                onRun={handleRunNode}
+                autoFocus={node.id === focusNodeId}
+                wrapWidth={node.wrapWidth ?? undefined}
+                fontSize={node.fontSize ?? undefined}
+                onResize={resizeText}
+                selected={selectedIds.includes(node.id)}
+                onEditingChange={setEditingText}
+                link={node.link}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                zIndex={stackOrder.get(node.id) ?? 0}
+              />
+            ),
+          )}
+        </div>
 
         <SnapGhosts ghosts={snapGhosts} isDark={isDark} />
 
