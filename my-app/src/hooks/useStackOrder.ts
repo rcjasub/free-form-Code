@@ -1,48 +1,67 @@
-import { useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef } from "react";
+import type { CanvasNode } from "./useCanvasHistory";
 
-// Which block draws on top of which, as z-index values. Blocks start in the
-// order they were made, a new block lands on top, and selecting a block
-// brings it to the front — so an image dragged over a drawing covers it.
-// The order is this session's only: a reload goes back to creation order.
+// Which block draws on top of which. Each block stores a stacking position
+// (zIndex — z_index on the server): blocks from before it existed are 0, a
+// new block starts at its creation time in ms, and selecting a block raises
+// it to the current top + 1. Saved like any other change, so the order
+// survives a reload and collaborators see it.
 
-export interface Stack {
-  ids: string[];
-  selectedIds: string[];
-  z: Map<string, number>;
-  // the highest z handed out so far
-  top: number;
+export interface StackEntry {
+  id: string;
+  zIndex: number;
 }
 
-const EMPTY: Stack = { ids: [], selectedIds: [], z: new Map(), top: 0 };
-
-export function restack(prev: Stack, ids: string[], selectedIds: string[]): Stack {
-  let top = prev.top;
-  const z = new Map<string, number>();
-  for (const id of ids) z.set(id, prev.z.get(id) ?? ++top);
-
-  // newly selected blocks go to the front, keeping their order among themselves
-  const raised = selectedIds
-    .filter((id) => z.has(id) && !prev.selectedIds.includes(id))
-    .sort((a, b) => z.get(a)! - z.get(b)!);
-  for (const id of raised) z.set(id, ++top);
-
-  return { ids, selectedIds, z, top };
+// Each block's depth among the others, 1 = bottom: by stored position, ties
+// in array order (the server sends ties in creation order). Ranks rather
+// than the stored values, so the CSS z-index stays small.
+export function stackDepths(nodes: CanvasNode[]): Map<string, number> {
+  const order = nodes
+    .map((n, i) => ({ id: n.id, z: n.zIndex ?? 0, i }))
+    .sort((a, b) => a.z - b.z || a.i - b.i);
+  return new Map(order.map((e, rank) => [e.id, rank + 1]));
 }
 
-function sameIds(a: string[], b: string[]) {
-  return a.length === b.length && a.every((id, i) => id === b[i]);
+// New positions that bring these blocks to the front, keeping their order
+// among themselves. Empty when they're already the topmost blocks in that
+// order, so clicking the top block again saves nothing.
+export function raise(nodes: CanvasNode[], ids: string[]): StackEntry[] {
+  const depth = stackDepths(nodes);
+  const picked = ids.filter((id) => depth.has(id)).sort((a, b) => depth.get(a)! - depth.get(b)!);
+  const firstTop = nodes.length - picked.length + 1;
+  if (picked.every((id, i) => depth.get(id) === firstTop + i)) return [];
+
+  const top = Math.max(...nodes.map((n) => n.zIndex ?? 0));
+  return picked.map((id, i) => ({ id, zIndex: top + 1 + i }));
 }
 
-export function useStackOrder(ids: string[], selectedIds: string[]): Map<string, number> {
-  const [stack, setStack] = useState(() => restack(EMPTY, ids, selectedIds));
+// Depths to render with, and raises newly selected blocks through `onRaise`
+// (which saves and broadcasts them). Blocks added to an existing selection
+// are raised on their own; the ones already selected stay where they are.
+export function useStackOrder(
+  nodes: CanvasNode[],
+  selectedIds: string[],
+  onRaise: (entries: StackEntry[]) => void,
+): Map<string, number> {
+  const depths = useMemo(() => stackDepths(nodes), [nodes]);
 
-  // Updated during render rather than in an effect, so a new or selected
-  // block is never painted for a frame at its old depth. Compared by
-  // contents: the ids array is rebuilt every render (e.g. while dragging).
-  if (stack.selectedIds !== selectedIds || !sameIds(stack.ids, ids)) {
-    const next = restack(stack, ids, selectedIds);
-    setStack(next);
-    return next.z;
-  }
-  return stack.z;
+  const prevSelected = useRef<string[]>([]);
+  const raiseNew = useEffectEvent((ids: string[]) => {
+    const entries = raise(nodes, ids);
+    if (entries.length > 0) onRaise(entries);
+  });
+  useEffect(() => {
+    const added = selectedIds.filter((id) => !prevSelected.current.includes(id));
+    prevSelected.current = selectedIds;
+    if (added.length > 0) raiseNew(added);
+  }, [selectedIds]);
+
+  return depths;
+}
+
+// The nodes with these blocks' new positions — for a raise here or one
+// relayed from a collaborator.
+export function applyStack(nodes: CanvasNode[], entries: StackEntry[]): CanvasNode[] {
+  const z = new Map(entries.map((e) => [e.id, e.zIndex]));
+  return nodes.map((n) => (z.has(n.id) ? { ...n, zIndex: z.get(n.id) } : n));
 }

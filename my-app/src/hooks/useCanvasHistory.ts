@@ -21,6 +21,8 @@ export interface CanvasNode {
   // text blocks: where lines wrap (null: they don't) and font size (null: default)
   wrapWidth?: number | null;
   fontSize?: number | null;
+  // stacking position, higher on top — see hooks/useStackOrder
+  zIndex?: number;
 }
 
 // One entry per undoable canvas action, holding what's needed to reverse it.

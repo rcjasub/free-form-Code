@@ -13,6 +13,8 @@ export interface Block {
   y: number;
   width: number;
   client_id: string | null;
+  // stacking position: higher draws on top (see schema.sql)
+  z_index: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -28,7 +30,7 @@ export interface createBlockParams {
 
 export async function getBlocksByCanvasId(canvasId: string): Promise<Block[]> {
   const result = await pool.query<Block>(
-    "SELECT * FROM blocks WHERE canvas_id = $1 ORDER BY created_at ASC",
+    "SELECT * FROM blocks WHERE canvas_id = $1 ORDER BY z_index ASC, created_at ASC",
     [canvasId],
   );
   return result.rows; //unwrapping
@@ -135,6 +137,9 @@ export interface RestoreBlockParams {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  // where it sat in the stack (undoing a delete, uploading a browser canvas);
+  // without one it goes on top, in the order given
+  zIndex?: number;
   clientId?: string;
 }
 
@@ -158,11 +163,12 @@ export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams
     const rows: Block[] = [];
     for (const b of blocks) {
       const result = await client.query<Block>(
-        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size, client_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size, client_id, z_index)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 COALESCE($12::float, extract(epoch from clock_timestamp()) * 1000))
          ON CONFLICT (canvas_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
          RETURNING *`,
-        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize, b.clientId ?? null],
+        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize, b.clientId ?? null, b.zIndex ?? null],
       );
       const row =
         result.rows[0] ??
@@ -182,6 +188,28 @@ export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams
   } finally {
     client.release();
   }
+}
+
+export interface StackEntry {
+  id: string;
+  zIndex: number;
+}
+
+// Sets several blocks' stacking positions in one statement (raising a
+// multi-selection is one request). id::text so a malformed id just matches
+// nothing instead of failing the whole update.
+export async function updateBlockStack(
+  canvasId: string,
+  entries: StackEntry[],
+): Promise<Pick<Block, "id" | "z_index">[]> {
+  const result = await pool.query<Pick<Block, "id" | "z_index">>(
+    `UPDATE blocks AS b SET z_index = v.z_index
+     FROM unnest($1::text[], $2::float[]) AS v(id, z_index)
+     WHERE b.id::text = v.id AND b.canvas_id = $3
+     RETURNING b.id, b.z_index`,
+    [entries.map((e) => e.id), entries.map((e) => e.zIndex), canvasId],
+  );
+  return result.rows;
 }
 
 export interface BlockSize {

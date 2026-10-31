@@ -1,6 +1,7 @@
 import {
   blockCreatedEventSchema,
   blockUpdatedEventSchema,
+  blocksStackedEventSchema,
 } from "../schemas/socketEvents.schema";
 import { MAX_CONTENT_LENGTH } from "../schemas/block.schema";
 
@@ -59,5 +60,24 @@ describe("blockCreatedEventSchema", () => {
   test("rejects an unknown block type or a javascript: link", () => {
     expect(blockCreatedEventSchema.safeParse({ id: "b1", x: 0, y: 0, content: "", type: "banana" }).success).toBe(false);
     expect(blockCreatedEventSchema.safeParse({ id: "b1", x: 0, y: 0, content: "", link: "javascript:alert(1)" }).success).toBe(false);
+  });
+});
+
+describe("blocksStackedEventSchema", () => {
+  test("relays raised blocks with their new positions", () => {
+    const parsed = blocksStackedEventSchema.safeParse([{ id: "b1", zIndex: 7, extra: "dropped" }]);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual([{ id: "b1", zIndex: 7 }]);
+  });
+
+  test("rejects an empty list and positions the REST route would refuse", () => {
+    expect(blocksStackedEventSchema.safeParse([]).success).toBe(false);
+    expect(blocksStackedEventSchema.safeParse([{ id: "b1", zIndex: -1 }]).success).toBe(false);
+    expect(blocksStackedEventSchema.safeParse([{ id: "b1", zIndex: 1e300 }]).success).toBe(false);
+  });
+
+  test("a created block keeps its stacking position when relayed", () => {
+    const block = { id: "b1", x: 0, y: 0, content: "", z_index: 1.7e12 };
+    expect(blockCreatedEventSchema.parse(block)).toMatchObject({ z_index: 1.7e12 });
   });
 });

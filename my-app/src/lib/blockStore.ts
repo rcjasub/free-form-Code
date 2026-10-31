@@ -114,3 +114,14 @@ export function updateBlockLanguage(canvasId: string, blockId: string, language:
     ? local.updateBlockLanguage(blockId, language)
     : server.updateBlockLanguage(canvasId, blockId, language);
 }
+
+// Each block's new position goes wherever that block lives — a canvas can
+// mix server blocks with ones kept in this browser.
+export async function updateBlockStack(canvasId: string, blocks: { id: string; zIndex: number }[]) {
+  const here = blocks.filter((b) => inBrowser(canvasId, b.id));
+  const there = blocks.filter((b) => !inBrowser(canvasId, b.id));
+  await Promise.all([
+    here.length ? local.updateBlockStack(here) : null,
+    there.length ? server.updateBlockStack(canvasId, there) : null,
+  ]);
+}
