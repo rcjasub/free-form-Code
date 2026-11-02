@@ -21,6 +21,8 @@ interface Props {
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
+  // stacking depth among blocks, from useStackOrder
+  zIndex: number;
 }
 
 // A pasted image. Drag it in select mode; erase it like any other block.
@@ -38,6 +40,7 @@ export default React.memo(function ImageNode({
   mode,
   isMouseDown,
   isDark,
+  zIndex,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -90,6 +93,7 @@ export default React.memo(function ImageNode({
         left: x,
         top: y,
         width,
+        zIndex,
         opacity: pendingErase ? 0.3 : 1,
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,

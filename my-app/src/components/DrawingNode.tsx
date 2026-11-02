@@ -54,6 +54,8 @@ interface Props {
   mode: Mode;
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
+  // stacking depth among blocks, from useStackOrder
+  zIndex: number;
 }
 
 // Renders a saved freehand stroke. Points are stored relative to (x, y) —
@@ -74,6 +76,7 @@ export default React.memo(function DrawingNode({
   mode,
   isMouseDown,
   isDark,
+  zIndex,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const xRef = useRef(x);
@@ -207,6 +210,7 @@ export default React.memo(function DrawingNode({
         top: shown.y,
         width,
         height,
+        zIndex,
         opacity: pendingErase ? 0.3 : 1,
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,
