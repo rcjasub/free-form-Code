@@ -29,7 +29,7 @@ import { requestRun } from "@/lib/runCode";
 import { getMe } from "@/API/auth";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "@/hooks/useCanvasHistory";
 import { useFreehandStroke } from "@/hooks/useFreehandStroke";
-import { useStackOrder } from "@/hooks/useStackOrder";
+import { useStackOrder, applyStack, type StackEntry } from "@/hooks/useStackOrder";
 import { createKeyedThrottle } from "@/lib/throttle";
 import { chunkForRestore, toRestorePayload } from "@/lib/restore";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
@@ -50,11 +50,12 @@ interface ApiBlock {
   link?: string | null;
   wrap_width?: number | null;
   font_size?: number | null;
+  z_index?: number;
 }
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
 function blockToNode(b: ApiBlock): Node {
-  const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
+  const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null, zIndex: b.z_index ?? 0 };
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
   return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
@@ -275,6 +276,10 @@ export default function SharedCanvas() {
     socket.on("block:deleted", (blockId) => {
       setNodes((prev) => prev.filter((n) => n.id !== blockId));
     });
+    // someone else brought blocks to the front
+    socket.on("blocks:stacked", (entries: StackEntry[]) => {
+      setNodes((prev) => applyStack(prev, entries));
+    });
     socket.on("cursor:move", (data: RemoteCursor) => {
       setRemoteCursors((prev) => {
         const next = new Map(prev);
@@ -299,6 +304,7 @@ export default function SharedCanvas() {
       socket.off("block:moved");
       socket.off("block:updated");
       socket.off("block:deleted");
+      socket.off("blocks:stacked");
       socket.off("cursor:move");
       socket.off("cursor:leave");
       socket.off("presence");
@@ -674,8 +680,22 @@ export default function SharedCanvas() {
     canMarquee: () => canEdit && modeRef.current === "select" && !spaceHeld.current,
   });
 
-  // which block draws over which: selecting one brings it to the front
-  const stackOrder = useStackOrder(nodes.map((n) => n.id), selectedIds);
+  // which block draws over which: selecting blocks brings them to the front,
+  // saved and sent to everyone else on the canvas
+  const raiseBlocks = useCallback((entries: StackEntry[]) => {
+    const cid = canvasIdRef.current;
+    if (!canEdit || !cid) return;
+    setNodes((prev) => applyStack(prev, entries));
+    socket.emit("blocks:stacked", cid, entries);
+    // a lost save only costs the order after a reload, not worth an error
+    fetch(`/api/canvases/${cid}/blocks/stack`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ blocks: entries }),
+    }).catch(() => {});
+  }, [canEdit]);
+  const stackOrder = useStackOrder(nodes, selectedIds, raiseBlocks);
 
   // Dragging one block of a multi-selection moves the whole selection by the
   // same amount; one undo puts them all back.

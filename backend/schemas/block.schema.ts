@@ -63,6 +63,20 @@ export const updateBlockSizeSchema = z
     })
     .refine((s) => s.wrapWidth !== undefined || s.fontSize !== undefined, "Nothing to update");
 
+// A block's stacking position (z_index in schema.sql): creation times in ms
+// and small steps above them. The cap only keeps the numbers sane — far past
+// any real timestamp, and low enough that top + 1 is still exact.
+export const zIndexSchema = z.number().min(0).max(1e15);
+
+// Raising blocks: their new positions, all in one request. At most a whole
+// canvas's worth (MAX_BLOCKS_PER_CANVAS).
+export const updateBlockStackSchema = z.object({
+    blocks: z
+        .array(z.object({ id: z.string().min(1).max(64), zIndex: zIndexSchema }))
+        .min(1)
+        .max(500),
+});
+
 // Puts several blocks back at once (undoing a big delete), as one request:
 // recreating them one by one would hit the per-minute create limit. Each
 // block carries everything the single create route can't take (language,
@@ -77,6 +91,8 @@ export const restoreBlocksSchema = z.object({
                 link: linkSchema.default(null),
                 wrapWidth: wrapWidthSchema.default(null),
                 fontSize: fontSizeSchema.default(null),
+                // where it sat in the stack; without one it goes on top
+                zIndex: zIndexSchema.optional(),
                 // its id in the browser it came from; a block already saved
                 // with the same one is returned instead of added again
                 clientId: z.string().min(1).max(64).optional(),

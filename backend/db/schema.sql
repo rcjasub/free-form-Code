@@ -71,3 +71,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP NOT NULL DEF
 -- of a duplicate. NULL for blocks made on the server. Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS client_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_client_id ON blocks(canvas_id, client_id) WHERE client_id IS NOT NULL;
+
+-- stacking: a block with a higher z_index draws on top. Selecting a block
+-- raises it to the canvas's top + 1; a new block starts at its creation time
+-- in ms (the same scale a guest's browser canvas uses), so it lands on top.
+-- Rows from before this keep 0: under everything newer, and in creation
+-- order among themselves (ties sort by created_at). The default is set as a
+-- second step so those rows aren't stamped with the time it ran. Safe to re-run.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS z_index FLOAT NOT NULL DEFAULT 0;
+ALTER TABLE blocks ALTER COLUMN z_index SET DEFAULT (extract(epoch from clock_timestamp()) * 1000);

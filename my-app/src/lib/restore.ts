@@ -12,6 +12,9 @@ export interface RestorePayload {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  // where it sat in the stack (undoing a delete, uploading a browser
+  // canvas); without one the server puts it on top
+  zIndex?: number;
   // its id in this browser, when uploading a browser canvas: the server
   // skips one it already has, so a retried upload can't duplicate it
   clientId?: string;
@@ -34,6 +37,7 @@ export function toRestorePayload(node: CanvasNode): RestorePayload {
     link: node.link ?? null,
     wrapWidth: node.wrapWidth ?? null,
     fontSize: node.fontSize ?? null,
+    zIndex: node.zIndex,
   };
 }
 

@@ -38,6 +38,14 @@ export interface LocalBlock {
   // creation order: the server sorts by created_at, and later blocks draw on
   // top, so overlapping blocks keep the same stacking here
   seq: number;
+  // stacking position, on the same scale as the server's z_index: it starts
+  // as `seq` and selecting the block raises it. Rows saved before it existed
+  // have none and use `seq` (see withZ).
+  z_index?: number;
+}
+
+function withZ(row: LocalBlock): LocalBlock & { z_index: number } {
+  return { ...row, z_index: row.z_index ?? row.seq };
 }
 
 // Same caps as the backend (MAX_BLOCKS_PER_CANVAS, MAX_CONTENT_LENGTH), so a
@@ -114,6 +122,7 @@ function nextSeq(): number {
 
 function makeRow(block: RestorePayload, canvasId: string): LocalBlock {
   if (block.content.length > MAX_CONTENT_LENGTH) throw new SaveRejectedError("Block content is too large", 413);
+  const seq = nextSeq();
   return {
     id: newId(),
     canvas_id: canvasId,
@@ -126,7 +135,8 @@ function makeRow(block: RestorePayload, canvasId: string): LocalBlock {
     link: block.link,
     wrap_width: block.wrapWidth,
     font_size: block.fontSize,
-    seq: nextSeq(),
+    seq,
+    z_index: block.zIndex ?? seq,
   };
 }
 
@@ -136,13 +146,13 @@ function allRows(): Promise<LocalBlock[]> {
 
 export async function getAllBlocks(canvasId = LOCAL_CANVAS_ID): Promise<{ data: LocalBlock[] }> {
   const rows = (await allRows()).filter((r) => r.canvas_id === canvasId);
-  return { data: rows.sort((a, b) => a.seq - b.seq) };
+  return { data: rows.sort((a, b) => a.seq - b.seq).map(withZ) };
 }
 
 // Every canvas this browser holds blocks for, with those blocks in order.
 export async function getAllByCanvas(): Promise<Map<string, LocalBlock[]>> {
   const byCanvas = new Map<string, LocalBlock[]>();
-  for (const row of (await allRows()).sort((a, b) => a.seq - b.seq)) {
+  for (const row of (await allRows()).sort((a, b) => a.seq - b.seq).map(withZ)) {
     byCanvas.set(row.canvas_id, [...(byCanvas.get(row.canvas_id) ?? []), row]);
   }
   return byCanvas;
@@ -234,6 +244,17 @@ export function updateBlockSize(id: string, size: { wrapWidth: number | null; fo
   return patch(id, { wrap_width: size.wrapWidth, font_size: size.fontSize });
 }
 
+// Raised blocks' new positions, all in one transaction. A block that's gone
+// is skipped, like the server does.
+export async function updateBlockStack(blocks: { id: string; zIndex: number }[]): Promise<void> {
+  await transact("readwrite", async (store) => {
+    for (const { id, zIndex } of blocks) {
+      const row = await request(store.get(id) as IDBRequest<LocalBlock | undefined>);
+      if (row) store.put({ ...row, z_index: zIndex });
+    }
+  });
+}
+
 export async function deleteBlock(id: string): Promise<void> {
   await transact("readwrite", (store) => {
     store.delete(id);
@@ -284,6 +305,7 @@ export function toRestorePayload(row: LocalBlock): RestorePayload {
     link: row.link,
     wrapWidth: row.wrap_width,
     fontSize: row.font_size,
+    zIndex: row.z_index ?? row.seq,
   };
 }
 
@@ -326,7 +348,9 @@ export function parseCanvasFile(text: string): RestorePayload[] {
       FILE_LANGUAGES.has(b.language) &&
       (b.link === null || (typeof b.link === "string" && b.link.length <= 2048 && /^https?:\/\//i.test(b.link))) &&
       inRangeOrNull(b.wrapWidth, 40, 4000) &&
-      inRangeOrNull(b.fontSize, 6, 200);
+      inRangeOrNull(b.fontSize, 6, 200) &&
+      // optional: backups made before stacking was saved don't have it
+      (b.zIndex === undefined || (isNum(b.zIndex) && b.zIndex >= 0 && b.zIndex <= 1e15));
     if (!ok) throw new Error(`That backup is damaged (block ${i + 1}).`);
     return {
       type: b.type as string,
@@ -338,6 +362,7 @@ export function parseCanvasFile(text: string): RestorePayload[] {
       link: b.link as string | null,
       wrapWidth: b.wrapWidth as number | null,
       fontSize: b.fontSize as number | null,
+      zIndex: b.zIndex as number | undefined,
     };
   });
 }

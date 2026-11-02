@@ -35,6 +35,12 @@ describe("canvas backup file", () => {
     expect(parseCanvasFile(toCanvasFile([textBlock, drawing]))).toEqual([textBlock, drawing]);
   });
 
+  it("keeps stacking positions, and reads backups made before they were saved", () => {
+    const raised = { ...textBlock, zIndex: 1.7e12 };
+    expect(parseCanvasFile(toCanvasFile([raised]))[0].zIndex).toBe(1.7e12);
+    expect(parseCanvasFile(toCanvasFile([textBlock]))[0].zIndex).toBeUndefined();
+  });
+
   it("reads an empty canvas", () => {
     expect(parseCanvasFile(toCanvasFile([]))).toEqual([]);
   });
@@ -64,6 +70,8 @@ describe("canvas backup file", () => {
       { ...textBlock, fontSize: 1000 },
       { ...textBlock, wrapWidth: 5 },
       { ...textBlock, x: Infinity },
+      { ...textBlock, zIndex: -1 },
+      { ...textBlock, zIndex: "top" },
     ];
     for (const block of bad) expect(() => parseCanvasFile(fileWith([block]))).toThrow("damaged");
   });
@@ -99,7 +107,10 @@ describe("local rows", () => {
       link: null,
       wrapWidth: 200,
       fontSize: null,
+      // a row saved before stacking was stored falls back to its creation order
+      zIndex: 1,
     });
+    expect(toRestorePayload({ ...row, z_index: 50 }).zIndex).toBe(50);
   });
 
   it("only the local id counts as the browser canvas", () => {
