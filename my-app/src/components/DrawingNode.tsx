@@ -5,32 +5,15 @@ import { strokePath } from "../lib/smoothPath";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import type { DrawIn } from "../hooks/useSnapGhosts";
+import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, type Handle } from "../lib/boxHandles";
+import { drawStrokeProps, type DrawStyle } from "../lib/points";
 
 export interface Point {
   x: number;
   y: number;
 }
 
-// See FloatingNode.tsx for why dragging is throttled this way.
-const DRAG_SYNC_INTERVAL_MS = 40;
-
-// Resize handles, like Excalidraw's: a dot on each corner stretches both
-// ways; each edge of the selection box can be grabbed anywhere along its line
-// to stretch one way. fx/fy place each on the box (0 = left/top, 1 = right/bottom).
-type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
-const HANDLES: { handle: Handle; fx: number; fy: number; cursor: string }[] = [
-  { handle: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
-  { handle: "n", fx: 0.5, fy: 0, cursor: "ns-resize" },
-  { handle: "ne", fx: 1, fy: 0, cursor: "nesw-resize" },
-  { handle: "e", fx: 1, fy: 0.5, cursor: "ew-resize" },
-  { handle: "se", fx: 1, fy: 1, cursor: "nwse-resize" },
-  { handle: "s", fx: 0.5, fy: 1, cursor: "ns-resize" },
-  { handle: "sw", fx: 0, fy: 1, cursor: "nesw-resize" },
-  { handle: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
-];
 const MIN_SIZE = 4; // a drawing can't be squashed smaller than this
-const BOX_PAD = 6; // matches the selection outline's offset
-const HANDLE_SIZE = 8;
 
 // two decimals is plenty, and keeps the saved JSON from bloating
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -40,6 +23,8 @@ interface Props {
   x: number;
   y: number;
   points: Point[];
+  // color, width, dashes and opacity (lib/points)
+  drawStyle: DrawStyle;
   onMove: (id: string, x: number, y: number) => void;
   onMarkErase: (id: string) => void;
   // Called while a resize handle is dragged (throttled) and once more with
@@ -66,6 +51,7 @@ export default React.memo(function DrawingNode({
   x,
   y,
   points,
+  drawStyle,
   onMove,
   onMarkErase,
   onResize,
@@ -211,7 +197,7 @@ export default React.memo(function DrawingNode({
         width,
         height,
         zIndex,
-        opacity: pendingErase ? 0.3 : 1,
+        opacity: (pendingErase ? 0.3 : 1) * (drawStyle.opacity / 100),
         outline: selected ? "1.5px dashed #4fb4f2" : undefined,
         outlineOffset: 6,
         transition: GLIDE_TRANSITION, // see lib/glide
@@ -253,7 +239,7 @@ export default React.memo(function DrawingNode({
             d={pathData}
             fill="none"
             stroke="transparent"
-            strokeWidth={16}
+            strokeWidth={Math.max(16, drawStyle.strokeWidth + 12)}
             strokeLinecap="round"
             strokeLinejoin="round"
             style={{ pointerEvents: "stroke", cursor: mode === "select" || mode === "text" ? "grab" : undefined }}
@@ -267,8 +253,7 @@ export default React.memo(function DrawingNode({
           pathLength={drawIn === "trace" ? 1 : undefined}
           className={drawIn === "trace" ? "snap-draw" : drawIn === "brighten" ? "snap-brighten" : undefined}
           fill="none"
-          stroke={isDark ? "#f5f5f5" : "#1f2937"}
-          strokeWidth={2}
+          {...drawStrokeProps(drawStyle, isDark)}
           strokeLinecap="round"
           strokeLinejoin="round"
           style={{ pointerEvents: "none" }}

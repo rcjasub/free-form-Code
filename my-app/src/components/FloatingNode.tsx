@@ -9,6 +9,7 @@ import { draculaDark, draculaLight } from "../lib/codeTheme";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
+import { themeColor } from "../lib/colors";
 import ResizeHandles from "./ResizeHandles";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
@@ -60,6 +61,8 @@ interface Props {
   isDark: boolean;
   // stacking depth among blocks, from useStackOrder
   zIndex: number;
+  // a plain text block's color (null/undefined: the theme's)
+  color?: string | null;
 }
 
 function makeTheme(isDark: boolean) {
@@ -76,8 +79,9 @@ function makeTheme(isDark: boolean) {
     },
     ".cm-content": {
       background: "transparent",
-      color: isDark ? "#f5f5f5" : "#1f2937",
-      caretColor: isDark ? "#f5f5f5" : "#1f2937",
+      // --block-color is set per text block (see the container's style)
+      color: `var(--block-color, ${isDark ? "#f5f5f5" : "#1f2937"})`,
+      caretColor: `var(--block-color, ${isDark ? "#f5f5f5" : "#1f2937"})`,
       // Room on the right for the 2px cursor. Without it the cursor at the
       // end of a line sticks out, CodeMirror scrolls the line 2px to show
       // it, and typing to the right makes the text wobble back and forth.
@@ -129,6 +133,7 @@ export default React.memo(function FloatingNode({
   isMouseDown,
   isDark,
   zIndex,
+  color,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
@@ -366,6 +371,8 @@ export default React.memo(function FloatingNode({
         left: x,
         top: y,
         ["--block-font-size" as string]: fontSize ? `${fontSize}px` : undefined,
+        // only plain text takes a color; code keeps its syntax colors
+        ["--block-color" as string]: language === "text" && color ? themeColor(color, isDark) : undefined,
         // a wrapping block is exactly its wrap width, so its edge follows
         // the side handle both ways (like Excalidraw's text boxes)
         width: wraps ? wrapWidth : undefined,
