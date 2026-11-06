@@ -1,3 +1,5 @@
+import { parseArrow, parseShape } from "./shapes";
+import { parsePoints } from "./points";
 import { FONT_SIZE, LINE_HEIGHT } from "./splitLines";
 import type { RestorePayload } from "./restore";
 
@@ -27,9 +29,21 @@ export function boxOf(block: RestorePayload, imageHeight?: number): Box {
   let width = block.width;
   let height: number;
   if (block.type === "draw") {
-    height = Math.max(1, ...parsePoints(block.content).map((p) => p.y));
+    height = Math.max(1, ...(parsePoints(block.content) ?? []).map((p) => p.y));
   } else if (block.type === "image") {
     height = imageHeight ?? block.width;
+  } else if (block.type === "shape") {
+    const shape = parseShape(block.content);
+    width = shape.w;
+    height = shape.h;
+  } else if (block.type === "arrow") {
+    // the box around its points, which may sit left of / above x,y
+    const { points } = parseArrow(block.content);
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const left = block.x + Math.min(...xs);
+    const top = block.y + Math.min(...ys);
+    return { left, top, right: left + Math.max(...xs) - Math.min(...xs), bottom: top + Math.max(...ys) - Math.min(...ys) };
   } else {
     const font = block.fontSize ?? FONT_SIZE;
     const lines = block.content.split("\n");
@@ -38,15 +52,6 @@ export function boxOf(block: RestorePayload, imageHeight?: number): Box {
     height = lines.length * LINE_HEIGHT * (font / FONT_SIZE) + TEXT_PADDING;
   }
   return { left: block.x, top: block.y, right: block.x + width, bottom: block.y + height };
-}
-
-function parsePoints(content: string): { x: number; y: number }[] {
-  try {
-    const points = JSON.parse(content);
-    return Array.isArray(points) ? points.filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y)) : [];
-  } catch {
-    return [];
-  }
 }
 
 const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;

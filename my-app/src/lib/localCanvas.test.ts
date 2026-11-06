@@ -12,6 +12,7 @@ const textBlock: RestorePayload = {
   link: "https://example.com",
   wrapWidth: 240,
   fontSize: 18,
+  color: "#e03131",
 };
 
 const drawing: RestorePayload = {
@@ -24,6 +25,7 @@ const drawing: RestorePayload = {
   link: null,
   wrapWidth: null,
   fontSize: null,
+  color: null,
 };
 
 function fileWith(blocks: unknown[], extra: object = {}) {
@@ -31,6 +33,16 @@ function fileWith(blocks: unknown[], extra: object = {}) {
 }
 
 describe("canvas backup file", () => {
+  it("reads a backup from before text colors existed", () => {
+    const old: RestorePayload = { ...textBlock };
+    delete old.color;
+    expect(parseCanvasFile(fileWith([old]))[0].color).toBeNull();
+  });
+
+  it("rejects a color that isn't just a color", () => {
+    expect(() => parseCanvasFile(fileWith([{ ...textBlock, color: "url(x)" }]))).toThrow(/damaged/);
+  });
+
   it("reads back exactly what it wrote", () => {
     expect(parseCanvasFile(toCanvasFile([textBlock, drawing]))).toEqual([textBlock, drawing]);
   });
@@ -98,6 +110,7 @@ describe("local rows", () => {
       language: "python",
       link: null,
       wrapWidth: 200,
+      color: null,
       fontSize: null,
     });
   });

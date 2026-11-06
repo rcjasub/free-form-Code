@@ -76,6 +76,10 @@ export function updateBlockContent(canvasId: string, blockId: string, content: s
     : server.updateBlockContent(canvasId, blockId, content);
 }
 
+export function updateBlockColor(canvasId: string, blockId: string, color: string | null) {
+  return isLocal(canvasId) ? local.updateBlockColor(blockId, color) : server.updateBlockColor(canvasId, blockId, color);
+}
+
 export function updateBlockLink(canvasId: string, blockId: string, link: string | null) {
   return inBrowser(canvasId, blockId)
     ? local.updateBlockLink(blockId, link)

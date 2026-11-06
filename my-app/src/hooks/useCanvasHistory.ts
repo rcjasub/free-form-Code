@@ -5,6 +5,7 @@ import type { Language } from "../lib/languages";
 import { imageToDataUrl, IMAGE_DISPLAY_WIDTH } from "../lib/images";
 import { detectLanguage } from "../lib/detectLanguage";
 import { FONT_SIZE, measureCanvasText, splitLines } from "../lib/splitLines";
+import { isDataBlock } from "../lib/blockTypes";
 
 // The block fields undo and copy/paste need — both canvas pages' node types
 // have this shape.
@@ -13,6 +14,8 @@ export interface CanvasNode {
   x: number;
   y: number;
   content: string;
+  // undefined for text/code; otherwise a data block (lib/blockTypes) whose
+  // content is JSON: draw points, an image data URL, a shape or an arrow
   type?: string;
   language?: Language;
   points?: Point[];
@@ -21,6 +24,8 @@ export interface CanvasNode {
   // text blocks: where lines wrap (null: they don't) and font size (null: default)
   wrapWidth?: number | null;
   fontSize?: number | null;
+  // text blocks: their color (null: the theme's text color)
+  color?: string | null;
 }
 
 // One entry per undoable canvas action, holding what's needed to reverse it.
@@ -36,6 +41,8 @@ export type HistoryEntry =
   // a drawing's position and stroke before it was resized
   | { kind: "reshape"; id: string; x: number; y: number; content: string }
   | { kind: "link"; id: string; link: string | null }
+  // a text block's color before it was changed
+  | { kind: "color"; id: string; color: string | null }
   // a text block's size (and position — resizing from the left/top moves it)
   // before its handles were dragged
   | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number }
@@ -55,7 +62,7 @@ const DUPLICATE_OFFSET = 24;
 // clipboard as a block if its text still matches, so copying something else
 // in the meantime (here or in another app) pastes that instead.
 function clipboardText(node: CanvasNode) {
-  if (node.type === "draw" || node.type === "image" || !node.content.trim()) return "[free-form block]";
+  if (isDataBlock(node) || !node.content.trim()) return "[free-form block]";
   return node.content;
 }
 
@@ -114,6 +121,7 @@ export interface CanvasOps {
   applyLanguage: (id: string, language: Language, content: string) => void;
   applyShape: (id: string, x: number, y: number, content: string) => void;
   applyLink: (id: string, link: string | null) => void;
+  applyColor: (id: string, color: string | null) => void;
   applySize: (id: string, wrapWidth: number | null, fontSize: number | null) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
@@ -292,7 +300,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // and `selectedId` — never a stale copy from an earlier render.
 
   const undo = useEffectEvent(async () => {
-    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, restoreBlocks } = ops;
+    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applyColor, applySize, restoreBlocks } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
     // Skip entries for blocks someone else has deleted since.
@@ -320,6 +328,9 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       } else if (entry.kind === "link") {
         if (!exists(entry.id)) continue;
         applyLink(entry.id, entry.link);
+      } else if (entry.kind === "color") {
+        if (!exists(entry.id)) continue;
+        applyColor(entry.id, entry.color);
       } else if (entry.kind === "resize") {
         if (!exists(entry.id)) continue;
         applySize(entry.id, entry.wrapWidth, entry.fontSize);
@@ -652,5 +663,6 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       }
     : null;
 
-  return { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt };
+  // `select` lets the page select blocks it just made (a new shape)
+  return { selectedIds, select: setSelectedIds, pointer, contextMenu, marquee, deleteAllPrompt };
 }

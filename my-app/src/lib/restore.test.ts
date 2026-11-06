@@ -14,9 +14,9 @@ const block = (content = "x"): RestorePayload => ({
 });
 
 describe("toRestorePayload", () => {
-  test("keeps a text block's language, link and size", () => {
-    const p = toRestorePayload({ id: "b1", x: 5, y: 6, content: "hi", language: "python", link: "https://a.b", wrapWidth: 320, fontSize: 20 });
-    expect(p).toEqual({ type: "code", content: "hi", x: 5, y: 6, width: 300, language: "python", link: "https://a.b", wrapWidth: 320, fontSize: 20 });
+  test("keeps a text block's language, link, size and color", () => {
+    const p = toRestorePayload({ id: "b1", x: 5, y: 6, content: "hi", language: "python", link: "https://a.b", wrapWidth: 320, fontSize: 20, color: "#1971c2" });
+    expect(p).toEqual({ type: "code", content: "hi", x: 5, y: 6, width: 300, language: "python", link: "https://a.b", wrapWidth: 320, fontSize: 20, color: "#1971c2" });
   });
 
   test("fills defaults for what a block doesn't have", () => {
