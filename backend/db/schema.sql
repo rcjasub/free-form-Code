@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_canvases_user_id ON canvases(user_id);
 CREATE TABLE IF NOT EXISTS blocks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   canvas_id  UUID REFERENCES canvases(id) ON DELETE CASCADE,
-  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text', 'code', 'draw', or 'image'
+  type       VARCHAR(20) NOT NULL DEFAULT 'text',  -- 'text', 'code', 'draw', 'image', 'shape' or 'arrow'
   language   VARCHAR(20) NOT NULL DEFAULT 'javascript',  -- see LANGUAGES in sandbox.ts
   content    TEXT NOT NULL DEFAULT '',
   x          FLOAT NOT NULL DEFAULT 100,
@@ -71,3 +71,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP NOT NULL DEF
 -- of a duplicate. NULL for blocks made on the server. Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS client_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_client_id ON blocks(canvas_id, client_id) WHERE client_id IS NOT NULL;
+
+-- a text block's color (right-click > properties panel); NULL means the
+-- theme's default text color. Safe to re-run.
+ALTER TABLE blocks ADD COLUMN IF NOT EXISTS color VARCHAR(32);

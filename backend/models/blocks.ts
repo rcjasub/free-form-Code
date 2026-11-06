@@ -9,6 +9,7 @@ export interface Block {
   link: string | null;
   wrap_width: number | null;
   font_size: number | null;
+  color: string | null;
   x: number;
   y: number;
   width: number;
@@ -125,6 +126,18 @@ export async function updateBlockLink(
   return result.rows[0];
 }
 
+export async function updateBlockColor(
+  canvasId: string,
+  blockId: string,
+  color: string | null,
+): Promise<Block> {
+  const result = await pool.query<Block>(
+    `UPDATE blocks SET color = $1 WHERE id = $2 AND canvas_id = $3 RETURNING *`,
+    [color, blockId, canvasId],
+  );
+  return result.rows[0];
+}
+
 export interface RestoreBlockParams {
   type: string;
   content: string;
@@ -135,6 +148,7 @@ export interface RestoreBlockParams {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  color: string | null;
   clientId?: string;
 }
 
@@ -158,11 +172,11 @@ export async function restoreBlocks(canvasId: string, blocks: RestoreBlockParams
     const rows: Block[] = [];
     for (const b of blocks) {
       const result = await client.query<Block>(
-        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size, client_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `INSERT INTO blocks (canvas_id, type, content, x, y, width, language, link, wrap_width, font_size, client_id, color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (canvas_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
          RETURNING *`,
-        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize, b.clientId ?? null],
+        [canvasId, b.type, b.content, b.x, b.y, b.width, b.language, b.link, b.wrapWidth, b.fontSize, b.clientId ?? null, b.color],
       );
       const row =
         result.rows[0] ??
