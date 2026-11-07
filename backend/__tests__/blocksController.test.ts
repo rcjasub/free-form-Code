@@ -6,6 +6,7 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  updateBlockColor,
   updateBlockSize,
   restoreBlocks,
   MAX_BLOCKS_PER_CANVAS,
@@ -13,7 +14,7 @@ import {
 } from "../controllers/blocksController";
 import * as Blocks from "../models/blocks";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
-import { updateBlockLinkSchema, updateBlockSizeSchema, restoreBlocksSchema, MAX_RESTORE_BLOCKS } from "../schemas/block.schema";
+import { updateBlockLinkSchema, updateBlockColorSchema, updateBlockSizeSchema, restoreBlocksSchema, MAX_RESTORE_BLOCKS } from "../schemas/block.schema";
 
 jest.mock("../models/blocks");
 jest.mock("../redis", () => ({
@@ -36,6 +37,7 @@ const fakeBlock = {
   link: null,
   wrap_width: null,
   font_size: null,
+  color: null,
   x: 0,
   y: 0,
   width: 10,
@@ -359,6 +361,49 @@ describe("updateBlockLinkSchema", () => {
     expect(updateBlockLinkSchema.safeParse({ link: "javascript:alert(1)" }).success).toBe(false);
     expect(updateBlockLinkSchema.safeParse({ link: "data:text/html,<script>alert(1)</script>" }).success).toBe(false);
     expect(updateBlockLinkSchema.safeParse({ link: "not a url" }).success).toBe(false);
+  });
+});
+
+describe("updateBlockColor", () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    req = { params: { id: "1", blockId: "b1" }, body: { color: "#e03131" } };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  test("returns 200 and invalidates the cache on successful update", async () => {
+    mockBlocks.updateBlockColor.mockResolvedValue({ ...fakeBlock, color: "#e03131" });
+
+    await updateBlockColor(req, res);
+
+    expect(mockBlocks.updateBlockColor).toHaveBeenCalledWith("1", "b1", "#e03131");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockCacheDel).toHaveBeenCalledWith("blocks:1");
+  });
+
+  test("returns 404 when the block doesn't exist", async () => {
+    mockBlocks.updateBlockColor.mockResolvedValue(undefined as any);
+
+    await updateBlockColor(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
+describe("updateBlockColorSchema", () => {
+  test("accepts hex codes, color names and null (back to the default)", () => {
+    expect(updateBlockColorSchema.safeParse({ color: "#1971c2" }).success).toBe(true);
+    expect(updateBlockColorSchema.safeParse({ color: "red" }).success).toBe(true);
+    expect(updateBlockColorSchema.safeParse({ color: null }).success).toBe(true);
+  });
+
+  // it's applied as a style for everyone viewing the canvas
+  test("rejects anything that isn't just a color", () => {
+    expect(updateBlockColorSchema.safeParse({ color: "url(https://evil.example/x)" }).success).toBe(false);
+    expect(updateBlockColorSchema.safeParse({ color: "red; background: url(x)" }).success).toBe(false);
+    expect(updateBlockColorSchema.safeParse({ color: "" }).success).toBe(false);
   });
 });
 

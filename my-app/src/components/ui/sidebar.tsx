@@ -1,14 +1,15 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { motion, type Transition, type Variants } from "motion/react";
+import { motion, type Variants } from "motion/react";
 import { cn } from "@/lib/utils";
+import { SIDEBAR_CLOSED_REM, SIDEBAR_OPEN_REM, SIDEBAR_TRANSITION } from "@/lib/sidebarLayout";
 
 // A rail of icons down the left edge that widens on hover to show labels
 // (adapted from the SessionNavBar pattern, for React Router instead of
 // Next.js). Clicks, drags and scrolls on it stay off the canvas behind it.
 
 const sidebarVariants: Variants = {
-  open: { width: "15rem" },
-  closed: { width: "3.05rem" },
+  open: { width: `${SIDEBAR_OPEN_REM}rem` },
+  closed: { width: `${SIDEBAR_CLOSED_REM}rem` },
 };
 
 const labelVariants: Variants = {
@@ -16,7 +17,6 @@ const labelVariants: Variants = {
   closed: { x: -20, opacity: 0, transition: { x: { stiffness: 100 } } },
 };
 
-const transitionProps: Transition = { type: "tween", ease: "easeOut", duration: 0.2 };
 
 const CollapsedContext = createContext(true);
 
@@ -30,12 +30,19 @@ export function Sidebar({
   header,
   footer,
   children,
+  onOpenChange,
 }: {
   header: React.ReactNode;
   footer?: React.ReactNode;
   children?: React.ReactNode;
+  // told when it widens and narrows, so what sits beside it can make room
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsedState] = useState(true);
+  function setCollapsed(next: boolean) {
+    setCollapsedState(next);
+    onOpenChange?.(!next);
+  }
   const nav = useRef<HTMLElement>(null);
   const leaveWatch = useRef<(() => void) | null>(null);
   useEffect(() => () => leaveWatch.current?.(), []);
@@ -67,7 +74,7 @@ export function Sidebar({
         initial="closed"
         animate={collapsed ? "closed" : "open"}
         variants={sidebarVariants}
-        transition={transitionProps}
+        transition={SIDEBAR_TRANSITION}
         onMouseEnter={() => setCollapsed(false)}
         onMouseLeave={closeWhenPointerLeaves}
         onFocus={() => setCollapsed(false)}
@@ -104,12 +111,14 @@ export function SidebarItem({
   icon,
   label,
   onClick,
+  onMouseEnter,
   title,
   disabled,
 }: {
   icon: React.ReactNode;
   label: React.ReactNode;
   onClick: () => void;
+  onMouseEnter?: () => void;
   title?: string;
   disabled?: boolean;
 }) {
@@ -117,6 +126,7 @@ export function SidebarItem({
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
       disabled={disabled}
       title={title ?? (typeof label === "string" ? label : undefined)}
       className={cn(ROW, ROW_HOVER, "disabled:opacity-60 [&>svg]:size-4 [&>svg]:shrink-0")}

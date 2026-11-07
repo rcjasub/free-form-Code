@@ -1,5 +1,6 @@
 import type { RestorePayload } from "./restore";
 import { SaveRejectedError } from "./saveErrors";
+import { BLOCK_TYPES } from "./blockTypes";
 
 // A guest's canvas ("Try without an account") lives in this browser's
 // IndexedDB, not on the server: nothing about it reaches the VM until they
@@ -35,6 +36,7 @@ export interface LocalBlock {
   link: string | null;
   wrap_width: number | null;
   font_size: number | null;
+  color?: string | null;
   // creation order: the server sorts by created_at, and later blocks draw on
   // top, so overlapping blocks keep the same stacking here
   seq: number;
@@ -126,6 +128,7 @@ function makeRow(block: RestorePayload, canvasId: string): LocalBlock {
     link: block.link,
     wrap_width: block.wrapWidth,
     font_size: block.fontSize,
+    color: block.color ?? null,
     seq: nextSeq(),
   };
 }
@@ -230,6 +233,10 @@ export function updateBlockLink(id: string, link: string | null) {
   return patch(id, { link });
 }
 
+export function updateBlockColor(id: string, color: string | null) {
+  return patch(id, { color });
+}
+
 export function updateBlockSize(id: string, size: { wrapWidth: number | null; fontSize: number | null }) {
   return patch(id, { wrap_width: size.wrapWidth, font_size: size.fontSize });
 }
@@ -270,7 +277,7 @@ const FILE_APP = "free-form";
 const FILE_VERSION = 1;
 // What the server's restore route accepts (restoreBlocksSchema), so a
 // restored backup can still be uploaded on sign-up.
-const FILE_TYPES = new Set(["text", "code", "draw", "image"]);
+const FILE_TYPES = new Set<string>(BLOCK_TYPES);
 const FILE_LANGUAGES = new Set(["javascript", "python", "cpp", "java", "text"]);
 
 export function toRestorePayload(row: LocalBlock): RestorePayload {
@@ -284,6 +291,7 @@ export function toRestorePayload(row: LocalBlock): RestorePayload {
     link: row.link,
     wrapWidth: row.wrap_width,
     fontSize: row.font_size,
+    color: row.color ?? null,
   };
 }
 
@@ -291,6 +299,7 @@ export function toCanvasFile(blocks: RestorePayload[]): string {
   return JSON.stringify({ app: FILE_APP, version: FILE_VERSION, blocks });
 }
 
+const COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i;
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const inRangeOrNull = (v: unknown, min: number, max: number) => v === null || (isNum(v) && v >= min && v <= max);
 
@@ -326,7 +335,9 @@ export function parseCanvasFile(text: string): RestorePayload[] {
       FILE_LANGUAGES.has(b.language) &&
       (b.link === null || (typeof b.link === "string" && b.link.length <= 2048 && /^https?:\/\//i.test(b.link))) &&
       inRangeOrNull(b.wrapWidth, 40, 4000) &&
-      inRangeOrNull(b.fontSize, 6, 200);
+      inRangeOrNull(b.fontSize, 6, 200) &&
+      // older backups have no color
+      (b.color === undefined || b.color === null || (typeof b.color === "string" && COLOR.test(b.color)));
     if (!ok) throw new Error(`That backup is damaged (block ${i + 1}).`);
     return {
       type: b.type as string,
@@ -338,6 +349,7 @@ export function parseCanvasFile(text: string): RestorePayload[] {
       link: b.link as string | null,
       wrapWidth: b.wrapWidth as number | null,
       fontSize: b.fontSize as number | null,
+      color: (b.color as string | null | undefined) ?? null,
     };
   });
 }

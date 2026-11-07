@@ -1,4 +1,5 @@
 import type { CanvasNode } from "../hooks/useCanvasHistory";
+import { storedType } from "./blockTypes";
 
 // What POST /blocks/restore takes for each block (see restoreBlocksSchema in
 // the backend): everything needed to put it back in one go.
@@ -12,6 +13,7 @@ export interface RestorePayload {
   link: string | null;
   wrapWidth: number | null;
   fontSize: number | null;
+  color?: string | null;
   // its id in this browser, when uploading a browser canvas: the server
   // skips one it already has, so a retried upload can't duplicate it
   clientId?: string;
@@ -23,7 +25,7 @@ export const MAX_RESTORE_BLOCKS = 200;
 export const MAX_RESTORE_BYTES = 2_500_000;
 
 export function toRestorePayload(node: CanvasNode): RestorePayload {
-  const type = node.type === "draw" || node.type === "image" ? node.type : "code";
+  const type = storedType(node);
   return {
     type,
     content: node.content,
@@ -34,6 +36,7 @@ export function toRestorePayload(node: CanvasNode): RestorePayload {
     link: node.link ?? null,
     wrapWidth: node.wrapWidth ?? null,
     fontSize: node.fontSize ?? null,
+    color: node.color ?? null,
   };
 }
 

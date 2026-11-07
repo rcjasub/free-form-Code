@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { CloudUpload, Download, HardDrive, LayoutDashboard, LogOut, Pencil, RefreshCw, Shapes, Upload, UserPlus } from "lucide-react";
+import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
+import { SIDEBAR_TRANSITION, sidebarOpenShift } from "./lib/sidebarLayout";
 import { useParams, useNavigate } from "react-router-dom";
 import { detectShape } from "./lib/shapeDetection";
-import { parsePoints } from "./lib/points";
+import { DEFAULT_DRAW_STYLE, drawStrokeProps, parseDrawing, parsePoints, serializeDrawing } from "./lib/points";
 import { saveErrorMessage } from "./lib/saveErrors";
 import FloatingNode from "./components/FloatingNode";
 import DrawingNode, { type Point } from "./components/DrawingNode";
@@ -37,6 +38,7 @@ import {
   updateBlockContent,
   updateBlockLanguage,
   updateBlockLink,
+  updateBlockColor,
   updateBlockSize,
   restoreBlocks as restoreBlocksApi,
 } from "./lib/blockStore";
@@ -52,9 +54,22 @@ import { announceMoved } from "./hooks/useActiveTab";
 import { useCanvasHistory, useCanvasShortcuts, type CanvasNode } from "./hooks/useCanvasHistory";
 import { useFreehandStroke } from "./hooks/useFreehandStroke";
 import { useStackOrder } from "./hooks/useStackOrder";
+import { storedType } from "./lib/blockTypes";
+import { isShapeTool, type ShapeTool } from "./hooks/useShapeTool";
+import { useDiagram, type NewBlock } from "./hooks/useDiagram";
+import ShapeDraftPreview from "./components/ShapeDraftPreview";
+import CanvasToolbar from "./components/CanvasToolbar";
+import PropertiesPanel from "./components/PropertiesPanel";
+import { toolForKey } from "./lib/toolKeys";
+import { parseArrow } from "./lib/shapes";
+import ShapeNode from "./components/ShapeNode";
+import ArrowNode from "./components/ArrowNode";
+import { DownloadDoneIcon, ImportIcon } from "./components/ui/animated-state-icons";
+import { AccountAddIcon } from "./components/ui/account-add-icon";
+import { LinkIcon, type LinkIconHandle } from "./components/ui/link-icon";
 import "./App.css";
 
-export type Mode = "select" | "hand" | "text" | "erase" | "draw";
+export type Mode = "select" | "hand" | "text" | "erase" | "draw" | ShapeTool;
 
 // a block as this page holds it — see hooks/useCanvasHistory
 type Node = CanvasNode;
@@ -71,7 +86,9 @@ function blockToNode(b: any): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
-  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
+  // shape/arrow geometry and styling stay JSON in content (lib/shapes)
+  if (b.type === "shape" || b.type === "arrow") return { ...common, type: b.type };
+  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null, color: b.color ?? null };
 }
 
 // Live updates for everyone else on the canvas. Nothing is sent for the
@@ -149,6 +166,9 @@ export default function App() {
   const stroke = useFreehandStroke();
   const { ghosts: snapGhosts, addGhost, drawingIn, drawIn } = useSnapGhosts();
   const [snapShapes, setSnapShapes] = useState(false);
+  // whether the left sidebar is widened (hovered), so the panel beside it
+  // can move out of its way
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
   // the guest canvas kept in this browser (lib/localCanvas), not on the server
   const isLocal = isLocalCanvas(canvasId);
@@ -298,6 +318,7 @@ export default function App() {
                 points: n.type === "draw" && "content" in data ? parsePoints(data.content) ?? n.points : n.points,
                 link: "link" in data ? data.link : n.link,
                 wrapWidth: "wrapWidth" in data ? data.wrapWidth : n.wrapWidth,
+                color: "color" in data ? data.color : n.color,
                 fontSize: "fontSize" in data ? data.fontSize : n.fontSize,
               }
             : n,
@@ -359,11 +380,8 @@ export default function App() {
 
       // mode shortcuts — only outside editors
       if (!inEditor && !e.ctrlKey && !e.metaKey && !e.repeat) {
-        if (e.key === "v" || e.key === "V") setMode("select");
-        if (e.key === "h" || e.key === "H") setMode("hand");
-        if (e.key === "t" || e.key === "T") setMode("text");
-        if (e.key === "e" || e.key === "E") setMode("erase");
-        if (e.key === "d" || e.key === "D") setMode("draw");
+        const tool = toolForKey(e.key);
+        if (tool) setMode(tool);
       }
     }
 
@@ -381,6 +399,22 @@ export default function App() {
     };
   }, []);
 
+  // Saves a shape or arrow the diagram tools made (hooks/useDiagram).
+  async function saveNewShape(block: NewBlock) {
+    if (!canvasId) return null;
+    try {
+      const { data } = await createBlockFrom(canvasId, block);
+      const node = blockToNode(data);
+      setNodes((prev) => [...prev, node]);
+      broadcast("block:created", canvasId, data);
+      history.record({ kind: "create", id: node.id });
+      return node.id;
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't save that shape — check your connection and try again."));
+      return null;
+    }
+  }
+
   async function finalizeDrawing(rawPoints: Point[]) {
     if (rawPoints.length < 2 || !canvasId) return;
     const snapped = snapShapes ? detectShape(rawPoints) : null;
@@ -397,7 +431,7 @@ export default function App() {
         minX,
         minY,
         Math.max(maxX - minX, 1),
-        JSON.stringify(relPoints),
+        serializeDrawing(relPoints, diagram.drawStyle),
       );
       const node = blockToNode(data);
       if (snapShapes) drawIn(node.id, snapped ? "trace" : "brighten");
@@ -420,6 +454,7 @@ export default function App() {
   }
 
   function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (diagram.startShape(e, isCanvasBackground(e))) return;
     if (mode !== "draw" || e.button !== 0 || !isCanvasBackground(e)) return;
     stroke.start(
       e,
@@ -453,6 +488,15 @@ export default function App() {
     if (now - lastTextCreate.current < 500) return;
     lastTextCreate.current = now;
     setMode("select");
+    const id = await createTextAt(x, y, "");
+    // new text takes the color and size picked in the panel
+    if (id) diagram.styleNewText(id);
+  }
+
+  // Makes a text block at canvas (x, y), with the caret in it, and resolves
+  // to its id (null if it couldn't be saved). Also used for text in shapes.
+  async function createTextAt(x: number, y: number, content: string) {
+    if (!canvasId) return null;
     try {
       const { data } = await createBlock(canvasId, x, y);
       // New blocks start as plain text. The create endpoint ignores language,
@@ -462,19 +506,23 @@ export default function App() {
       const language = await updateBlockLanguage(canvasId, data.id, "text")
         .then(() => "text" as const)
         .catch(() => data.language);
-      const block = { ...data, language };
+      if (content) await updateBlockContent(canvasId, data.id, content);
+      const block = { ...data, language, content: content || data.content };
       setFocusNodeId(block.id);
       setNodes((prev) => [
         ...prev,
         { id: block.id, x: block.x, y: block.y, content: block.content, language: block.language },
       ]);
-      console.log("[socket] emitting block:created", block);
       broadcast("block:created", canvasId, block);
       history.record({ kind: "create", id: data.id });
+      return String(block.id);
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
+      return null;
     }
   }
+
+  const getScale = useCallback(() => scaleRef.current, []);
 
   function applyZoom(newScale: number) {
     const cx = window.innerWidth / 2;
@@ -509,6 +557,10 @@ export default function App() {
     if (!isMiddle && !isSpaceDrag && !isHandMode) return;
     e.preventDefault();
     document.body.style.cursor = "grabbing";
+    // a closed hand over everything while panning (see .canvas-panning in
+    // index.css): the canvas and blocks set their own open-hand cursors,
+    // which would otherwise win over the body's
+    document.body.classList.add("canvas-panning");
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
 
@@ -519,6 +571,7 @@ export default function App() {
       const m = modeRef.current;
       document.body.style.cursor =
         spaceHeld.current || m === "hand" ? "grab" : "";
+      document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -652,7 +705,7 @@ export default function App() {
   // Sets a drawing's position and stroke (its content) — for resizing and
   // for undoing a resize. `save` is false for the in-between frames of a drag.
   const applyShape = useCallback((id: string, x: number, y: number, content: string, save = true) => {
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: JSON.parse(content) } : n)));
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: n.type === "draw" ? parsePoints(content) ?? n.points : n.points } : n)));
     if (!canvasId) return;
     broadcast("block:moved", canvasId, { id, x, y });
     broadcast("block:updated", canvasId, { id, content });
@@ -665,17 +718,25 @@ export default function App() {
   // One drag of a drawing's resize handle: every call shows the new shape
   // here and to everyone else; the last one (done) saves it and records a
   // single undo step back to the shape it started from.
-  const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
+  // Shapes reshape the same way, with their whole new content (size or label).
+  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean) => {
     if (!resizeStart.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
       if (before) resizeStart.current[id] = before;
     }
-    applyShape(id, x, y, JSON.stringify(points), done);
+    applyShape(id, x, y, content, done);
     if (!done) return;
     const before = resizeStart.current[id];
     delete resizeStart.current[id];
     if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
   }, [history, applyShape]);
+
+  const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
+    // keep the drawing's style; only its points change
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    const style = node ? parseDrawing(node.content).style : DEFAULT_DRAW_STYLE;
+    reshapeBlock(id, x, y, serializeDrawing(points, style), done);
+  }, [reshapeBlock, history]);
 
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
@@ -687,9 +748,9 @@ export default function App() {
 
   // Sets a text block's wrap width and font size — for its handles and for
   // undo. `save` is false for the in-between frames of a drag.
+  // (A block made this moment isn't in nodesRef yet; new text gets its size
+  // here right away, so there's no "does it exist" check.)
   const applySize = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, save = true) => {
-    const node = history.nodesRef.current.find((n) => n.id === id);
-    if (!node) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, wrapWidth, fontSize } : n)));
     if (!canvasId) return;
     // just the size (not the content again), throttled while dragging and
@@ -721,6 +782,17 @@ export default function App() {
   }, [history, applySize, moveNode]);
 
   // Sets or removes a block's link — for the right-click menu and for undo.
+  // Sets a text block's color (null: back to the theme's) — for the
+  // properties panel and for undo.
+  const applyColor = useCallback((id: string, color: string | null) => {
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, color } : n)));
+    if (!canvasId) return;
+    updateBlockColor(canvasId, id, color).catch((err) =>
+      showError(saveErrorMessage(err, "Couldn't save the color — check your connection and try again.")),
+    );
+    broadcast("block:updated", canvasId, { id, color });
+  }, [canvasId]);
+
   const applyLink = useCallback((id: string, link: string | null) => {
     const node = history.nodesRef.current.find((n) => n.id === id);
     if (!node || !canvasId) return;
@@ -732,7 +804,7 @@ export default function App() {
 
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
     if (!canvasId) return null;
-    const type = src.type === "draw" || src.type === "image" ? src.type : "code";
+    const type = storedType(src);
     try {
       const { data } = await createBlockFrom(canvasId, {
         type,
@@ -744,9 +816,10 @@ export default function App() {
       // the create endpoint ignores language and link, so set them in follow-up calls
       if (src.language) await updateBlockLanguage(canvasId, data.id, src.language);
       if (src.link) await updateBlockLink(canvasId, data.id, src.link);
+      if (src.color) await updateBlockColor(canvasId, data.id, src.color);
       const size = { wrapWidth: src.wrapWidth ?? null, fontSize: src.fontSize ?? null };
       if (size.wrapWidth !== null || size.fontSize !== null) await updateBlockSize(canvasId, data.id, size);
-      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize };
+      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize, color: src.color ?? null };
       setNodes((prev) => [...prev, blockToNode(block)]);
       broadcast("block:created", canvasId, block);
       return String(data.id);
@@ -789,11 +862,11 @@ export default function App() {
   }, [canvasId, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt } = useCanvasShortcuts({
+  const { selectedIds, select, pointer, contextMenu, marquee, deleteAllPrompt } = useCanvasShortcuts({
     enabled: true,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, restoreBlocks, clearOutputs },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applyColor, applySize, recreateBlock, restoreBlocks, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -809,10 +882,48 @@ export default function App() {
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
-  const groupDrag = useRef<{ id: string; group: number } | null>(null);
+  const groupDrag = useRef<{ id: string; group: number; riders: string[] } | null>(null);
+
+  // the diagram tools: shapes, arrows, their style and labels
+  const diagram = useDiagram({
+    enabled: true,
+    nodes,
+    nodesRef: history.nodesRef,
+    selectedIds,
+    select,
+    mode,
+    setMode,
+    toCanvas: (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    reshapeBlock,
+    createBlock: saveNewShape,
+    createText: createTextAt,
+    applyColor,
+    applySize,
+    record: history.record,
+    moveNode,
+    deleteNode,
+    getScale,
+  });
+  // a text block's editing changing: the toolbar shows the text tool while
+  // one is being typed in, and text just put in a shape gets centered there
+  const textEditingChanged = diagram.textEditingChanged;
+  const handleTextEditing = useCallback((editing: boolean) => {
+    setEditingText(editing);
+    textEditingChanged(editing);
+  }, [textEditingChanged]);
+
+  // Text sitting in a dragged shape rides along: it's worked out once when
+  // the drag starts, so text the shape passes over on the way isn't picked up.
+  const ridersOf = diagram.ridersOf;
   const moveSelection = useCallback((id: string, x: number, y: number) => {
     const sel = selectedIdsRef.current;
-    if (sel.length < 2 || !sel.includes(id)) {
+    const ids = sel.length >= 2 && sel.includes(id) ? sel : [id];
+    // a new drag starts once the last one's position has been saved
+    if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) {
+      groupDrag.current = { id, group: Date.now(), riders: ridersOf(ids) };
+    }
+    const moving = [...ids, ...groupDrag.current.riders];
+    if (moving.length === 1) {
       moveNode(id, x, y);
       return;
     }
@@ -821,15 +932,13 @@ export default function App() {
     if (!dragged) return;
     const dx = x - dragged.x;
     const dy = y - dragged.y;
-    // a new drag starts once the last one's position has been saved
-    if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) groupDrag.current = { id, group: Date.now() };
     const group = groupDrag.current.group;
     for (const n of all) {
-      if (!sel.includes(n.id)) continue;
+      if (!moving.includes(n.id)) continue;
       if (n.id === id) moveNode(id, x, y, true, group);
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
-  }, [moveNode, history]);
+  }, [moveNode, history, ridersOf]);
 
   // saveSelection only writes to a ref — no canvasId dependency, always stable.
   const saveSelection = useCallback((content: string, el: HTMLElement) => {
@@ -964,6 +1073,28 @@ export default function App() {
   }
 
   // A JSON backup of what's on screen (a guest's images included).
+  const [exported, setExported] = useState(false);
+  const exportedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // and the Import icon does the same when clicked
+  const [imported, setImported] = useState(false);
+  const importedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function startImport() {
+    setImported(true);
+    clearTimeout(importedTimer.current);
+    importedTimer.current = setTimeout(() => setImported(false), 2000);
+    importInput.current?.click();
+  }
+  // the Share button's link animates while the button is hovered
+  const shareIcon = useRef<LinkIconHandle>(null);
+  // the Sign up icon draws itself in again on hover
+  const [signUpDraw, setSignUpDraw] = useState(0);
+  useEffect(
+    () => () => {
+      clearTimeout(exportedTimer.current);
+      clearTimeout(importedTimer.current);
+    },
+    [],
+  );
   function exportCanvas() {
     const blob = new Blob([toCanvasFile(history.nodesRef.current.map(toRestorePayload))], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -972,6 +1103,10 @@ export default function App() {
     a.download = `free-form-canvas-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    // the Export icon shows a check for a moment
+    setExported(true);
+    clearTimeout(exportedTimer.current);
+    exportedTimer.current = setTimeout(() => setExported(false), 2000);
   }
 
   // Adds a backup's blocks to the canvas (nothing already on it is removed).
@@ -1001,34 +1136,11 @@ export default function App() {
   const cursorClass =
     mode === "hand"
       ? "cursor-grab"
-      : mode === "draw"
+      : mode === "draw" || isShapeTool(mode)
         ? "cursor-crosshair"
         : mode === "select" || mode === "text"
           ? "dot-cursor" // blue dot, see index.css
           : "cursor-default"; // erase: overridden by the inline eraser cursor
-
-  const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
-    <button
-      onClick={() => setMode(m)}
-      title={title}
-      className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
-        activeTool === m
-          ? "text-gray-800 dark:text-[#f5f5f5]"
-          : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
-      }`}
-    >
-      {/* One highlight shared by every button (same layoutId), so switching
-          tools slides it over to the new one instead of jumping. */}
-      {activeTool === m && (
-        <motion.span
-          layoutId="toolbar-active"
-          className="absolute inset-0 rounded bg-gray-100 dark:bg-[#3c3c4a]"
-          transition={{ type: "spring", stiffness: 500, damping: 35 }}
-        />
-      )}
-      <span className="relative">{label}</span>
-    </button>
-  );
 
   return (
     <div
@@ -1038,7 +1150,7 @@ export default function App() {
         ...canvasBackgroundStyle(background, isDark, scale, offset),
         cursor: mode === "erase" ? eraserCursor : undefined,
         // touch screens: a finger drag draws instead of scrolling the page
-        touchAction: mode === "draw" ? "none" : undefined,
+        touchAction: mode === "draw" || isShapeTool(mode) ? "none" : undefined,
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
@@ -1049,6 +1161,7 @@ export default function App() {
     >
       {/* left: canvas actions, account and theme */}
       <Sidebar
+        onOpenChange={setSidebarOpen}
         header={
           // Guests have no dashboard, so it takes them back to the start page.
           <SidebarBrand
@@ -1083,12 +1196,12 @@ export default function App() {
         {!isGuest && <SidebarItem icon={<LayoutDashboard />} label="Dashboard" onClick={() => navigate("/dashboard")} />}
         {isGuest && (
           <>
-            <SidebarItem icon={<Download />} label="Export" title="Download a backup file" onClick={exportCanvas} />
+            <SidebarItem icon={<DownloadDoneIcon size={22} active={exported} className="-mx-[2px]" />} label="Export" title="Download a backup file" onClick={exportCanvas} />
             <SidebarItem
-              icon={<Upload />}
+              icon={<ImportIcon size={22} active={imported} className="-mx-[2px]" />}
               label="Import"
               title="Add blocks from a backup file"
-              onClick={() => importInput.current?.click()}
+              onClick={startImport}
             />
             <SidebarSeparator />
           </>
@@ -1098,7 +1211,8 @@ export default function App() {
         ) : (
           isGuest && (
             <SidebarItem
-              icon={<UserPlus />}
+              icon={<AccountAddIcon key={signUpDraw} />}
+              onMouseEnter={() => setSignUpDraw((n) => n + 1)}
               label="Sign up"
               title={isLocal ? "Sign up to keep this canvas" : "Sign up to save more canvases"}
               onClick={() => navigate("/", { state: { mode: "register" } })}
@@ -1119,66 +1233,33 @@ export default function App() {
 
       <EraserTrail active={mode === "erase"} isDark={isDark} />
 
-      {/* mode toolbar + run hint, centered as one column */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
-        <div
-          className="flex items-center gap-0.5 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] p-1 bg-white dark:bg-[#232329]"
-        >
-          {toolbarBtn(
-            "select",
-            // arrow / cursor icon
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" />
-            </svg>,
-            "Select (V)",
-          )}
-          {toolbarBtn(
-            "hand",
-            // hand icon
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" />
-            </svg>,
-            "Hand (H)",
-          )}
-          {toolbarBtn(
-            "text",
-            <span className="text-xs font-bold leading-none">T</span>,
-            "Text (T)",
-          )}
-          {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
-          {toolbarBtn(
-            "erase",
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" />
-              <path d="M6.5 17.5l4-4" />
-            </svg>,
-            "Erase (E)",
-          )}
-        </div>
-        <span className="font-canvas text-[11px] pointer-events-none select-none text-gray-400 dark:text-gray-500">
-          select code + ctrl+enter to run
-        </span>
-      </div>
+      <CanvasToolbar
+        activeTool={activeTool}
+        onSelect={setMode}
+        toolLocked={diagram.toolLocked}
+        onToggleLock={diagram.toggleToolLock}
+      />
 
-      {/* top-right: run button, share, shape snapping */}
+      {/* beside the sidebar; slides right as it widens, so they never overlap */}
+      {diagram.panelVisible && (
+        <motion.div
+          className="absolute left-[68px] top-20 z-20"
+          initial={false}
+          animate={{ x: sidebarOpen ? sidebarOpenShift() : 0 }}
+          transition={SIDEBAR_TRANSITION}
+        >
+          <PropertiesPanel
+            value={diagram.panelStyle}
+            onChange={diagram.changeStyle}
+            title={diagram.panelTitle}
+            sections={diagram.panelSections}
+            snap={mode === "draw" ? { on: snapShapes, onToggle: () => setSnapShapes((v) => !v) } : undefined}
+            isDark={isDark}
+          />
+        </motion.div>
+      )}
+
+      {/* top-right: run button and share */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
         <button
           onClick={() =>
@@ -1206,25 +1287,13 @@ export default function App() {
         >
           <button
             title="Share canvas"
+            onMouseEnter={() => shareIcon.current?.startAnimation()}
+            onMouseLeave={() => shareIcon.current?.stopAnimation()}
             className="h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors px-2 text-xs bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
+            <LinkIcon ref={shareIcon} size={14} />
           </button>
         </ShareDrawer>
-        <button
-          onClick={() => setSnapShapes((v) => !v)}
-          title="Snap drawings to perfect shapes"
-          className={`w-8 h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors ${
-            snapShapes
-              ? "bg-blue-500 text-white"
-              : "bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
-          }`}
-        >
-          <Shapes size={14} />
-        </button>
       </div>
 
       {/* who's here, under the top-right buttons — only once someone else has
@@ -1256,6 +1325,8 @@ export default function App() {
           </div>
         )}
 
+        {diagram.draft && <ShapeDraftPreview draft={diagram.draft} style={diagram.style} isDark={isDark} />}
+
         {/* isolate: the blocks' z-indexes only order them among each other,
             so snap ghosts, strokes, outputs and cursors still draw on top */}
         <div className="isolate">
@@ -1285,10 +1356,55 @@ export default function App() {
                 x={node.x}
                 y={node.y}
                 points={node.points ?? []}
+                drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
                 onMarkErase={handleMarkErase}
                 onResize={resizeDrawing}
                 drawIn={drawingIn.get(node.id)}
+                link={node.link}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                zIndex={stackOrder.get(node.id) ?? 0}
+              />
+            ) : node.type === "shape" ? (
+              <ShapeNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                content={node.content}
+                onMove={moveSelection}
+                onMarkErase={handleMarkErase}
+                onReshape={reshapeBlock}
+                onEditText={diagram.addShapeText}
+                bindHighlight={diagram.bindTargetId === node.id}
+                link={node.link}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                // shapes stay below every other block (still ordered among
+                // themselves), so text sitting in one can always be grabbed
+                zIndex={(stackOrder.get(node.id) ?? 0) - nodes.length}
+              />
+            ) : node.type === "arrow" ? (
+              <ArrowNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
+                onMove={moveSelection}
+                onMarkErase={handleMarkErase}
+                onReshape={reshapeBlock}
+                editing={diagram.labelEditId === node.id}
+                onEditingChange={diagram.setLabelEditing}
+                onBindTarget={diagram.setBindTargetId}
+                isShape={diagram.isShapeId}
                 link={node.link}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1305,6 +1421,7 @@ export default function App() {
                 y={node.y}
                 content={node.content}
                 language={node.language ?? "javascript"}
+                color={node.color}
                 onChange={updateNode}
                 onLanguageChange={changeLanguage}
                 onMove={moveSelection}
@@ -1317,7 +1434,7 @@ export default function App() {
                 fontSize={node.fontSize ?? undefined}
                 onResize={resizeText}
                 selected={selectedIds.includes(node.id)}
-                onEditingChange={setEditingText}
+                onEditingChange={handleTextEditing}
                 link={node.link}
                 mode={mode}
                 isMouseDown={isMouseDown}
@@ -1339,10 +1456,9 @@ export default function App() {
             <path
               ref={stroke.pathRef}
               // faded until it's done when snapping is on; it comes to life on release
-              opacity={snapShapes ? SNAP_FADED_OPACITY : 1}
+              opacity={(snapShapes ? SNAP_FADED_OPACITY : 1) * (diagram.drawStyle.opacity / 100)}
               fill="none"
-              stroke={isDark ? "#f5f5f5" : "#1f2937"}
-              strokeWidth={2}
+              {...drawStrokeProps(diagram.drawStyle, isDark)}
               strokeLinecap="round"
               strokeLinejoin="round"
             />

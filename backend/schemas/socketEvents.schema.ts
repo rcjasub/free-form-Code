@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { contentSchema, fontSizeSchema, languageSchema, linkSchema, wrapWidthSchema } from "./block.schema";
+import { blockTypeSchema, colorSchema, contentSchema, fontSizeSchema, languageSchema, linkSchema, wrapWidthSchema } from "./block.schema";
 
 // Validates payloads relayed between clients over sockets. Unlike the REST
 // schemas in block.schema.ts, these don't apply defaults — they're checking
@@ -16,12 +16,13 @@ export const blockCreatedEventSchema = z.object({
   x: z.number(),
   y: z.number(),
   content: contentSchema,
-  type: z.enum(["text", "code", "draw", "image"]).optional(),
+  type: blockTypeSchema.optional(),
   language: languageSchema.optional(),
   width: z.number().positive().optional(),
   link: linkSchema.optional(),
   wrap_width: wrapWidthSchema.optional(),
   font_size: fontSizeSchema.optional(),
+  color: colorSchema.optional(),
 });
 
 export const blockMovedEventSchema = z.object({
@@ -39,6 +40,7 @@ export const blockUpdatedEventSchema = z.object({
   link: linkSchema.optional(),
   wrapWidth: wrapWidthSchema.optional(),
   fontSize: fontSizeSchema.optional(),
+  color: colorSchema.optional(),
 });
 
 export const blockDeletedEventSchema = blockId;
