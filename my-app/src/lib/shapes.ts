@@ -16,6 +16,9 @@ export interface SectionMeta {
 }
 
 export type StrokeStyle = "solid" | "dashed" | "dotted";
+// a rectangle's or diamond's corners
+export type EdgeStyle = "round" | "sharp";
+const EDGE_STYLES: readonly string[] = ["round", "sharp"];
 // solid: a soft tint of the fill color; dots / stripes: a pattern in it
 export type FillStyle = "solid" | "dots" | "stripes";
 const STROKE_STYLES: readonly string[] = ["solid", "dashed", "dotted"];
@@ -29,7 +32,7 @@ export interface ElementStyle {
   strokeWidth: number;
   strokeStyle: StrokeStyle;
   opacity: number; // 0–100
-  roughness: number; // 0 = precise lines, 1 = hand-drawn (up to 3 is accepted)
+  roughness: number; // 0 = precise, 1 = sketch, 2 = sloppy (up to 3 is accepted)
 }
 
 // What the properties panel edits: the element style, plus a shape's fill.
@@ -37,6 +40,7 @@ export interface ElementStyle {
 export interface DiagramStyle extends ElementStyle {
   fill: string; // a color, or "transparent"
   fillStyle: FillStyle;
+  edges: EdgeStyle;
 }
 
 export interface ShapeData extends DiagramStyle {
@@ -76,6 +80,7 @@ export const DEFAULT_STYLE: DiagramStyle = {
   roughness: 0,
   fill: "transparent",
   fillStyle: "solid",
+  edges: "round",
 };
 export const DEFAULT_SHAPE: ShapeData = { ...DEFAULT_STYLE, kind: "rect", w: 160, h: 80, label: "", seed: 1 };
 export const DEFAULT_ARROW: ArrowData = {
@@ -181,6 +186,8 @@ export function parseShape(content: string): ShapeData {
     h: size(o.h, DEFAULT_SHAPE.h),
     fill: color(o.fill, DEFAULT_SHAPE.fill),
     fillStyle: oneOf(o.fillStyle, FILL_STYLES, (typeof o.fillStyle === "string" && OLD_FILL_STYLES[o.fillStyle]) || DEFAULT_SHAPE.fillStyle),
+    // shapes from before this was a choice all had round corners
+    edges: oneOf(o.edges, EDGE_STYLES, DEFAULT_SHAPE.edges),
     label: text(o.label, MAX_LABEL) ?? "",
     seed: seed(o.seed),
     ...(meta && { meta }),

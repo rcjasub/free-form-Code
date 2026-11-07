@@ -158,6 +158,10 @@ export function useDiagram({
   const panelSections = {
     fill: kinds.includes("shape"),
     sloppiness: kinds.includes("shape") || kinds.includes("arrow"),
+    // a rectangle's or diamond's corners (an ellipse has none)
+    edges: selecting
+      ? selectedElements.some((n) => n.type === "shape" && parseShape(n.content).kind !== "ellipse")
+      : mode === "rect" || mode === "diamond",
     lines: kinds.some((k) => k !== "text"), // stroke width/style, opacity
     fontSize: kinds.includes("text"),
   };

@@ -2,7 +2,7 @@ import rough from "roughjs";
 import type { Options } from "roughjs/bin/core";
 import type { Point } from "../components/DrawingNode";
 import { fillColor, themeColor, TRANSPARENT } from "./colors";
-import type { ArrowData, ElementStyle, ShapeData, ShapeKind, StrokeStyle } from "./shapes";
+import type { ArrowData, EdgeStyle, ElementStyle, ShapeData, ShapeKind, StrokeStyle } from "./shapes";
 
 // Shapes and arrows are drawn with rough.js. At roughness 0 (the default)
 // the lines are precise; above it they wobble like a hand-drawn sketch.
@@ -64,8 +64,10 @@ function toPaint(drawable: ReturnType<typeof generator.path>, style: ElementStyl
   }));
 }
 
-// A rectangle with rounded corners, as a path (rough.js has no rounded rect).
-function roundedRect(x: number, y: number, w: number, h: number) {
+// A rectangle as a path: with rounded corners (rough.js has no rounded rect),
+// or square ones.
+function rectPath(x: number, y: number, w: number, h: number, edges: EdgeStyle) {
+  if (edges === "sharp") return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
   const r = Math.min(10, w / 4, h / 4);
   return (
     `M ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} ` +
@@ -75,10 +77,30 @@ function roundedRect(x: number, y: number, w: number, h: number) {
   );
 }
 
+// A diamond (corners top, right, bottom, left) as a path, its corners eased
+// with a curve when they're round. Each corner's curve starts a set share of
+// the way along the sides, so a small diamond rounds as much as a big one.
+function diamondPath(w: number, h: number, inset: number, edges: EdgeStyle) {
+  const pts: [number, number][] = [[w / 2, inset], [w - inset, h / 2], [w / 2, h - inset], [inset, h / 2]];
+  if (edges === "sharp") return `M ${pts.map((p) => p.join(" ")).join(" L ")} Z`;
+  const side = Math.hypot(w / 2 - inset, h / 2 - inset);
+  const cut = Math.min(12, side * 0.2) / side; // how far along a side the curve starts
+  const along = (a: [number, number], b: [number, number], t: number) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  let d = "";
+  pts.forEach((p, i) => {
+    const prev = pts[(i + 3) % 4];
+    const next = pts[(i + 1) % 4];
+    const [ax, ay] = along(p, prev, cut);
+    const [bx, by] = along(p, next, cut);
+    d += `${i === 0 ? "M" : "L"} ${ax} ${ay} Q ${p[0]} ${p[1]} ${bx} ${by} `;
+  });
+  return `${d}Z`;
+}
+
 // A w×h shape, drawn inside its box (inset by half the stroke so the line
 // doesn't poke out).
 export function shapePaint(
-  shape: Pick<ShapeData, keyof ElementStyle | "fill" | "fillStyle" | "seed"> & { kind: ShapeKind },
+  shape: Pick<ShapeData, keyof ElementStyle | "fill" | "fillStyle" | "seed" | "edges"> & { kind: ShapeKind },
   w: number,
   h: number,
   isDark: boolean,
@@ -93,13 +115,13 @@ export function shapePaint(
     shape.kind === "ellipse"
       ? generator.ellipse(w / 2, h / 2, iw, ih, o)
       : shape.kind === "diamond"
-        ? generator.polygon([[w / 2, i], [w - i, h / 2], [w / 2, h - i], [i, h / 2]], o)
-        : generator.path(roundedRect(i, i, iw, ih), o);
+        ? generator.path(diamondPath(w, h, i, shape.edges), o)
+        : generator.path(rectPath(i, i, iw, ih, shape.edges), o);
   const paint = toPaint(drawable, shape);
   if (!filled || pattern) return paint;
   // a solid fill: the exact shape in the pale shade, under the outline
   const solid: Paint = {
-    d: shapeClipPath(shape.kind, w, h),
+    d: shapeClipPath(shape.kind, w, h, shape.edges),
     stroke: "none",
     strokeWidth: 0,
     fill: fillColor(shape.fill, isDark),
@@ -110,12 +132,12 @@ export function shapePaint(
 
 // The shape's exact outline, with no wobble. Sketchy pattern lines overshoot
 // the shape's edge a little at random, so they're clipped to this.
-export function shapeClipPath(kind: ShapeKind, w: number, h: number) {
+export function shapeClipPath(kind: ShapeKind, w: number, h: number, edges: EdgeStyle = "round") {
   if (kind === "ellipse") {
     return `M 0 ${h / 2} A ${w / 2} ${h / 2} 0 1 0 ${w} ${h / 2} A ${w / 2} ${h / 2} 0 1 0 0 ${h / 2} Z`;
   }
-  if (kind === "diamond") return `M ${w / 2} 0 L ${w} ${h / 2} L ${w / 2} ${h} L 0 ${h / 2} Z`;
-  return roundedRect(0, 0, w, h);
+  if (kind === "diamond") return diamondPath(w, h, 0, edges);
+  return rectPath(0, 0, w, h, edges);
 }
 
 // An arrow's line and its filled, triangular head. Points are in whatever

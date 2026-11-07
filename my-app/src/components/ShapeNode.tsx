@@ -199,7 +199,7 @@ export default React.memo(function ShapeNode({
       <svg width={w} height={h} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
         <defs>
           <clipPath id={`shape-clip-${id}`}>
-            <path d={shapeClipPath(shape.kind, w, h)} />
+            <path d={shapeClipPath(shape.kind, w, h, shape.edges)} />
           </clipPath>
         </defs>
         <PaintPaths paint={paint} clipId={`shape-clip-${id}`} />

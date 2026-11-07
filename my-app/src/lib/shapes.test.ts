@@ -47,6 +47,12 @@ describe("parseShape", () => {
     expect(parseShape(JSON.stringify({ fill: "cyan", fillStyle: "cross-hatch" })).fillStyle).toBe("stripes");
   });
 
+  it("reads the corners, keeping older shapes round", () => {
+    expect(parseShape(JSON.stringify({ kind: "rect" })).edges).toBe("round");
+    expect(parseShape(JSON.stringify({ kind: "rect", edges: "sharp" })).edges).toBe("sharp");
+    expect(parseShape(JSON.stringify({ kind: "rect", edges: "wavy" })).edges).toBe("round");
+  });
+
   it("drops meta without a section id", () => {
     expect(parseShape(JSON.stringify({ meta: { summary: "x" } })).meta).toBeUndefined();
   });
