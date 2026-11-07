@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
-import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, type Handle } from "../lib/boxHandles";
+import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
 import { parseShape, serializeShape, type ShapeData } from "../lib/shapes";
 import { TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
@@ -17,6 +19,9 @@ interface Props {
   y: number;
   content: string;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onMarkErase: (id: string) => void;
   // Resizing (throttled, then once more with done=true) and label edits both
   // hand back the whole new content. Omitted for viewers who can't edit.
@@ -44,6 +49,7 @@ export default React.memo(function ShapeNode({
   y,
   content,
   onMove,
+  onDragFrame,
   onMarkErase,
   onReshape,
   onEditText,
@@ -116,13 +122,14 @@ export default React.memo(function ShapeNode({
   }
 
   function handleDragMouseDown(e: React.MouseEvent) {
-    const offset = { x: e.clientX - x, y: e.clientY - y };
+    const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x, y };
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+      onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -137,6 +144,7 @@ export default React.memo(function ShapeNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
+      onDragFrame?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);
@@ -174,7 +182,7 @@ export default React.memo(function ShapeNode({
         height: h,
         zIndex,
         opacity: (pendingErase ? 0.3 : 1) * (shape.opacity / 100),
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: BOX_PAD,
         transition: GLIDE_TRANSITION,
         cursor: canInteract ? "grab" : undefined,
@@ -232,14 +240,16 @@ export default React.memo(function ShapeNode({
             <div
               key={handle}
               onMouseDown={(e) => handleResizeMouseDown(e, handle)}
-              className={corner ? "absolute rounded-sm border z-10" : "absolute"}
+              className={corner ? "node-handle absolute rounded-sm border z-10" : "node-handle absolute"}
               style={{
-                left: -BOX_PAD + (fx === 0.5 ? 0 : fx * boxW) - HANDLE_SIZE / 2,
-                top: -BOX_PAD + (fy === 0.5 ? 0 : fy * boxH) - HANDLE_SIZE / 2,
-                width: corner || fx !== 0.5 ? HANDLE_SIZE : boxW + HANDLE_SIZE,
-                height: corner || fy !== 0.5 ? HANDLE_SIZE : boxH + HANDLE_SIZE,
+                // centered on the outline, the same size on screen at any zoom
+                left: handleEdge(-BOX_PAD + (fx === 0.5 ? 0 : fx * boxW), HANDLE_SIZE),
+                top: handleEdge(-BOX_PAD + (fy === 0.5 ? 0 : fy * boxH), HANDLE_SIZE),
+                width: corner || fx !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxW}px + ${screenPx(HANDLE_SIZE)})`,
+                height: corner || fy !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxH}px + ${screenPx(HANDLE_SIZE)})`,
                 background: corner ? (isDark ? "#121212" : "#ffffff") : undefined,
                 borderColor: corner ? "#4fb4f2" : undefined,
+                borderWidth: corner ? screenPx(1) : undefined,
                 cursor,
               }}
             />
