@@ -18,6 +18,8 @@ import EraserTrail from "./components/EraserTrail";
 import SnapGhosts from "./components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "./hooks/useSnapGhosts";
 import ScrollToContent from "./components/ScrollToContent";
+import { useSavedView } from "./hooks/useSavedView";
+import { useLivePan } from "./hooks/useLivePan";
 import { ThemeIcon, useThemeToggle } from "./components/ThemeToggle";
 import { Sidebar, SidebarBrand, SidebarControl, SidebarItem, SidebarNote, SidebarSeparator } from "./components/ui/sidebar";
 import BackgroundPicker, { BackgroundIcon } from "./components/BackgroundPicker";
@@ -229,10 +231,16 @@ export default function App() {
     return () => window.removeEventListener("mouseup", onMouseUp);
   }, [pendingErase]);
 
-  // keep refs in sync
+  // reopening a canvas puts you back where you were on it
+  useSavedView(canvasId, scale, offset, setScale, setOffset);
+
+  // panning moves the canvas directly; the offset state follows when it settles
+  const { panTo, endPan, panning } = useLivePan({ canvasRef, rootRef, offsetRef, scaleRef, setOffset });
+
+  // keep refs in sync (mid-pan, offsetRef is ahead of the state: see useLivePan)
   useEffect(() => {
-    offsetRef.current = offset;
-  }, [offset]);
+    if (!panning.current) offsetRef.current = offset;
+  }, [offset, panning]);
   useEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
@@ -480,8 +488,8 @@ export default function App() {
 
   async function createTextBlock(clientX: number, clientY: number) {
     if (!canvasId) return;
-    const x = (clientX - offset.x) / scale;
-    const y = (clientY - offset.y) / scale;
+    const x = (clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (clientY - offsetRef.current.y) / scaleRef.current;
     // A double-click in text mode is a click (makes a block) followed by a
     // dblclick — don't let that second event make another one on top of it.
     const now = performance.now();
@@ -525,6 +533,7 @@ export default function App() {
   const getScale = useCallback(() => scaleRef.current, []);
 
   function applyZoom(newScale: number) {
+    endPan(); // a pan still settling: zoom from where it is now
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
     setOffset((prev) => ({
@@ -536,10 +545,7 @@ export default function App() {
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setOffset((prev) => ({
-      x: prev.x - e.deltaX,
-      y: prev.y - e.deltaY,
-    }));
+    panTo({ x: offsetRef.current.x - e.deltaX, y: offsetRef.current.y - e.deltaY }, true);
   }
 
   function zoomIn() {
@@ -565,7 +571,7 @@ export default function App() {
     const startY = e.clientY - offsetRef.current.y;
 
     function onMouseMove(e: MouseEvent) {
-      setOffset({ x: e.clientX - startX, y: e.clientY - startY });
+      panTo({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
       const m = modeRef.current;
@@ -574,6 +580,7 @@ export default function App() {
       document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      endPan();
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);

@@ -6,6 +6,8 @@ import EraserTrail from "@/components/EraserTrail";
 import SnapGhosts from "@/components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "@/hooks/useSnapGhosts";
 import ScrollToContent from "@/components/ScrollToContent";
+import { useSavedView } from "@/hooks/useSavedView";
+import { useLivePan } from "@/hooks/useLivePan";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
 import CanvasContextMenu from "@/components/CanvasContextMenu";
@@ -202,7 +204,12 @@ export default function SharedCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { offsetRef.current = offset; }, [offset]);
+  // reopening the link puts you back where you were on it
+  useSavedView(shareId ? `share:${shareId}` : null, scale, offset, setScale, setOffset);
+  // panning moves the canvas directly; the offset state follows when it settles
+  const { panTo, endPan, panning } = useLivePan({ canvasRef, rootRef, offsetRef, scaleRef, setOffset });
+  // mid-pan, offsetRef is ahead of the state (see useLivePan)
+  useEffect(() => { if (!panning.current) offsetRef.current = offset; }, [offset, panning]);
   useEffect(() => { scaleRef.current = scale; }, [scale]);
 
   useEffect(() => {
@@ -353,7 +360,7 @@ export default function SharedCanvas() {
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setOffset((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+    panTo({ x: offsetRef.current.x - e.deltaX, y: offsetRef.current.y - e.deltaY }, true);
   }
 
   function handlePanStart(e: React.MouseEvent) {
@@ -370,7 +377,7 @@ export default function SharedCanvas() {
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
     function onMouseMove(e: MouseEvent) {
-      setOffset({ x: e.clientX - startX, y: e.clientY - startY });
+      panTo({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
       const m = modeRef.current;
@@ -378,12 +385,14 @@ export default function SharedCanvas() {
       document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      endPan();
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
   function zoomIn() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.min(+(scaleRef.current + 0.1).toFixed(1), 3);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -395,6 +404,7 @@ export default function SharedCanvas() {
   }
 
   function zoomOut() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.max(+(scaleRef.current - 0.1).toFixed(1), 0.2);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
