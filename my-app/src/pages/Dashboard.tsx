@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from "react";
-import { animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
+import { AnimatePresence, animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
 
 const LogoutIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -21,7 +21,7 @@ function SignOutButton({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
-import { Trash2, Search } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import axios from "axios";
 import { getMe } from "@/API/auth";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
@@ -37,6 +37,7 @@ const BLACK_CAT_URL = "https://lottie.host/ba280eed-ba90-41e4-bca2-21a7e13bb168/
 import { ShootingStars } from "@/components/ui/shooting-stars";
 import { StarsBackground } from "@/components/ui/stars-background";
 import { Liquid } from "@/components/ui/button-1";
+import ExpandableSearchBar from "@/components/ui/expandable-search-bar";
 
 // blue liquid palette from the ui-layouts button-1 demo
 const LIQUID_COLORS = {
@@ -318,17 +319,8 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a] w-40"
-              />
-            </div>
+            {/* search: opens to the right, filters as you type */}
+            <ExpandableSearchBar expandDirection="right" width={260} placeholder="Search canvases..." onChange={setSearch} />
           </div>
 
           {isDark ? (
@@ -424,11 +416,21 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <AnimatePresence mode="popLayout" initial={true}>
             {filtered.map((c, i) => (
-              <div
+              <motion.div
                 key={c.id}
-                className="card-in relative group rounded-xl shadow-md dark:shadow-black/40 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-black/40 transition-all duration-200 cursor-pointer overflow-hidden"
-                style={{ animationDelay: `${i * 60}ms` }}
+                layout
+                // cards blur in one after another and out as the search
+                // narrows, the way spotlight results do
+                initial={{ opacity: 0, y: 10, filter: "blur(5px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 0.96, filter: "blur(5px)" }}
+                transition={{
+                  default: { duration: 0.25, ease: "easeOut", delay: Math.min(i, 8) * 0.05 },
+                  layout: { type: "spring", bounce: 0.2, duration: 0.5 },
+                }}
+                className="relative group rounded-xl shadow-md dark:shadow-black/40 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-black/40 transition-[translate,box-shadow] duration-200 cursor-pointer overflow-hidden"
                 onClick={() => navigate(`/canvas/${c.id}`)}
               >
 
@@ -460,8 +462,9 @@ export default function Dashboard() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              </div>
+              </motion.div>
             ))}
+            </AnimatePresence>
           </div>
         )}
       </div>
