@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { AUTO, FILL_COLORS, STROKE_COLORS, TRANSPARENT, colorName, themeColor } from "./colors";
+import { AUTO, FILL_COLORS, STROKE_COLORS, TRANSPARENT, colorName, fillColor, themeColor } from "./colors";
 
 describe("themeColor", () => {
   it("draws a palette color in the shade that suits the theme", () => {
-    expect(themeColor("cyan", true)).toBe("#8be9fd");
-    expect(themeColor("cyan", false)).not.toBe("#8be9fd");
+    expect(themeColor("red", false)).toBe("#e03131");
+    expect(themeColor("red", true)).not.toBe("#e03131");
+  });
+
+  it("fills with the pale shade of the same hue", () => {
+    expect(fillColor("red", false)).toBe("#ffc9c9");
+    expect(fillColor("red", true)).not.toBe("#ffc9c9");
+  });
+
+  it("still draws names from the first palette", () => {
+    expect(themeColor("cyan", false)).toMatch(/^#/);
+    expect(fillColor("purple", true)).toMatch(/^#/);
+    expect(STROKE_COLORS).not.toContain("cyan");
   });
 
   it("follows the theme's text color for auto", () => {
@@ -25,7 +36,7 @@ describe("swatches", () => {
   });
 
   it("have readable names", () => {
-    expect(colorName("purple")).toBe("Purple");
+    expect(colorName("blue")).toBe("Blue");
     expect(colorName(TRANSPARENT)).toBe("None");
   });
 });

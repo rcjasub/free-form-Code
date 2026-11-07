@@ -1,7 +1,7 @@
 import rough from "roughjs";
 import type { Options } from "roughjs/bin/core";
 import type { Point } from "../components/DrawingNode";
-import { themeColor, TRANSPARENT } from "./colors";
+import { fillColor, themeColor, TRANSPARENT } from "./colors";
 import type { ArrowData, ElementStyle, ShapeData, ShapeKind, StrokeStyle } from "./shapes";
 
 // Shapes and arrows are drawn with rough.js. At roughness 0 (the default)
@@ -18,12 +18,6 @@ export interface Paint {
   isFill: boolean; // clipped to the shape (see shapeClipPath)
   opacity?: number;
 }
-
-// A solid fill is a soft tint of its color rather than the color itself, so
-// a filled box reads as a tinted area and its text stays readable in either
-// theme. Patterns are a little stronger, being thin.
-const TINT_OPACITY = { dark: 0.18, light: 0.16 };
-const PATTERN_OPACITY = 0.5;
 
 const generator = rough.generator();
 
@@ -42,7 +36,7 @@ function options(style: ElementStyle, seed: number, isDark: boolean, pattern?: {
     bowing: 0.7,
     stroke: themeColor(style.stroke, isDark),
     strokeWidth: style.strokeWidth,
-    fill: pattern ? themeColor(pattern.color, isDark) : undefined,
+    fill: pattern ? fillColor(pattern.color, isDark) : undefined,
     fillStyle: pattern ? (pattern.dots ? "dots" : "hachure") : undefined,
     fillWeight: pattern?.dots ? 1.4 : 1,
     hachureGap: pattern?.dots ? 11 : 8,
@@ -56,7 +50,7 @@ function options(style: ElementStyle, seed: number, isDark: boolean, pattern?: {
 }
 
 // rough.js lists the fill's paths first and the outline last.
-function toPaint(drawable: ReturnType<typeof generator.path>, style: ElementStyle, fillOpacity?: number): Paint[] {
+function toPaint(drawable: ReturnType<typeof generator.path>, style: ElementStyle): Paint[] {
   const paths = generator.toPaths(drawable);
   const dash = dashArray(style.strokeStyle, style.strokeWidth)?.join(" ");
   const last = paths.length - 1;
@@ -67,7 +61,6 @@ function toPaint(drawable: ReturnType<typeof generator.path>, style: ElementStyl
     fill: p.fill ?? "none",
     dash: i === last ? dash : undefined,
     isFill: i < last,
-    opacity: i < last ? fillOpacity : undefined,
   }));
 }
 
@@ -102,18 +95,17 @@ export function shapePaint(
       : shape.kind === "diamond"
         ? generator.polygon([[w / 2, i], [w - i, h / 2], [w / 2, h - i], [i, h / 2]], o)
         : generator.path(roundedRect(i, i, iw, ih), o);
-  const paint = toPaint(drawable, shape, PATTERN_OPACITY);
+  const paint = toPaint(drawable, shape);
   if (!filled || pattern) return paint;
-  // the tint: the exact shape, under the outline
-  const tint: Paint = {
+  // a solid fill: the exact shape in the pale shade, under the outline
+  const solid: Paint = {
     d: shapeClipPath(shape.kind, w, h),
     stroke: "none",
     strokeWidth: 0,
-    fill: themeColor(shape.fill, isDark),
+    fill: fillColor(shape.fill, isDark),
     isFill: false,
-    opacity: isDark ? TINT_OPACITY.dark : TINT_OPACITY.light,
   };
-  return [tint, ...paint];
+  return [solid, ...paint];
 }
 
 // The shape's exact outline, with no wobble. Sketchy pattern lines overshoot
@@ -155,6 +147,6 @@ export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed">, 
       disableMultiStroke: true,
     }),
     { ...arrow, strokeStyle: "solid" },
-  ).map((p) => ({ ...p, isFill: false, opacity: undefined }));
+  ).map((p) => ({ ...p, isFill: false }));
   return [...line, ...head];
 }

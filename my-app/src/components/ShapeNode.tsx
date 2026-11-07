@@ -155,8 +155,9 @@ export default React.memo(function ShapeNode({
     if (canInteract) handleDragMouseDown(e);
   }
 
-  // A fill is only a soft tint, so text on it follows the theme; a dot or
-  // stripe pattern gets a halo so its lines don't run through the letters.
+  // A fill is a pale shade (a deep one on the dark canvas), so text on it
+  // follows the theme; a dot or stripe pattern gets a halo so its lines
+  // don't run through the letters.
   const patterned = shape.fill !== TRANSPARENT && shape.fillStyle !== "solid";
   const labelColor = themeColor("auto", isDark);
   const labelFont = shape.roughness > 0 ? "font-canvas text-base" : "font-mono text-sm";

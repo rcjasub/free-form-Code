@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import { AUTO, FILL_COLORS, STROKE_COLORS, TRANSPARENT, colorName, themeColor } from "../lib/colors";
+import { AUTO, FILL_COLORS, STROKE_COLORS, TRANSPARENT, colorName, fillColor, themeColor } from "../lib/colors";
 import type { PanelValue } from "../hooks/useDiagram";
 
 // A quiet, monochrome control panel: rows with the label on the left and
@@ -209,7 +209,7 @@ function Swatches({
   value: string;
   onPick: (c: string) => void;
   isDark: boolean;
-  // fill swatches show the soft tint a fill is drawn with
+  // fill swatches show the pale shade a fill is drawn in
   tint?: boolean;
 }) {
   return (
@@ -217,7 +217,7 @@ function Swatches({
       <span className={LABEL}>{label}</span>
       <div role="radiogroup" aria-label={label} className="flex items-center gap-1.5">
         {colors.map((c) => {
-          const color = themeColor(c, isDark);
+          const color = tint ? fillColor(c, isDark) : themeColor(c, isDark);
           return (
             <button
               key={c}
@@ -234,7 +234,7 @@ function Swatches({
                 c === TRANSPARENT
                   ? { border: `1.5px dashed ${isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.3)"}` }
                   : tint && c !== AUTO
-                    ? { background: `color-mix(in srgb, ${color} 30%, transparent)`, border: `1.5px solid ${color}` }
+                    ? { background: color, border: `1px solid ${isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.12)"}` }
                     : { background: color }
               }
             />
@@ -319,7 +319,7 @@ export default function PropertiesPanel({
             value={value.fillStyle}
             onPick={(fillStyle) => onChange({ fillStyle })}
             options={[
-              { value: "solid", title: "Tint", text: "Tint" },
+              { value: "solid", title: "Solid", text: "Solid" },
               { value: "dots", title: "Dots", text: "Dots" },
               { value: "stripes", title: "Stripes", text: "Stripes" },
             ]}
