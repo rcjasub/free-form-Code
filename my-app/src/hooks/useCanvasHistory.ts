@@ -32,20 +32,21 @@ export interface CanvasNode {
 // Typing inside a block isn't tracked here — CodeMirror keeps its own undo
 // history while the block is focused.
 export type HistoryEntry =
-  | { kind: "create"; id: string }
+  | { kind: "create"; id: string; group?: number }
   | { kind: "delete"; nodes: CanvasNode[] } // one eraser drag can delete several
-  // `group` ties together the blocks of one multi-block drag, so a single
-  // undo puts them all back
+  // `group` (on moves, reshapes and resizes) ties together the entries of
+  // one action on several blocks (a multi-block drag, resizing a selection),
+  // so a single undo puts them all back
   | { kind: "move"; id: string; x: number; y: number; group?: number }
   | { kind: "language"; id: string; language: Language; content: string }
   // a drawing's position and stroke before it was resized
-  | { kind: "reshape"; id: string; x: number; y: number; content: string }
+  | { kind: "reshape"; id: string; x: number; y: number; content: string; group?: number }
   | { kind: "link"; id: string; link: string | null }
   // a text block's color before it was changed
   | { kind: "color"; id: string; color: string | null }
   // a text block's size (and position — resizing from the left/top moves it)
   // before its handles were dragged
-  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number }
+  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number; group?: number }
   // a block split into one block per line: the block as it was, and the pieces
   | { kind: "split"; original: CanvasNode; ids: string[] };
 
@@ -303,36 +304,29 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
     const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applyColor, applySize, restoreBlocks } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
-    // Skip entries for blocks someone else has deleted since.
-    let entry;
-    while ((entry = history.pop())) {
+    // Reverses one entry; false if there was nothing left to reverse (its
+    // block deleted by someone else since).
+    async function revert(entry: HistoryEntry): Promise<boolean> {
       if (entry.kind === "create") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         deleteNode(entry.id, false);
       } else if (entry.kind === "move") {
-        const group = entry.group;
-        if (exists(entry.id)) moveNode(entry.id, entry.x, entry.y, false);
-        // the rest of a multi-block drag goes back in the same undo
-        let next;
-        while (group !== undefined && (next = history.peek())?.kind === "move" && next.group === group) {
-          history.pop();
-          if (exists(next.id)) moveNode(next.id, next.x, next.y, false);
-        }
-        if (!exists(entry.id) && group === undefined) continue;
+        if (!exists(entry.id)) return false;
+        moveNode(entry.id, entry.x, entry.y, false);
       } else if (entry.kind === "language") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyLanguage(entry.id, entry.language, entry.content);
       } else if (entry.kind === "reshape") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyShape(entry.id, entry.x, entry.y, entry.content);
       } else if (entry.kind === "link") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyLink(entry.id, entry.link);
       } else if (entry.kind === "color") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyColor(entry.id, entry.color);
       } else if (entry.kind === "resize") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applySize(entry.id, entry.wrapWidth, entry.fontSize);
         moveNode(entry.id, entry.x, entry.y, false);
       } else if (entry.kind === "split") {
@@ -349,7 +343,22 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
           if (newId) history.remapId(node.id, newId);
         });
       }
-      return;
+      return true;
+    }
+    const groupOf = (e: HistoryEntry) => ("group" in e ? e.group : undefined);
+
+    // Skip entries for blocks someone else has deleted since. The rest of an
+    // action on several blocks goes back in the same undo.
+    let entry;
+    while ((entry = history.pop())) {
+      let reverted = await revert(entry);
+      const group = groupOf(entry);
+      let next;
+      while (group !== undefined && (next = history.peek()) && groupOf(next) === group) {
+        history.pop();
+        reverted = (await revert(next)) || reverted;
+      }
+      if (reverted || group !== undefined) return;
     }
   });
 

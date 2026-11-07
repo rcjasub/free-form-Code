@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import SelectionBox from "@/components/SelectionBox";
+import { useGroupResize } from "@/hooks/useGroupResize";
 import { useGroupDragFrames } from "@/hooks/useGroupDragFrames";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
@@ -531,7 +533,7 @@ export default function SharedCanvas() {
   // here and to everyone else; the last one (done) saves it and records a
   // single undo step back to the shape it started from.
   // Shapes reshape the same way, with their whole new content (size or label).
-  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean) => {
+  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean, group?: number) => {
     if (!resizeStart.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
       if (before) resizeStart.current[id] = before;
@@ -540,7 +542,7 @@ export default function SharedCanvas() {
     if (!done) return;
     const before = resizeStart.current[id];
     delete resizeStart.current[id];
-    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
+    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content, group });
   }, [history, applyShape]);
 
   const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
@@ -579,7 +581,7 @@ export default function SharedCanvas() {
   // and to everyone else; the last one (done) saves it and records a single
   // undo step back to the size it started at.
   const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
-  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean, group?: number) => {
     const before = history.nodesRef.current.find((n) => n.id === id);
     if (!textResizeStart.current[id] && before) {
       textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
@@ -590,7 +592,7 @@ export default function SharedCanvas() {
     if (!done) return;
     const start = textResizeStart.current[id];
     delete textResizeStart.current[id];
-    if (start) history.record({ kind: "resize", id, ...start });
+    if (start) history.record({ kind: "resize", id, ...start, group });
   }, [history, applySize, moveNode]);
 
   // Sets or removes a block's link — for the right-click menu and for undo.
@@ -796,6 +798,12 @@ export default function SharedCanvas() {
   }, [moveNode, history, ridersOf]);
   // ...and every frame of that drag moves the rest of the selection with it
   const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
+  // the box around a multi-selection: dragging a corner scales it all
+  const toCanvasPoint = useCallback(
+    (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    [],
+  );
+  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
 
   // Runs code and adds its output. Same rules as the main canvas
   // (lib/runOutputs): unchanged code whose output is still showing doesn't run
@@ -1225,11 +1233,18 @@ export default function SharedCanvas() {
       <div
         ref={canvasRef}
         className="w-full h-full"
+        // several selected: only the box around them has handles (index.css)
+        data-multi-select={selectedIds.length >= 2 || undefined}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
+          // for outlines and handles that keep their size on screen (screenPx)
+          ["--inv-zoom" as string]: 1 / scale,
         }}
       >
+        {canEdit && selectedIds.length >= 2 && mode === "select" && (
+          <SelectionBox ids={selectedIds} scale={scale} toCanvas={toCanvasPoint} onResizeStart={startGroupResize} />
+        )}
         {canEdit && nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">

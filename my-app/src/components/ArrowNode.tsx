@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { handleEdge, screenPx } from "../lib/boxHandles";
 import { dragFrom, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import type { Point } from "./DrawingNode";
@@ -257,12 +258,14 @@ export default React.memo(function ArrowNode({
             <div
               key={end}
               title={end === "from" ? "Drag to move the start" : "Drag to move the end"}
-              className="absolute rounded-full border-2 z-10 cursor-move"
+              className="node-handle absolute rounded-full border-2 z-10 cursor-move"
               style={{
-                left: p.x - END_HANDLE / 2,
-                top: p.y - END_HANDLE / 2,
-                width: END_HANDLE,
-                height: END_HANDLE,
+                // the same size on screen at any zoom (see screenPx)
+                left: handleEdge(p.x, END_HANDLE),
+                top: handleEdge(p.y, END_HANDLE),
+                width: screenPx(END_HANDLE),
+                height: screenPx(END_HANDLE),
+                borderWidth: screenPx(2),
                 borderColor: "#4fb4f2",
                 background,
                 pointerEvents: "auto",

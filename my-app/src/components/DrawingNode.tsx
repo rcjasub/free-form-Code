@@ -1,4 +1,5 @@
 import { useRef, useState, useLayoutEffect } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
@@ -6,7 +7,7 @@ import { strokePath } from "../lib/smoothPath";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import type { DrawIn } from "../hooks/useSnapGhosts";
-import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, type Handle } from "../lib/boxHandles";
+import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
 import { drawStrokeProps, type DrawStyle } from "../lib/points";
 
 export interface Point {
@@ -209,7 +210,7 @@ export default React.memo(function DrawingNode({
         height,
         zIndex,
         opacity: (pendingErase ? 0.3 : 1) * (drawStyle.opacity / 100),
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: 6,
         transition: GLIDE_TRANSITION, // see lib/glide
         // The bounding box is usually much bigger than the visible stroke
@@ -283,15 +284,17 @@ export default React.memo(function DrawingNode({
               key={handle}
               onMouseDown={(e) => handleResizeMouseDown(e, handle)}
               // corners: a visible dot; edges: an invisible strip along the line
-              className={corner ? "absolute rounded-sm border z-10" : "absolute"}
+              className={corner ? "node-handle absolute rounded-sm border z-10" : "node-handle absolute"}
               style={{
-                left: -BOX_PAD + (fx === 0.5 ? 0 : fx * boxW) - HANDLE_SIZE / 2,
-                top: -BOX_PAD + (fy === 0.5 ? 0 : fy * boxH) - HANDLE_SIZE / 2,
+                // centered on the outline, the same size on screen at any zoom
+                left: handleEdge(-BOX_PAD + (fx === 0.5 ? 0 : fx * boxW), HANDLE_SIZE),
+                top: handleEdge(-BOX_PAD + (fy === 0.5 ? 0 : fy * boxH), HANDLE_SIZE),
                 // an edge strip runs the whole side; a corner dot is a small square
-                width: corner || fx !== 0.5 ? HANDLE_SIZE : boxW + HANDLE_SIZE,
-                height: corner || fy !== 0.5 ? HANDLE_SIZE : boxH + HANDLE_SIZE,
+                width: corner || fx !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxW}px + ${screenPx(HANDLE_SIZE)})`,
+                height: corner || fy !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxH}px + ${screenPx(HANDLE_SIZE)})`,
                 background: corner ? (isDark ? "#121212" : "#ffffff") : undefined,
                 borderColor: corner ? "#4fb4f2" : undefined,
+                borderWidth: corner ? screenPx(1) : undefined,
                 cursor,
                 pointerEvents: "auto", // the container itself ignores the mouse
               }}

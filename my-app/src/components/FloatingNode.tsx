@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useLayoutEffect } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
@@ -393,7 +394,7 @@ export default React.memo(function FloatingNode({
         opacity: pendingErase ? 0.3 : 1,
         // a dashed box tight around the text when selected, the same as
         // drawings and images; the resize handles sit on its edge
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: selected ? BOX_PAD : undefined,
         transition: GLIDE_TRANSITION, // see lib/glide
         // In draw mode, existing blocks shouldn't intercept clicks or steal

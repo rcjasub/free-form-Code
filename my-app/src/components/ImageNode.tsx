@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
@@ -104,7 +105,7 @@ export default React.memo(function ImageNode({
         width,
         zIndex,
         opacity: pendingErase ? 0.3 : 1,
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: 6,
         transition: GLIDE_TRANSITION, // see lib/glide
         cursor: mode === "select" || mode === "text" ? "grab" : undefined,
