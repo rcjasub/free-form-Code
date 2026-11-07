@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
@@ -15,6 +16,9 @@ interface Props {
   src: string; // data URL, see lib/images.ts
   link?: string | null;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
   selected?: boolean;
@@ -34,6 +38,7 @@ export default React.memo(function ImageNode({
   src,
   link,
   onMove,
+  onDragFrame,
   onMarkErase,
   pendingErase,
   selected,
@@ -57,13 +62,14 @@ export default React.memo(function ImageNode({
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const offset = { x: startX - x, y: startY - y };
+    const drag = dragFrom({ x, y }, { x: startX, y: startY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest: { x: number; y: number } | null = null;
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+      onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -77,7 +83,10 @@ export default React.memo(function ImageNode({
     function onMouseUp() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
-      if (latest) onMove(id, latest.x, latest.y);
+      if (latest) {
+        onMove(id, latest.x, latest.y);
+        onDragFrame?.(id, latest.x, latest.y, true);
+      }
       resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);

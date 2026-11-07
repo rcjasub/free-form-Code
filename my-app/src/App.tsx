@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useGroupDragFrames } from "./hooks/useGroupDragFrames";
 import { useTheme } from "next-themes";
 import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
@@ -946,6 +947,8 @@ export default function App() {
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
   }, [moveNode, history, ridersOf]);
+  // ...and every frame of that drag moves the rest of the selection with it
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
 
   // saveSelection only writes to a ref — no canvasId dependency, always stable.
   const saveSelection = useCallback((content: string, el: HTMLElement) => {
@@ -1348,6 +1351,7 @@ export default function App() {
                 src={node.content}
                 link={node.link}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1365,6 +1369,7 @@ export default function App() {
                 points={node.points ?? []}
                 drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onResize={resizeDrawing}
                 drawIn={drawingIn.get(node.id)}
@@ -1384,6 +1389,7 @@ export default function App() {
                 y={node.y}
                 content={node.content}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={reshapeBlock}
                 onEditText={diagram.addShapeText}
@@ -1406,6 +1412,7 @@ export default function App() {
                 y={node.y}
                 arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={reshapeBlock}
                 editing={diagram.labelEditId === node.id}
@@ -1432,6 +1439,7 @@ export default function App() {
                 onChange={updateNode}
                 onLanguageChange={changeLanguage}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onSaveSelection={saveSelection}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}

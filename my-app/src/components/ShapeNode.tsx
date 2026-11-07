@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
@@ -17,6 +18,9 @@ interface Props {
   y: number;
   content: string;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onMarkErase: (id: string) => void;
   // Resizing (throttled, then once more with done=true) and label edits both
   // hand back the whole new content. Omitted for viewers who can't edit.
@@ -44,6 +48,7 @@ export default React.memo(function ShapeNode({
   y,
   content,
   onMove,
+  onDragFrame,
   onMarkErase,
   onReshape,
   onEditText,
@@ -116,13 +121,14 @@ export default React.memo(function ShapeNode({
   }
 
   function handleDragMouseDown(e: React.MouseEvent) {
-    const offset = { x: e.clientX - x, y: e.clientY - y };
+    const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x, y };
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+      onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -137,6 +143,7 @@ export default React.memo(function ShapeNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
+      onDragFrame?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);

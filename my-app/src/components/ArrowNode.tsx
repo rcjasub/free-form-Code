@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import type { Point } from "./DrawingNode";
 import LinkBadge from "./LinkBadge";
@@ -20,6 +21,9 @@ interface Props {
   // border of its shape (lib/shapes resolveArrow).
   arrow: ArrowData;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onMarkErase: (id: string) => void;
   // dragging an end or editing the label; omitted for viewers who can't edit
   onReshape?: (id: string, x: number, y: number, content: string, done: boolean) => void;
@@ -48,6 +52,7 @@ export default React.memo(function ArrowNode({
   y,
   arrow,
   onMove,
+  onDragFrame,
   onMarkErase,
   onReshape,
   editing,
@@ -84,12 +89,13 @@ export default React.memo(function ArrowNode({
       : local[Math.floor(last / 2)];
 
   function handleDragMouseDown(e: React.MouseEvent) {
-    const offset = { x: e.clientX - x, y: e.clientY - y };
+    const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x, y };
     pauseGlide(containerRef.current);
     function onMouseMove(mv: MouseEvent) {
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+      onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x + minX}px`;
         containerRef.current.style.top = `${latest.y + minY}px`;
@@ -104,6 +110,7 @@ export default React.memo(function ArrowNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
+      onDragFrame?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);

@@ -1,4 +1,5 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useMemo, useState, useLayoutEffect } from "react";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
@@ -36,6 +37,9 @@ interface Props {
   // Omitted for viewers who can't edit — the language then shows as a plain label.
   onLanguageChange?: (id: string, language: Language) => void;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onSaveSelection?: (content: string, el: HTMLElement) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
@@ -118,6 +122,7 @@ export default React.memo(function FloatingNode({
   onChange,
   onLanguageChange,
   onMove,
+  onDragFrame,
   onSaveSelection,
   onMarkErase,
   pendingErase,
@@ -140,6 +145,7 @@ export default React.memo(function FloatingNode({
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
+  const onDragFrameRef = useRef(onDragFrame);
   const isFocused = useRef(false);
   // Whether the cursor is in the editor. When it isn't, a cover over the
   // block takes the mouse: drag to move, double-click (or a click in text
@@ -148,6 +154,9 @@ export default React.memo(function FloatingNode({
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
+  useLayoutEffect(() => {
+    onDragFrameRef.current = onDragFrame;
+  });
 
   // Use initial content only — let CodeMirror own its state so the cursor
   // doesn't reset on every keystroke via the controlled-value feedback loop.
@@ -218,7 +227,7 @@ export default React.memo(function FloatingNode({
 
       const startX = e.clientX;
       const startY = e.clientY;
-      const offset = { x: startX - xRef.current, y: startY - yRef.current };
+      const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(el));
       let isDragging = false;
       let lastSync = 0;
       let latest = { x: xRef.current, y: yRef.current };
@@ -234,7 +243,8 @@ export default React.memo(function FloatingNode({
         }
         if (!isDragging) return;
 
-        latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+        latest = drag(mv);
+        onDragFrameRef.current?.(id, latest.x, latest.y);
         if (el) {
           el.style.left = `${latest.x}px`;
           el.style.top = `${latest.y}px`;
@@ -252,6 +262,7 @@ export default React.memo(function FloatingNode({
         window.removeEventListener("mouseup", onMouseUp);
         if (isDragging) {
           onMoveRef.current(id, latest.x, latest.y);
+          onDragFrameRef.current?.(id, latest.x, latest.y, true);
           resumeGlide(el);
         }
       }
@@ -280,7 +291,7 @@ export default React.memo(function FloatingNode({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(containerRef.current));
     let isDragging = false;
     let lastSync = 0;
     let latest = { x: xRef.current, y: yRef.current };
@@ -296,7 +307,8 @@ export default React.memo(function FloatingNode({
       }
       if (!isDragging) return;
 
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+        onDragFrameRef.current?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -314,6 +326,7 @@ export default React.memo(function FloatingNode({
       window.removeEventListener("mouseup", onMouseUp);
       if (isDragging) {
         onMoveRef.current(id, latest.x, latest.y);
+        onDragFrameRef.current?.(id, latest.x, latest.y, true);
         resumeGlide(containerRef.current);
       } else {
         onClick?.(up);

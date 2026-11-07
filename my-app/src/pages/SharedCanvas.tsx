@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useGroupDragFrames } from "@/hooks/useGroupDragFrames";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
@@ -793,6 +794,8 @@ export default function SharedCanvas() {
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
   }, [moveNode, history, ridersOf]);
+  // ...and every frame of that drag moves the rest of the selection with it
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
 
   // Runs code and adds its output. Same rules as the main canvas
   // (lib/runOutputs): unchanged code whose output is still showing doesn't run
@@ -1251,6 +1254,7 @@ export default function SharedCanvas() {
                 src={node.content}
                 link={node.link}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1268,6 +1272,7 @@ export default function SharedCanvas() {
                 points={node.points ?? []}
                 drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onResize={canEdit ? resizeDrawing : undefined}
                 drawIn={drawingIn.get(node.id)}
@@ -1287,6 +1292,7 @@ export default function SharedCanvas() {
                 y={node.y}
                 content={node.content}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
                 onEditText={canEdit ? diagram.addShapeText : undefined}
@@ -1309,6 +1315,7 @@ export default function SharedCanvas() {
                 y={node.y}
                 arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
                 editing={diagram.labelEditId === node.id}
@@ -1335,6 +1342,7 @@ export default function SharedCanvas() {
                 onChange={updateNode}
                 onLanguageChange={canEdit ? changeLanguage : undefined}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 onRun={handleRunNode}
