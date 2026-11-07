@@ -3,12 +3,13 @@ import * as Blocks from "../models/blocks";
 import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
 import { cacheGet, cacheSet, cacheDel } from "../redis";
+import { MAX_BLOCKS_PER_CANVAS, MAX_CANVAS_CONTENT } from "../utils/limits";
 
 // Per-canvas quota. The per-block size limit (MAX_CONTENT_LENGTH) alone can't
 // keep the disk from filling — anyone on a public canvas could keep adding
 // max-size blocks — so a canvas also caps its block count and total content.
-export const MAX_BLOCKS_PER_CANVAS = 500;
-export const MAX_CANVAS_CONTENT = 50_000_000; // characters, ~50 MB
+// Both can be lowered for a small deployment (see utils/limits).
+export { MAX_BLOCKS_PER_CANVAS, MAX_CANVAS_CONTENT };
 
 const QUOTA_ERROR = "This canvas is full — delete some blocks (large images count the most) and try again";
 
