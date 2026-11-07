@@ -377,3 +377,9 @@ body.canvas-panning * {
   .snap-draw { animation: none; stroke-dashoffset: 0; }
   .snap-brighten { animation: none; }
 }
+
+/* With several blocks selected, the box around them (SelectionBox) does the
+   resizing; each block's own handles would only crowd it. */
+[data-multi-select] .node-handle {
+  display: none;
+}

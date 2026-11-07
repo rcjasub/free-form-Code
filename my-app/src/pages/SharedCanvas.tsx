@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import SelectionBox from "@/components/SelectionBox";
+import { useGroupResize } from "@/hooks/useGroupResize";
+import { useGroupDragFrames } from "@/hooks/useGroupDragFrames";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
@@ -6,6 +9,8 @@ import EraserTrail from "@/components/EraserTrail";
 import SnapGhosts from "@/components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "@/hooks/useSnapGhosts";
 import ScrollToContent from "@/components/ScrollToContent";
+import { useSavedView } from "@/hooks/useSavedView";
+import { useLivePan } from "@/hooks/useLivePan";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
 import CanvasContextMenu from "@/components/CanvasContextMenu";
@@ -202,7 +207,12 @@ export default function SharedCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { offsetRef.current = offset; }, [offset]);
+  // reopening the link puts you back where you were on it
+  useSavedView(shareId ? `share:${shareId}` : null, scale, offset, setScale, setOffset);
+  // panning moves the canvas directly; the offset state follows when it settles
+  const { panTo, endPan, panning } = useLivePan({ canvasRef, rootRef, offsetRef, scaleRef, setOffset });
+  // mid-pan, offsetRef is ahead of the state (see useLivePan)
+  useEffect(() => { if (!panning.current) offsetRef.current = offset; }, [offset, panning]);
   useEffect(() => { scaleRef.current = scale; }, [scale]);
 
   useEffect(() => {
@@ -353,7 +363,7 @@ export default function SharedCanvas() {
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setOffset((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+    panTo({ x: offsetRef.current.x - e.deltaX, y: offsetRef.current.y - e.deltaY }, true);
   }
 
   function handlePanStart(e: React.MouseEvent) {
@@ -370,7 +380,7 @@ export default function SharedCanvas() {
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
     function onMouseMove(e: MouseEvent) {
-      setOffset({ x: e.clientX - startX, y: e.clientY - startY });
+      panTo({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
       const m = modeRef.current;
@@ -378,12 +388,14 @@ export default function SharedCanvas() {
       document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      endPan();
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
   function zoomIn() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.min(+(scaleRef.current + 0.1).toFixed(1), 3);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -395,6 +407,7 @@ export default function SharedCanvas() {
   }
 
   function zoomOut() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.max(+(scaleRef.current - 0.1).toFixed(1), 0.2);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -520,7 +533,7 @@ export default function SharedCanvas() {
   // here and to everyone else; the last one (done) saves it and records a
   // single undo step back to the shape it started from.
   // Shapes reshape the same way, with their whole new content (size or label).
-  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean) => {
+  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean, group?: number) => {
     if (!resizeStart.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
       if (before) resizeStart.current[id] = before;
@@ -529,7 +542,7 @@ export default function SharedCanvas() {
     if (!done) return;
     const before = resizeStart.current[id];
     delete resizeStart.current[id];
-    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
+    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content, group });
   }, [history, applyShape]);
 
   const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
@@ -568,7 +581,7 @@ export default function SharedCanvas() {
   // and to everyone else; the last one (done) saves it and records a single
   // undo step back to the size it started at.
   const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
-  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean, group?: number) => {
     const before = history.nodesRef.current.find((n) => n.id === id);
     if (!textResizeStart.current[id] && before) {
       textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
@@ -579,7 +592,7 @@ export default function SharedCanvas() {
     if (!done) return;
     const start = textResizeStart.current[id];
     delete textResizeStart.current[id];
-    if (start) history.record({ kind: "resize", id, ...start });
+    if (start) history.record({ kind: "resize", id, ...start, group });
   }, [history, applySize, moveNode]);
 
   // Sets or removes a block's link — for the right-click menu and for undo.
@@ -783,6 +796,14 @@ export default function SharedCanvas() {
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
   }, [moveNode, history, ridersOf]);
+  // ...and every frame of that drag moves the rest of the selection with it
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
+  // the box around a multi-selection: dragging a corner scales it all
+  const toCanvasPoint = useCallback(
+    (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    [],
+  );
+  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
 
   // Runs code and adds its output. Same rules as the main canvas
   // (lib/runOutputs): unchanged code whose output is still showing doesn't run
@@ -1212,11 +1233,18 @@ export default function SharedCanvas() {
       <div
         ref={canvasRef}
         className="w-full h-full"
+        // several selected: only the box around them has handles (index.css)
+        data-multi-select={selectedIds.length >= 2 || undefined}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
+          // for outlines and handles that keep their size on screen (screenPx)
+          ["--inv-zoom" as string]: 1 / scale,
         }}
       >
+        {canEdit && selectedIds.length >= 2 && mode === "select" && (
+          <SelectionBox ids={selectedIds} scale={scale} toCanvas={toCanvasPoint} onResizeStart={startGroupResize} />
+        )}
         {canEdit && nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">
@@ -1241,6 +1269,7 @@ export default function SharedCanvas() {
                 src={node.content}
                 link={node.link}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1258,6 +1287,7 @@ export default function SharedCanvas() {
                 points={node.points ?? []}
                 drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onResize={canEdit ? resizeDrawing : undefined}
                 drawIn={drawingIn.get(node.id)}
@@ -1277,6 +1307,7 @@ export default function SharedCanvas() {
                 y={node.y}
                 content={node.content}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
                 onEditText={canEdit ? diagram.addShapeText : undefined}
@@ -1299,6 +1330,7 @@ export default function SharedCanvas() {
                 y={node.y}
                 arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
                 editing={diagram.labelEditId === node.id}
@@ -1325,6 +1357,7 @@ export default function SharedCanvas() {
                 onChange={updateNode}
                 onLanguageChange={canEdit ? changeLanguage : undefined}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 onRun={handleRunNode}

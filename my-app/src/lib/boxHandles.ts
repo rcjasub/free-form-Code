@@ -19,3 +19,12 @@ export const HANDLES: { handle: Handle; fx: number; fy: number; cursor: string }
 ];
 export const BOX_PAD = 6; // matches the selection outline's offset
 export const HANDLE_SIZE = 8;
+
+// A length that stays the same size on screen at any zoom: the canvas layer
+// sets --inv-zoom to 1 / its scale, so zoomed far out, selection outlines and
+// handles don't shrink to hairlines (and zoomed in, they don't balloon).
+export const screenPx = (px: number) => `calc(${px}px * var(--inv-zoom, 1))`;
+export const SELECTION_OUTLINE = `${screenPx(1.5)} dashed #4fb4f2`;
+
+// Where a handle goes: `at` (canvas px) is its center, `size` is in screen px.
+export const handleEdge = (at: number, size: number) => `calc(${at}px - ${screenPx(size / 2)})`;

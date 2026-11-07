@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
+import SelectionBox from "./components/SelectionBox";
+import { useGroupResize } from "./hooks/useGroupResize";
+import { useGroupDragFrames } from "./hooks/useGroupDragFrames";
 import { useTheme } from "next-themes";
 import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
@@ -18,6 +21,8 @@ import EraserTrail from "./components/EraserTrail";
 import SnapGhosts from "./components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "./hooks/useSnapGhosts";
 import ScrollToContent from "./components/ScrollToContent";
+import { useSavedView } from "./hooks/useSavedView";
+import { useLivePan } from "./hooks/useLivePan";
 import { ThemeIcon, useThemeToggle } from "./components/ThemeToggle";
 import { Sidebar, SidebarBrand, SidebarControl, SidebarItem, SidebarNote, SidebarSeparator } from "./components/ui/sidebar";
 import BackgroundPicker, { BackgroundIcon } from "./components/BackgroundPicker";
@@ -229,10 +234,16 @@ export default function App() {
     return () => window.removeEventListener("mouseup", onMouseUp);
   }, [pendingErase]);
 
-  // keep refs in sync
+  // reopening a canvas puts you back where you were on it
+  useSavedView(canvasId, scale, offset, setScale, setOffset);
+
+  // panning moves the canvas directly; the offset state follows when it settles
+  const { panTo, endPan, panning } = useLivePan({ canvasRef, rootRef, offsetRef, scaleRef, setOffset });
+
+  // keep refs in sync (mid-pan, offsetRef is ahead of the state: see useLivePan)
   useEffect(() => {
-    offsetRef.current = offset;
-  }, [offset]);
+    if (!panning.current) offsetRef.current = offset;
+  }, [offset, panning]);
   useEffect(() => {
     scaleRef.current = scale;
   }, [scale]);
@@ -480,8 +491,8 @@ export default function App() {
 
   async function createTextBlock(clientX: number, clientY: number) {
     if (!canvasId) return;
-    const x = (clientX - offset.x) / scale;
-    const y = (clientY - offset.y) / scale;
+    const x = (clientX - offsetRef.current.x) / scaleRef.current;
+    const y = (clientY - offsetRef.current.y) / scaleRef.current;
     // A double-click in text mode is a click (makes a block) followed by a
     // dblclick — don't let that second event make another one on top of it.
     const now = performance.now();
@@ -525,6 +536,7 @@ export default function App() {
   const getScale = useCallback(() => scaleRef.current, []);
 
   function applyZoom(newScale: number) {
+    endPan(); // a pan still settling: zoom from where it is now
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
     setOffset((prev) => ({
@@ -536,10 +548,7 @@ export default function App() {
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setOffset((prev) => ({
-      x: prev.x - e.deltaX,
-      y: prev.y - e.deltaY,
-    }));
+    panTo({ x: offsetRef.current.x - e.deltaX, y: offsetRef.current.y - e.deltaY }, true);
   }
 
   function zoomIn() {
@@ -565,7 +574,7 @@ export default function App() {
     const startY = e.clientY - offsetRef.current.y;
 
     function onMouseMove(e: MouseEvent) {
-      setOffset({ x: e.clientX - startX, y: e.clientY - startY });
+      panTo({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
       const m = modeRef.current;
@@ -574,6 +583,7 @@ export default function App() {
       document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      endPan();
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -719,7 +729,7 @@ export default function App() {
   // here and to everyone else; the last one (done) saves it and records a
   // single undo step back to the shape it started from.
   // Shapes reshape the same way, with their whole new content (size or label).
-  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean) => {
+  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean, group?: number) => {
     if (!resizeStart.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
       if (before) resizeStart.current[id] = before;
@@ -728,7 +738,7 @@ export default function App() {
     if (!done) return;
     const before = resizeStart.current[id];
     delete resizeStart.current[id];
-    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
+    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content, group });
   }, [history, applyShape]);
 
   const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
@@ -767,7 +777,7 @@ export default function App() {
   // and to everyone else; the last one (done) saves it and records a single
   // undo step back to the size it started at.
   const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
-  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean, group?: number) => {
     const before = history.nodesRef.current.find((n) => n.id === id);
     if (!textResizeStart.current[id] && before) {
       textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
@@ -778,7 +788,7 @@ export default function App() {
     if (!done) return;
     const start = textResizeStart.current[id];
     delete textResizeStart.current[id];
-    if (start) history.record({ kind: "resize", id, ...start });
+    if (start) history.record({ kind: "resize", id, ...start, group });
   }, [history, applySize, moveNode]);
 
   // Sets or removes a block's link — for the right-click menu and for undo.
@@ -939,6 +949,14 @@ export default function App() {
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
   }, [moveNode, history, ridersOf]);
+  // ...and every frame of that drag moves the rest of the selection with it
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
+  // the box around a multi-selection: dragging a corner scales it all
+  const toCanvasPoint = useCallback(
+    (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    [],
+  );
+  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
 
   // saveSelection only writes to a ref — no canvasId dependency, always stable.
   const saveSelection = useCallback((content: string, el: HTMLElement) => {
@@ -1312,11 +1330,18 @@ export default function App() {
       <div
         ref={canvasRef}
         className="w-full h-full"
+        // several selected: only the box around them has handles (index.css)
+        data-multi-select={selectedIds.length >= 2 || undefined}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
+          // for outlines and handles that keep their size on screen (screenPx)
+          ["--inv-zoom" as string]: 1 / scale,
         }}
       >
+        {selectedIds.length >= 2 && mode === "select" && (
+          <SelectionBox ids={selectedIds} scale={scale} toCanvas={toCanvasPoint} onResizeStart={startGroupResize} />
+        )}
         {nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">
@@ -1341,6 +1366,7 @@ export default function App() {
                 src={node.content}
                 link={node.link}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1358,6 +1384,7 @@ export default function App() {
                 points={node.points ?? []}
                 drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onResize={resizeDrawing}
                 drawIn={drawingIn.get(node.id)}
@@ -1377,6 +1404,7 @@ export default function App() {
                 y={node.y}
                 content={node.content}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={reshapeBlock}
                 onEditText={diagram.addShapeText}
@@ -1399,6 +1427,7 @@ export default function App() {
                 y={node.y}
                 arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={reshapeBlock}
                 editing={diagram.labelEditId === node.id}
@@ -1425,6 +1454,7 @@ export default function App() {
                 onChange={updateNode}
                 onLanguageChange={changeLanguage}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onSaveSelection={saveSelection}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
