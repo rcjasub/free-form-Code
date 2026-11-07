@@ -111,12 +111,14 @@ export function SidebarItem({
   icon,
   label,
   onClick,
+  onMouseEnter,
   title,
   disabled,
 }: {
   icon: React.ReactNode;
   label: React.ReactNode;
   onClick: () => void;
+  onMouseEnter?: () => void;
   title?: string;
   disabled?: boolean;
 }) {
@@ -124,6 +126,7 @@ export function SidebarItem({
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
       disabled={disabled}
       title={title ?? (typeof label === "string" ? label : undefined)}
       className={cn(ROW, ROW_HOVER, "disabled:opacity-60 [&>svg]:size-4 [&>svg]:shrink-0")}

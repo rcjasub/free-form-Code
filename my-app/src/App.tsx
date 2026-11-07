@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { CloudUpload, Download, HardDrive, LayoutDashboard, LogOut, RefreshCw, Upload, UserPlus } from "lucide-react";
+import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { SIDEBAR_TRANSITION, sidebarOpenShift } from "./lib/sidebarLayout";
 import { useParams, useNavigate } from "react-router-dom";
@@ -64,6 +64,9 @@ import { toolForKey } from "./lib/toolKeys";
 import { parseArrow } from "./lib/shapes";
 import ShapeNode from "./components/ShapeNode";
 import ArrowNode from "./components/ArrowNode";
+import { DownloadDoneIcon, ImportIcon } from "./components/ui/animated-state-icons";
+import { AccountAddIcon } from "./components/ui/account-add-icon";
+import { LinkIcon, type LinkIconHandle } from "./components/ui/link-icon";
 import "./App.css";
 
 export type Mode = "select" | "hand" | "text" | "erase" | "draw" | ShapeTool;
@@ -1070,6 +1073,28 @@ export default function App() {
   }
 
   // A JSON backup of what's on screen (a guest's images included).
+  const [exported, setExported] = useState(false);
+  const exportedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // and the Import icon does the same when clicked
+  const [imported, setImported] = useState(false);
+  const importedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function startImport() {
+    setImported(true);
+    clearTimeout(importedTimer.current);
+    importedTimer.current = setTimeout(() => setImported(false), 2000);
+    importInput.current?.click();
+  }
+  // the Share button's link animates while the button is hovered
+  const shareIcon = useRef<LinkIconHandle>(null);
+  // the Sign up icon draws itself in again on hover
+  const [signUpDraw, setSignUpDraw] = useState(0);
+  useEffect(
+    () => () => {
+      clearTimeout(exportedTimer.current);
+      clearTimeout(importedTimer.current);
+    },
+    [],
+  );
   function exportCanvas() {
     const blob = new Blob([toCanvasFile(history.nodesRef.current.map(toRestorePayload))], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1078,6 +1103,10 @@ export default function App() {
     a.download = `free-form-canvas-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    // the Export icon shows a check for a moment
+    setExported(true);
+    clearTimeout(exportedTimer.current);
+    exportedTimer.current = setTimeout(() => setExported(false), 2000);
   }
 
   // Adds a backup's blocks to the canvas (nothing already on it is removed).
@@ -1167,12 +1196,12 @@ export default function App() {
         {!isGuest && <SidebarItem icon={<LayoutDashboard />} label="Dashboard" onClick={() => navigate("/dashboard")} />}
         {isGuest && (
           <>
-            <SidebarItem icon={<Download />} label="Export" title="Download a backup file" onClick={exportCanvas} />
+            <SidebarItem icon={<DownloadDoneIcon size={22} active={exported} className="-mx-[2px]" />} label="Export" title="Download a backup file" onClick={exportCanvas} />
             <SidebarItem
-              icon={<Upload />}
+              icon={<ImportIcon size={22} active={imported} className="-mx-[2px]" />}
               label="Import"
               title="Add blocks from a backup file"
-              onClick={() => importInput.current?.click()}
+              onClick={startImport}
             />
             <SidebarSeparator />
           </>
@@ -1182,7 +1211,8 @@ export default function App() {
         ) : (
           isGuest && (
             <SidebarItem
-              icon={<UserPlus />}
+              icon={<AccountAddIcon key={signUpDraw} />}
+              onMouseEnter={() => setSignUpDraw((n) => n + 1)}
               label="Sign up"
               title={isLocal ? "Sign up to keep this canvas" : "Sign up to save more canvases"}
               onClick={() => navigate("/", { state: { mode: "register" } })}
@@ -1257,12 +1287,11 @@ export default function App() {
         >
           <button
             title="Share canvas"
+            onMouseEnter={() => shareIcon.current?.startAnimation()}
+            onMouseLeave={() => shareIcon.current?.stopAnimation()}
             className="h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors px-2 text-xs bg-white text-gray-400 hover:text-gray-700 dark:bg-[#232329] dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-            </svg>
+            <LinkIcon ref={shareIcon} size={14} />
           </button>
         </ShareDrawer>
       </div>

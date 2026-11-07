@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Eye, Pencil, Check, Link2, X } from "lucide-react";
+import { Eye, Pencil, X } from "lucide-react";
+import { CopiedIcon } from "./ui/animated-state-icons";
 import { saveErrorMessage } from "../lib/saveErrors";
 
 interface ShareDrawerProps {
@@ -142,15 +143,13 @@ export default function ShareDrawer({ onMakePublic, onMoveOnline, isDark, childr
                       <p className={`text-xs ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>Anyone with the link can view</p>
                     </div>
                   </div>
-                  {copiedView ? (
-                    <span className="flex items-center gap-1 text-xs font-medium text-green-500">
-                      <Check className="w-3 h-3" /> Copied
-                    </span>
-                  ) : (
-                    <span className={`flex items-center gap-1 text-xs ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
-                      <Link2 className="w-3 h-3" /> Copy
-                    </span>
-                  )}
+                  <span
+                    className={`flex items-center gap-1 text-xs ${
+                      copiedView ? "font-medium text-green-500" : isDark ? "text-[#9b9ba8]" : "text-gray-400"
+                    }`}
+                  >
+                    <CopiedIcon size={18} active={copiedView} /> {copiedView ? "Copied" : "Copy"}
+                  </span>
                 </button>
 
                 {/* can edit */}
@@ -164,15 +163,13 @@ export default function ShareDrawer({ onMakePublic, onMoveOnline, isDark, childr
                       <p className={`text-xs ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>Anyone with the link can edit</p>
                     </div>
                   </div>
-                  {copiedEdit ? (
-                    <span className="flex items-center gap-1 text-xs font-medium text-green-500">
-                      <Check className="w-3 h-3" /> Copied
-                    </span>
-                  ) : (
-                    <span className={`flex items-center gap-1 text-xs ${isDark ? "text-[#9b9ba8]" : "text-gray-400"}`}>
-                      <Link2 className="w-3 h-3" /> Copy
-                    </span>
-                  )}
+                  <span
+                    className={`flex items-center gap-1 text-xs ${
+                      copiedEdit ? "font-medium text-green-500" : isDark ? "text-[#9b9ba8]" : "text-gray-400"
+                    }`}
+                  >
+                    <CopiedIcon size={18} active={copiedEdit} /> {copiedEdit ? "Copied" : "Copy"}
+                  </span>
                 </button>
               </div>
               </>

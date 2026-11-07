@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
-import { Circle, Diamond, Lock, LockOpen, MoveUpRight, Pencil, Square } from "lucide-react";
+import { Circle, Diamond, MoveUpRight, Pencil, Square } from "lucide-react";
+import { LockUnlockIcon } from "./ui/animated-state-icons";
 import type { Mode } from "../App";
 import { TOOL_KEYS } from "../lib/toolKeys";
 
@@ -79,11 +80,11 @@ export default function CanvasToolbar({
           aria-pressed={toolLocked}
           className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
             toolLocked
-              ? "bg-[#4fb4f2]/15 text-[#1f7fb8] dark:bg-[#4fb4f2]/20 dark:text-[#4fb4f2]"
+              ? "bg-gray-100 text-gray-800 dark:bg-[#3c3c4a] dark:text-[#f5f5f5]"
               : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
           }`}
         >
-          {toolLocked ? <Lock size={14} /> : <LockOpen size={14} />}
+          <LockUnlockIcon size={22} active={!toolLocked} />
         </button>
         <div className="mx-1 h-5 w-px bg-gray-200 dark:bg-[#3c3c4a]" />
         {TOOLS.map((tool, i) =>
