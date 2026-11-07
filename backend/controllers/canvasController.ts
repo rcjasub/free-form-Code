@@ -4,6 +4,7 @@ import * as Canvas from "../models/canvas";
 import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
 import redis from "../redis";
+import { buildPreviews, PREVIEW_BLOCKS_PER_CANVAS } from "../utils/canvasPreview";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
@@ -113,6 +114,19 @@ export async function getUserCanvases(
   try {
     const canvases = await Canvas.getByUserId(user_id);
     res.status(200).json(canvases);
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}
+
+// A sketch of each of the user's canvases, for the dashboard's cards.
+export async function getCanvasPreviews(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  try {
+    const rows = await Canvas.getPreviewRows(req.user!.id, PREVIEW_BLOCKS_PER_CANVAS);
+    res.status(200).json(buildPreviews(rows));
   } catch (err) {
     handleServerError(res, err);
   }

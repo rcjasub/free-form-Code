@@ -1,5 +1,6 @@
 import pool from "../db";
 import { Pool, PoolClient } from "pg";
+import type { PreviewRow } from "../utils/canvasPreview";
 
 export interface Canvas {
   id: string;
@@ -68,6 +69,33 @@ export async function getByUserId(userId: string): Promise<Canvas[]> {
   const result = await pool.query<Canvas>(
     `SELECT * FROM canvases WHERE user_id = $1 ORDER BY created_at DESC`,
     [userId],
+  );
+  return result.rows;
+}
+
+// What the dashboard's card sketches are drawn from: the newest `perCanvas`
+// blocks of each of the user's canvases (returned oldest first, the order
+// they're stacked in on the canvas), with only the numbers a sketch needs.
+// Text and code send their line count and longest line instead of their
+// content; drawings (and shapes) send their content, which holds their
+// points (or size).
+export async function getPreviewRows(userId: string, perCanvas: number): Promise<PreviewRow[]> {
+  const result = await pool.query<PreviewRow>(
+    `SELECT canvas_id, type, language, x, y, width, wrap_width, font_size,
+            CASE WHEN type IN ('draw', 'shape') THEN content END AS content,
+            CASE WHEN type IN ('text', 'code')
+                 THEN (SELECT count(*)::int FROM regexp_split_to_table(content, chr(10))) END AS lines,
+            CASE WHEN type IN ('text', 'code')
+                 THEN (SELECT max(length(l))::int FROM regexp_split_to_table(content, chr(10)) AS l) END AS longest
+     FROM (
+       SELECT b.*, row_number() OVER (PARTITION BY b.canvas_id ORDER BY b.created_at DESC) AS n
+       FROM blocks b
+       JOIN canvases c ON c.id = b.canvas_id
+       WHERE c.user_id = $1
+     ) ranked
+     WHERE n <= $2
+     ORDER BY canvas_id, created_at`,
+    [userId, perCanvas],
   );
   return result.rows;
 }
