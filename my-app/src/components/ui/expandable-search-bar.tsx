@@ -18,7 +18,9 @@ export type ExpandableSearchBarProps = {
   width?: number;
 };
 
-const COLLAPSED_SIZE = 40;
+// the round button is 2.5rem (h-10) across; the bar starts and ends at that
+// width, so they line up whatever the page's root font size
+const COLLAPSED_SIZE = "2.5rem";
 const SPRING = { type: "spring", stiffness: 260, damping: 26 } as const;
 
 export default function ExpandableSearchBar({
@@ -35,8 +37,9 @@ export default function ExpandableSearchBar({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const inputPadding = expandDirection === "right" ? "pl-11" : "pl-10";
-  const placeholderLeft = expandDirection === "right" ? "left-11" : "left-10";
+  // the text starts a little past the round button that sits over the bar
+  const inputPadding = expandDirection === "right" ? "pl-[3.25rem]" : "pl-4";
+  const placeholderLeft = expandDirection === "right" ? "left-[3.25rem]" : "left-4";
 
   function update(next: string) {
     setValue(next);
@@ -72,8 +75,7 @@ export default function ExpandableSearchBar({
   return (
     <div
       ref={containerRef}
-      className={cn("relative inline-block shrink-0", className)}
-      style={{ width: COLLAPSED_SIZE, height: COLLAPSED_SIZE }}
+      className={cn("relative inline-block shrink-0 size-10", className)}
     >
       {/* the round button: opens it, and closes it as the X */}
       <button
