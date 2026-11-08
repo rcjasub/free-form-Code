@@ -1243,7 +1243,13 @@ export default function SharedCanvas() {
         }}
       >
         {canEdit && selectedIds.length >= 2 && mode === "select" && (
-          <SelectionBox ids={selectedIds} scale={scale} toCanvas={toCanvasPoint} onResizeStart={startGroupResize} />
+          <SelectionBox
+            ids={selectedIds}
+            scale={scale}
+            toCanvas={toCanvasPoint}
+            onResizeStart={startGroupResize}
+            move={{ positionOf: (id) => history.nodesRef.current.find((n) => n.id === id), onMove: moveSelection, onDragFrame: dragFrame }}
+          />
         )}
         {canEdit && nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
