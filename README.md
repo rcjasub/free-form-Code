@@ -1,11 +1,39 @@
 # free-form
 
-An infinite canvas where you can write and run code freely — inspired by Excalidraw. Drop code blocks anywhere on the canvas, run them in JavaScript, Python, C++ or Java, and collaborate on the same canvas in real time.
+**An AI architecture visualizer that turns a GitHub repo into a diagram you can edit.** Paste a repo URL and Claude maps the codebase into sections and connections, drawn as boxes and arrows on a real-time collaborative canvas.
 
-## Features
+> **Status:** the collaborative canvas and its diagramming tools work today. The AI generation is in active development; see the [Roadmap](#roadmap).
 
-- **Infinite canvas** — drag, drop, and arrange code blocks anywhere; draw and erase freehand
-- **Multi-language code execution** — JavaScript, Python, C++ and Java, each block remembers its language
+## Why
+
+Getting to know an unfamiliar codebase means reading dozens of files before the big picture appears, and a generated diagram is usually a static image: when it gets something wrong, you can't fix it. Here the diagram is the workspace. A team can move, relabel and correct what the AI drew, together and live.
+
+## How it will work
+
+1. Paste a GitHub repo URL. The backend reads its file tree and key files (manifests, README, routes, schema, Docker config).
+2. Claude returns a structured model of the architecture: its sections and the connections between them.
+3. Zod validates that model against a schema, so a malformed response becomes a clean error.
+4. A layout engine positions everything. The AI never picks coordinates.
+5. The sections and connections appear on the canvas as ordinary shapes and arrows, editable and synced to everyone in the room.
+
+Each user supplies their own Claude API key. It's sent per request and is never stored or logged.
+
+## Roadmap
+
+| Phase | Status |
+|---|---|
+| Shapes, arrows and colors | Done |
+| Canvas polish: group resize, smooth drags, multi-block copy | Done |
+| AI generates the architecture diagram from a repo | In progress |
+| A chat attached to each section, grounded in that section's code | Planned |
+| Feature proposals, showing new and changed parts as an animated diff | Planned |
+
+## Features available today
+
+- **Diagramming** — rectangles, diamonds, ellipses and arrows that stay attached as shapes move, with a properties panel for color, fill, line style and opacity
+- **Infinite canvas** — drag and arrange blocks anywhere; draw and erase freehand
+- **Group editing** — select many blocks, then move, resize, copy, cut, paste or duplicate them together
+- **Code blocks** — write and run JavaScript, Python, C++ and Java; each block remembers its language
 - **Sandboxed runs** — user code never runs inside the backend; it runs in an isolated sandbox (Piston) with no network access and time limits
 - **Real-time collaboration** — edits, moves and language changes sync across clients via Socket.IO
 - **Job queue** — code runs go through a BullMQ queue so the server stays stable under load
@@ -22,6 +50,7 @@ An infinite canvas where you can write and run code freely — inspired by Excal
 | Backend        | Node.js, Express, TypeScript, Socket.IO, Zod         |
 | Database       | PostgreSQL                                           |
 | Queue / Cache  | Redis, BullMQ                                        |
+| AI             | Claude API (in development)                          |
 | Code sandbox   | Piston (self-hosted, local development)              |
 | Infrastructure | Docker, Docker Compose, nginx, GitHub Actions        |
 
@@ -33,9 +62,9 @@ Defined in [`backend/db/schema.sql`](backend/db/schema.sql), which the backend r
 |------------|-----------------------------------------------------------------------------|
 | `users`    | `id`, `username`, `email` (null for guests), `password_hash` (null for guests), `is_guest` |
 | `canvases` | `id`, `user_id` → users, `name`, `share_id`, `is_public`                    |
-| `blocks`   | `id`, `canvas_id` → canvases, `type` (text/code/draw), `language`, `content`, `x`, `y`, `width` |
+| `blocks`   | `id`, `canvas_id` → canvases, `type` (text/code/draw/image/shape/arrow), `language`, `content`, `x`, `y`, `width` |
 
-Deleting a user deletes their canvases, and deleting a canvas deletes its blocks (`ON DELETE CASCADE`).
+Deleting a user deletes their canvases, and deleting a canvas deletes its blocks (`ON DELETE CASCADE`). Shapes and arrows keep their geometry and style as JSON in `content`.
 
 ## Prerequisites
 

@@ -29,3 +29,6 @@ Thumbs.db
 # Claude Code
 .claude/
 
+
+# Local planning notes (kept out of the repo)
+PLAN.md
