@@ -1,36 +1,21 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useLayoutEffect } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import type { DrawIn } from "../hooks/useSnapGhosts";
+import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
+import { drawStrokeProps, type DrawStyle } from "../lib/points";
 
 export interface Point {
   x: number;
   y: number;
 }
 
-// See FloatingNode.tsx for why dragging is throttled this way.
-const DRAG_SYNC_INTERVAL_MS = 40;
-
-// Resize handles, like Excalidraw's: a dot on each corner stretches both
-// ways; each edge of the selection box can be grabbed anywhere along its line
-// to stretch one way. fx/fy place each on the box (0 = left/top, 1 = right/bottom).
-type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
-const HANDLES: { handle: Handle; fx: number; fy: number; cursor: string }[] = [
-  { handle: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
-  { handle: "n", fx: 0.5, fy: 0, cursor: "ns-resize" },
-  { handle: "ne", fx: 1, fy: 0, cursor: "nesw-resize" },
-  { handle: "e", fx: 1, fy: 0.5, cursor: "ew-resize" },
-  { handle: "se", fx: 1, fy: 1, cursor: "nwse-resize" },
-  { handle: "s", fx: 0.5, fy: 1, cursor: "ns-resize" },
-  { handle: "sw", fx: 0, fy: 1, cursor: "nesw-resize" },
-  { handle: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
-];
 const MIN_SIZE = 4; // a drawing can't be squashed smaller than this
-const BOX_PAD = 6; // matches the selection outline's offset
-const HANDLE_SIZE = 8;
 
 // two decimals is plenty, and keeps the saved JSON from bloating
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -40,7 +25,12 @@ interface Props {
   x: number;
   y: number;
   points: Point[];
+  // color, width, dashes and opacity (lib/points)
+  drawStyle: DrawStyle;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onMarkErase: (id: string) => void;
   // Called while a resize handle is dragged (throttled) and once more with
   // done=true on release. Omitted for viewers who can't edit.
@@ -66,7 +56,9 @@ export default React.memo(function DrawingNode({
   x,
   y,
   points,
+  drawStyle,
   onMove,
+  onDragFrame,
   onMarkErase,
   onResize,
   pendingErase,
@@ -82,9 +74,13 @@ export default React.memo(function DrawingNode({
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
+  const onDragFrameRef = useRef(onDragFrame);
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
+  useLayoutEffect(() => {
+    onDragFrameRef.current = onDragFrame;
+  });
 
   // While a handle is being dragged, the drawing renders from this local
   // preview every frame; the page only hears about it at the throttled rate.
@@ -157,13 +153,14 @@ export default React.memo(function DrawingNode({
   function handleDragMouseDown(e: React.MouseEvent) {
     const startX = e.clientX;
     const startY = e.clientY;
-    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x: xRef.current, y: yRef.current };
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+      onDragFrameRef.current?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -179,6 +176,7 @@ export default React.memo(function DrawingNode({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       onMoveRef.current(id, latest.x, latest.y);
+      onDragFrameRef.current?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
     window.addEventListener("mousemove", onMouseMove);
@@ -211,8 +209,8 @@ export default React.memo(function DrawingNode({
         width,
         height,
         zIndex,
-        opacity: pendingErase ? 0.3 : 1,
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        opacity: (pendingErase ? 0.3 : 1) * (drawStyle.opacity / 100),
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: 6,
         transition: GLIDE_TRANSITION, // see lib/glide
         // The bounding box is usually much bigger than the visible stroke
@@ -253,7 +251,7 @@ export default React.memo(function DrawingNode({
             d={pathData}
             fill="none"
             stroke="transparent"
-            strokeWidth={16}
+            strokeWidth={Math.max(16, drawStyle.strokeWidth + 12)}
             strokeLinecap="round"
             strokeLinejoin="round"
             style={{ pointerEvents: "stroke", cursor: mode === "select" || mode === "text" ? "grab" : undefined }}
@@ -267,8 +265,7 @@ export default React.memo(function DrawingNode({
           pathLength={drawIn === "trace" ? 1 : undefined}
           className={drawIn === "trace" ? "snap-draw" : drawIn === "brighten" ? "snap-brighten" : undefined}
           fill="none"
-          stroke={isDark ? "#f5f5f5" : "#1f2937"}
-          strokeWidth={2}
+          {...drawStrokeProps(drawStyle, isDark)}
           strokeLinecap="round"
           strokeLinejoin="round"
           style={{ pointerEvents: "none" }}
@@ -287,15 +284,17 @@ export default React.memo(function DrawingNode({
               key={handle}
               onMouseDown={(e) => handleResizeMouseDown(e, handle)}
               // corners: a visible dot; edges: an invisible strip along the line
-              className={corner ? "absolute rounded-sm border z-10" : "absolute"}
+              className={corner ? "node-handle absolute rounded-sm border z-10" : "node-handle absolute"}
               style={{
-                left: -BOX_PAD + (fx === 0.5 ? 0 : fx * boxW) - HANDLE_SIZE / 2,
-                top: -BOX_PAD + (fy === 0.5 ? 0 : fy * boxH) - HANDLE_SIZE / 2,
+                // centered on the outline, the same size on screen at any zoom
+                left: handleEdge(-BOX_PAD + (fx === 0.5 ? 0 : fx * boxW), HANDLE_SIZE),
+                top: handleEdge(-BOX_PAD + (fy === 0.5 ? 0 : fy * boxH), HANDLE_SIZE),
                 // an edge strip runs the whole side; a corner dot is a small square
-                width: corner || fx !== 0.5 ? HANDLE_SIZE : boxW + HANDLE_SIZE,
-                height: corner || fy !== 0.5 ? HANDLE_SIZE : boxH + HANDLE_SIZE,
+                width: corner || fx !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxW}px + ${screenPx(HANDLE_SIZE)})`,
+                height: corner || fy !== 0.5 ? screenPx(HANDLE_SIZE) : `calc(${boxH}px + ${screenPx(HANDLE_SIZE)})`,
                 background: corner ? (isDark ? "#121212" : "#ffffff") : undefined,
                 borderColor: corner ? "#4fb4f2" : undefined,
+                borderWidth: corner ? screenPx(1) : undefined,
                 cursor,
                 pointerEvents: "auto", // the container itself ignores the mouse
               }}

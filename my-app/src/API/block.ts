@@ -47,6 +47,10 @@ export function updateBlockContent(canvasId: string, blockId: string, content: s
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/content`, { content });
 }
 
+export function updateBlockColor(canvasId: string, blockId: string, color: string | null) {
+  return api.patch(`/canvases/${canvasId}/blocks/${blockId}/color`, { color });
+}
+
 export function updateBlockLink(canvasId: string, blockId: string, link: string | null) {
   return api.patch(`/canvases/${canvasId}/blocks/${blockId}/link`, { link });
 }

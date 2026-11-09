@@ -1,4 +1,6 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useMemo, useState, useLayoutEffect } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
+import { dragFrom, zoomOf } from "../lib/dragMath";
 import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
@@ -9,6 +11,7 @@ import { draculaDark, draculaLight } from "../lib/codeTheme";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
+import { themeColor } from "../lib/colors";
 import ResizeHandles from "./ResizeHandles";
 
 const LANGUAGE_DROPDOWN_OPTIONS = LANGUAGE_OPTIONS.map((l) => ({ value: l.id, label: l.label }));
@@ -35,6 +38,9 @@ interface Props {
   // Omitted for viewers who can't edit — the language then shows as a plain label.
   onLanguageChange?: (id: string, language: Language) => void;
   onMove: (id: string, x: number, y: number) => void;
+  // every frame of a drag of this block, and once more (done) when it's let
+  // go: lets the rest of a multi-selection move in step with it
+  onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
   onSaveSelection?: (content: string, el: HTMLElement) => void;
   onMarkErase: (id: string) => void;
   pendingErase: boolean;
@@ -60,6 +66,8 @@ interface Props {
   isDark: boolean;
   // stacking depth among blocks, from useStackOrder
   zIndex: number;
+  // a plain text block's color (null/undefined: the theme's)
+  color?: string | null;
 }
 
 function makeTheme(isDark: boolean) {
@@ -76,8 +84,9 @@ function makeTheme(isDark: boolean) {
     },
     ".cm-content": {
       background: "transparent",
-      color: isDark ? "#f5f5f5" : "#1f2937",
-      caretColor: isDark ? "#f5f5f5" : "#1f2937",
+      // --block-color is set per text block (see the container's style)
+      color: `var(--block-color, ${isDark ? "#f5f5f5" : "#1f2937"})`,
+      caretColor: `var(--block-color, ${isDark ? "#f5f5f5" : "#1f2937"})`,
       // Room on the right for the 2px cursor. Without it the cursor at the
       // end of a line sticks out, CodeMirror scrolls the line 2px to show
       // it, and typing to the right makes the text wobble back and forth.
@@ -114,6 +123,7 @@ export default React.memo(function FloatingNode({
   onChange,
   onLanguageChange,
   onMove,
+  onDragFrame,
   onSaveSelection,
   onMarkErase,
   pendingErase,
@@ -129,12 +139,14 @@ export default React.memo(function FloatingNode({
   isMouseDown,
   isDark,
   zIndex,
+  color,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const xRef = useRef(x);
   const yRef = useRef(y);
   const onMoveRef = useRef(onMove);
+  const onDragFrameRef = useRef(onDragFrame);
   const isFocused = useRef(false);
   // Whether the cursor is in the editor. When it isn't, a cover over the
   // block takes the mouse: drag to move, double-click (or a click in text
@@ -143,6 +155,9 @@ export default React.memo(function FloatingNode({
   xRef.current = x;
   yRef.current = y;
   onMoveRef.current = onMove;
+  useLayoutEffect(() => {
+    onDragFrameRef.current = onDragFrame;
+  });
 
   // Use initial content only — let CodeMirror own its state so the cursor
   // doesn't reset on every keystroke via the controlled-value feedback loop.
@@ -213,7 +228,7 @@ export default React.memo(function FloatingNode({
 
       const startX = e.clientX;
       const startY = e.clientY;
-      const offset = { x: startX - xRef.current, y: startY - yRef.current };
+      const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(el));
       let isDragging = false;
       let lastSync = 0;
       let latest = { x: xRef.current, y: yRef.current };
@@ -229,7 +244,8 @@ export default React.memo(function FloatingNode({
         }
         if (!isDragging) return;
 
-        latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+        latest = drag(mv);
+        onDragFrameRef.current?.(id, latest.x, latest.y);
         if (el) {
           el.style.left = `${latest.x}px`;
           el.style.top = `${latest.y}px`;
@@ -247,6 +263,7 @@ export default React.memo(function FloatingNode({
         window.removeEventListener("mouseup", onMouseUp);
         if (isDragging) {
           onMoveRef.current(id, latest.x, latest.y);
+          onDragFrameRef.current?.(id, latest.x, latest.y, true);
           resumeGlide(el);
         }
       }
@@ -275,7 +292,7 @@ export default React.memo(function FloatingNode({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(containerRef.current));
     let isDragging = false;
     let lastSync = 0;
     let latest = { x: xRef.current, y: yRef.current };
@@ -291,7 +308,8 @@ export default React.memo(function FloatingNode({
       }
       if (!isDragging) return;
 
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
+        onDragFrameRef.current?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -309,6 +327,7 @@ export default React.memo(function FloatingNode({
       window.removeEventListener("mouseup", onMouseUp);
       if (isDragging) {
         onMoveRef.current(id, latest.x, latest.y);
+        onDragFrameRef.current?.(id, latest.x, latest.y, true);
         resumeGlide(containerRef.current);
       } else {
         onClick?.(up);
@@ -366,6 +385,8 @@ export default React.memo(function FloatingNode({
         left: x,
         top: y,
         ["--block-font-size" as string]: fontSize ? `${fontSize}px` : undefined,
+        // only plain text takes a color; code keeps its syntax colors
+        ["--block-color" as string]: language === "text" && color ? themeColor(color, isDark) : undefined,
         // a wrapping block is exactly its wrap width, so its edge follows
         // the side handle both ways (like Excalidraw's text boxes)
         width: wraps ? wrapWidth : undefined,
@@ -373,7 +394,7 @@ export default React.memo(function FloatingNode({
         opacity: pendingErase ? 0.3 : 1,
         // a dashed box tight around the text when selected, the same as
         // drawings and images; the resize handles sit on its edge
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: selected ? BOX_PAD : undefined,
         transition: GLIDE_TRANSITION, // see lib/glide
         // In draw mode, existing blocks shouldn't intercept clicks or steal

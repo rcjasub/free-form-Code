@@ -1,4 +1,5 @@
 import { BOX_PAD, type ResizeHandle } from "../lib/resize";
+import { handleEdge, screenPx } from "../lib/boxHandles";
 
 // Sized like DrawingNode's handles, on the dashed selection outline's edge.
 const HANDLE_SIZE = 8;
@@ -24,8 +25,8 @@ export default function ResizeHandles({ isDark, onPointerDown }: Props) {
         <div
           key={side}
           title="Drag to change where lines wrap"
-          className="absolute z-20 cursor-ew-resize"
-          style={{ [side]: -BOX_PAD - HANDLE_SIZE / 2, top: -BOX_PAD, bottom: -BOX_PAD, width: HANDLE_SIZE }}
+          className="node-handle absolute z-20 cursor-ew-resize"
+          style={{ [side]: handleEdge(-BOX_PAD, HANDLE_SIZE), top: -BOX_PAD, bottom: -BOX_PAD, width: screenPx(HANDLE_SIZE) }}
           onPointerDown={(e) => onPointerDown(e, side)}
         />
       ))}
@@ -33,12 +34,14 @@ export default function ResizeHandles({ isDark, onPointerDown }: Props) {
         <div
           key={handle}
           title="Drag to resize the text"
-          className="absolute rounded-sm border z-20"
+          className="node-handle absolute rounded-sm border z-20"
           style={{
-            [handle.includes("w") ? "left" : "right"]: -BOX_PAD - HANDLE_SIZE / 2,
-            [handle.includes("n") ? "top" : "bottom"]: -BOX_PAD - HANDLE_SIZE / 2,
-            width: HANDLE_SIZE,
-            height: HANDLE_SIZE,
+            // the same size on screen at any zoom (see screenPx)
+            [handle.includes("w") ? "left" : "right"]: handleEdge(-BOX_PAD, HANDLE_SIZE),
+            [handle.includes("n") ? "top" : "bottom"]: handleEdge(-BOX_PAD, HANDLE_SIZE),
+            width: screenPx(HANDLE_SIZE),
+            height: screenPx(HANDLE_SIZE),
+            borderWidth: screenPx(1),
             background: isDark ? "#121212" : "#ffffff",
             borderColor: "#4fb4f2",
             cursor,

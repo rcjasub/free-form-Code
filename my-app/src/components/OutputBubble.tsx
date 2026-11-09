@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import React from "react";
 import type { Mode } from "../App";
 import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
@@ -210,7 +211,7 @@ export default React.memo(function OutputBubble({
         maxWidth: width ? undefined : DEFAULT_WIDTH,
         fontSize: fontSize ?? DEFAULT_FONT_SIZE,
         lineHeight: 1.4,
-        outline: selected ? "1.5px dashed #4fb4f2" : undefined,
+        outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: selected ? BOX_PAD : undefined,
         pointerEvents: mode === "draw" ? "none" : undefined,
       }}

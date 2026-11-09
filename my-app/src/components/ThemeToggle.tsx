@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useId, useState } from "react";
 import { flushSync } from "react-dom";
+import { cn } from "@/lib/utils";
 
 export const useThemeToggle = () => {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -50,26 +51,34 @@ export const useThemeToggle = () => {
   return { isDark, toggleTheme };
 };
 
+// The round toggle in page headers. The page still sweeps to the new theme
+// in a growing circle, and the button is part of the page for it (no layer
+// or color fade of its own), so its box is always the page's color. The
+// sun and moon just swap.
 export function ThemeToggleButton({ className = "" }: { className?: string }) {
   const { isDark, toggleTheme } = useThemeToggle();
 
   return (
     <button
       type="button"
-      className={`size-8 cursor-pointer rounded-lg p-0 transition-all duration-300 active:scale-95 bg-white text-gray-800 dark:bg-[#121212] dark:text-[#f5f5f5] ${className}`}
+      className={cn(
+        "size-8 cursor-pointer rounded-lg p-0 transition-transform active:scale-95 bg-white text-gray-800 dark:bg-[#121212] dark:text-[#f5f5f5]",
+        className,
+      )}
       onClick={toggleTheme}
-      aria-label="Toggle theme"
-      style={{ viewTransitionName: "theme-toggle" }}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
-      <ThemeIcon isDark={isDark} />
+      <ThemeIcon isDark={isDark} instant />
     </button>
   );
 }
 
-// The sun/moon that morphs between themes, sized by its container. The
-// clip-path id is per instance, since the toggle can be on screen twice.
-export function ThemeIcon({ isDark }: { isDark: boolean }) {
+// The sun/moon that morphs between themes, sized by its container (or, with
+// `instant`, just swaps). The clip-path id is per instance, since the toggle
+// can be on screen twice.
+export function ThemeIcon({ isDark, instant = false }: { isDark: boolean; instant?: boolean }) {
   const clipId = `theme-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const transition = instant ? { duration: 0 } : { ease: "easeInOut" as const, duration: 0.35 };
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -81,14 +90,14 @@ export function ThemeIcon({ isDark }: { isDark: boolean }) {
       <clipPath id={clipId}>
         <motion.path
           animate={{ y: isDark ? 10 : 0, x: isDark ? -12 : 0 }}
-          transition={{ ease: "easeInOut", duration: 0.35 }}
+          transition={transition}
           d="M0-5h30a1 1 0 0 0 9 13v24H0Z"
         />
       </clipPath>
       <g clipPath={`url(#${clipId})`}>
         <motion.circle
           animate={{ r: isDark ? 10 : 8 }}
-          transition={{ ease: "easeInOut", duration: 0.35 }}
+          transition={transition}
           cx="16"
           cy="16"
         />
@@ -98,7 +107,7 @@ export function ThemeIcon({ isDark }: { isDark: boolean }) {
             scale: isDark ? 0.5 : 1,
             opacity: isDark ? 0 : 1,
           }}
-          transition={{ ease: "easeInOut", duration: 0.35 }}
+          transition={transition}
           stroke="currentColor"
           strokeWidth="1.5"
         >

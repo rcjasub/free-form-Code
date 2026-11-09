@@ -118,15 +118,6 @@
 }
 
 
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.card-in {
-  opacity: 0;
-  animation: card-in 0.3s ease forwards;
-}
-
 #root {
   width: 100%;
   height: 100%;
@@ -282,6 +273,70 @@ html {
 .viewer-cursor .cursor-grab {
   cursor: inherit;
 }
+/* The switch in components/ui/switch.tsx: a knob of line that slides along
+   a loop between its two ends. Sized from font-size (the track is 2em tall). */
+.path-switch {
+  --switch-track: #c9c9cf;
+  --switch-track-on: #5c5c66;
+  --switch-knob: #ffffff;
+  font-size: 7px;
+}
+.dark .path-switch {
+  --switch-track: #44444f;
+  --switch-track-on: #8a8a98;
+  --switch-knob: #ffffff;
+}
+.path-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.path-switch-track {
+  --a: 0.5s ease-out;
+  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  height: 2em;
+  aspect-ratio: 212.4992 / 84.4688;
+  border-radius: 2em;
+  background-color: var(--switch-track);
+  box-shadow: 0 0 0 0.66em var(--switch-track);
+  transition: background-color var(--a), box-shadow var(--a);
+}
+.path-switch-input:checked + .path-switch-track {
+  background-color: var(--switch-track-on);
+  box-shadow: 0 0 0 0.66em var(--switch-track-on);
+}
+.path-switch-input:focus-visible + .path-switch-track {
+  outline: 2px solid #4fb4f2;
+  outline-offset: 0.9em;
+}
+.path-switch-track svg {
+  height: 100%;
+  overflow: visible;
+}
+.path-switch-track svg path {
+  color: var(--switch-knob);
+  stroke-width: 16;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 136 224;
+  transition: all var(--a), 0s transform;
+  transform-origin: center;
+}
+.path-switch-input:checked + .path-switch-track svg path {
+  stroke-dashoffset: 180;
+  transform: scaleY(-1);
+}
+
+/* While the canvas is being panned (hand tool, space-drag or middle-click):
+   a closed hand everywhere, over blocks too, until the button is released. */
+body.canvas-panning,
+body.canvas-panning * {
+  cursor: grabbing !important;
+}
+
 .dot-cursor {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='8' fill='%233d8bff' fill-opacity='0.75'/%3E%3C/svg%3E") 8 8, auto;
 }
@@ -321,4 +376,10 @@ html {
   .snap-ghost { animation-duration: 300ms; }
   .snap-draw { animation: none; stroke-dashoffset: 0; }
   .snap-brighten { animation: none; }
+}
+
+/* With several blocks selected, the box around them (SelectionBox) does the
+   resizing; each block's own handles would only crowd it. */
+[data-multi-select] .node-handle {
+  display: none;
 }

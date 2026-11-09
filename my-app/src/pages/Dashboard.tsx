@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from "react";
-import { animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
+import { AnimatePresence, animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
 
 const LogoutIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -9,19 +9,28 @@ const LogoutIcon = ({ size = 16 }: { size?: number }) => (
   </svg>
 );
 
-function SignOutButton({ onClick }: { onClick: () => void }) {
+// The header's actions in one floating pill: the theme toggle, a divider,
+// and sign out (which turns the canvas menu's "Delete all" red and nudges
+// its arrow out on hover).
+function HeaderActions({ onSignOut }: { onSignOut: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      // no box at all — just the icon + text, lifting on hover
-      className="flex items-center gap-2 px-2 py-2 text-sm font-bold text-gray-900 dark:text-white transform hover:-translate-y-1 transition duration-400"
-    >
-      <LogoutIcon size={16} />
-      Sign out
-    </button>
+    <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-white/80 p-1 shadow-sm backdrop-blur-md dark:border-[#2e2e3a] dark:bg-[#1a1a22]/80">
+      <ThemeToggleButton className="size-8 rounded-full bg-transparent p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:bg-transparent dark:text-gray-300 dark:hover:bg-[#2e2e3a] dark:hover:text-white" />
+      <span aria-hidden className="h-5 w-px bg-gray-200 dark:bg-[#2e2e3a]" />
+      <button
+        type="button"
+        onClick={onSignOut}
+        className="group flex h-8 items-center gap-2 rounded-full pl-3 pr-3.5 text-sm font-medium text-gray-700 transition-colors hover:bg-[#FF3B6B]/10 hover:text-[#FF3B6B] dark:text-gray-200 dark:hover:bg-[#FF3B6B]/10 dark:hover:text-[#FF3B6B]"
+      >
+        <span className="transition-transform duration-200 group-hover:translate-x-0.5">
+          <LogoutIcon size={15} />
+        </span>
+        Sign out
+      </button>
+    </div>
   );
 }
-import { Trash2, Search } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import axios from "axios";
 import { getMe } from "@/API/auth";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
@@ -37,6 +46,15 @@ const BLACK_CAT_URL = "https://lottie.host/ba280eed-ba90-41e4-bca2-21a7e13bb168/
 import { ShootingStars } from "@/components/ui/shooting-stars";
 import { StarsBackground } from "@/components/ui/stars-background";
 import { Liquid } from "@/components/ui/button-1";
+import ExpandableSearchBar from "@/components/ui/expandable-search-bar";
+import { SquigglyText } from "@/components/ui/squiggly-text";
+import { CardBody, CardContainer, CardItem } from "@/components/ui/3d-card";
+import CanvasPreview, { type PreviewItem } from "@/components/CanvasPreview";
+import { canvasBackgroundStyle, loadCanvasBackground } from "@/lib/canvasBackground";
+
+// The canvas pattern drawn at this zoom on a card, so its dots or grid look
+// about as dense next to a sketch as they do on the canvas.
+const CARD_PATTERN_SCALE = 0.72;
 
 // blue liquid palette from the ui-layouts button-1 demo
 const LIQUID_COLORS = {
@@ -103,7 +121,7 @@ function LiquidNewCanvasButton({ onClick }: { onClick: () => void }) {
     </>
   );
   return (
-    <div className="relative inline-block w-36 h-10 shrink-0 bg-black border-2 border-white rounded-lg">
+    <div className="relative inline-block w-36 h-10 shrink-0 bg-black rounded-lg">
       {/* glow */}
       <div className="absolute w-[112.81%] h-[128.57%] top-[8.57%] left-1/2 -translate-x-1/2 filter blur-[19px] opacity-70 pointer-events-none">
         <span className="absolute inset-0 rounded-lg bg-[#d9d9d9] filter blur-[6.5px]" />
@@ -179,6 +197,12 @@ export default function Dashboard() {
   const [formState, setFormState] = useState<FormState>("idle");
   const [canvasName, setCanvasName] = useState("");
   const [search, setSearch] = useState("");
+  // each canvas's sketch, by id (loaded after the list; cards show the dot
+  // grid alone until then, or if it fails)
+  const [previews, setPreviews] = useState<Record<string, PreviewItem[]>>({});
+  // the background picked on the canvas (dots, grid or blank). It's one
+  // setting for the whole browser, so every card shows the same one.
+  const [background, setBackground] = useState(loadCanvasBackground);
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -198,12 +222,37 @@ export default function Dashboard() {
           return;
         }
         setCanvases(data);
+        loadPreviews();
       } catch {
         navigate("/");
       } finally {
         setLoading(false);
       }
     })();
+  }, []);
+
+  // The sketches are a snapshot taken when the dashboard loads; coming back
+  // to this tab (after editing in another one, say) takes a fresh one.
+  function loadPreviews() {
+    axios
+      .get("/api/canvases/previews", { withCredentials: true })
+      .then(({ data }) => setPreviews(data))
+      .catch(() => {});
+  }
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      loadPreviews();
+      setBackground(loadCanvasBackground());
+    };
+    // picked in another tab while this one is open
+    const onStorage = () => setBackground(loadCanvasBackground());
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -296,10 +345,7 @@ export default function Dashboard() {
             <TextRoll>Free-Form</TextRoll>
           </h1>
         </div>
-        <div className="flex items-center gap-3">
-          <ThemeToggleButton />
-          <SignOutButton onClick={signOut} />
-        </div>
+        <HeaderActions onSignOut={signOut} />
       </div>
 
       {/* content */}
@@ -308,27 +354,26 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-8 gap-4">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                Your canvases
+              {/* "canvases" and the count wobble like a hand-drawn cartoon */}
+              <h2 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+                Your{" "}
+                <SquigglyText scale={[2, 4]} stepDuration={90} className="text-[#1a8ad4] dark:text-[#6fbdf0]">
+                  canvases
+                </SquigglyText>
               </h2>
               {!loading && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-[#2e2e3a] text-gray-500 dark:text-gray-400">
+                <SquigglyText
+                  scale={[2, 3]}
+                  stepDuration={120}
+                  className="min-w-7 text-center text-sm font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"
+                >
                   {canvases.length}
-                </span>
+                </SquigglyText>
               )}
             </div>
 
-            {/* search */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-[#232329] text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-[#5c5c6a] w-40"
-              />
-            </div>
+            {/* search: opens to the right, filters as you type */}
+            <ExpandableSearchBar expandDirection="right" width={260} placeholder="Search canvases..." onChange={setSearch} />
           </div>
 
           {isDark ? (
@@ -424,44 +469,88 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <AnimatePresence mode="popLayout" initial={true}>
             {filtered.map((c, i) => (
-              <div
+              <motion.div
                 key={c.id}
-                className="card-in relative group rounded-xl shadow-md dark:shadow-black/40 hover:-translate-y-1 hover:shadow-lg dark:hover:shadow-black/40 transition-all duration-200 cursor-pointer overflow-hidden"
-                style={{ animationDelay: `${i * 60}ms` }}
+                layout
+                // cards blur in one after another and out as the search
+                // narrows, the way spotlight results do
+                initial={{ opacity: 0, y: 10, filter: "blur(5px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 0.96, filter: "blur(5px)" }}
+                transition={{
+                  default: { duration: 0.25, ease: "easeOut", delay: Math.min(i, 8) * 0.05 },
+                  layout: { type: "spring", bounce: 0.2, duration: 0.5 },
+                }}
+                className="group cursor-pointer"
                 onClick={() => navigate(`/canvas/${c.id}`)}
               >
-
-                {/* dot grid preview */}
-                <div
-                  className="relative h-32"
-                  style={{
-                    backgroundColor: "var(--canvas-bg, #ffffff)",
-                    backgroundImage: "radial-gradient(circle, var(--canvas-dot, #d1d5db) 1px, transparent 1px)",
-                    backgroundSize: "20px 20px",
-                  }}
-                >
-                  {/* gradient fade into footer */}
-                  <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white dark:from-[#1a1a22] to-transparent" />
-                </div>
-
-                {/* card footer */}
-                <div className="flex items-center justify-between px-3 py-2.5 bg-white dark:bg-[#1a1a22]">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{c.name}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      edited {timeAgo(c.updated_at)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteCanvas(c.id); }}
-                    className="ml-2 shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-[#FF3B6B] transition-all"
+                {/* Dark: the card tilts gently toward the pointer, and the sketch,
+                    name and delete button lift a little off it (staying inside its
+                    edges). Light: flat, with a solid shadow under an outline, like
+                    the light New canvas button. Dark: a faint outline all the way
+                    round, and only a light shadow on hover. */}
+                <CardContainer disabled={!isDark} tiltDivisor={20} className="w-full" containerClassName="w-full">
+                  {/* Light: the solid shadow, a dark card-shaped plate behind the
+                      card, 4px down and right. The card lifting 2px on hover makes
+                      it look 6px. (A CSS box-shadow leaves a hairline of page
+                      between it and the outline at the corners.) */}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 translate-x-1 translate-y-1 rounded-xl bg-gray-900 dark:hidden"
+                  />
+                  <CardBody
+                    // p-px (light): the contents stop 1px in, under the middle of the
+                    // 2px outline, so their soft edges can't show through it
+                    className="relative w-full rounded-xl bg-white bg-clip-content p-px dark:p-0 transition-[translate,box-shadow] duration-200
+                      hover:-translate-x-0.5 hover:-translate-y-0.5
+                      dark:bg-[#1a1a22]
+                      dark:hover:translate-x-0 dark:hover:translate-y-0 dark:hover:shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+                    {/* the canvas's background (dots, grid or blank) behind its sketch */}
+                    <div
+                      className="relative h-32 rounded-t-[calc(var(--radius-xl)-1px)] dark:rounded-t-xl"
+                      style={canvasBackgroundStyle(background, isDark, CARD_PATTERN_SCALE, { x: 0, y: 0 })}
+                    >
+                      {/* gradient fade into footer */}
+                      <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white dark:from-[#1a1a22] to-transparent" />
+                      {previews[c.id] && (
+                        <CardItem translateZ={48} className="absolute inset-x-4 top-4 bottom-5 w-auto">
+                          <CanvasPreview items={previews[c.id]} isDark={isDark} />
+                        </CardItem>
+                      )}
+                    </div>
+
+                    {/* card footer */}
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-b-[calc(var(--radius-xl)-1px)] dark:rounded-b-xl bg-white dark:bg-[#1a1a22]">
+                      <CardItem translateZ={36} className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{c.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          edited {timeAgo(c.updated_at)}
+                        </p>
+                      </CardItem>
+                      <CardItem
+                        as="button"
+                        translateZ={48}
+                        aria-label={`Delete ${c.name}`}
+                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); deleteCanvas(c.id); }}
+                        className="ml-2 shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-[#FF3B6B] transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </CardItem>
+                    </div>
+                    {/* Light: the outline, drawn over the card rather than as its border,
+                        so nothing inside can paint over its corners. */}
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 rounded-xl border-2 border-gray-900 dark:hidden"
+                    />
+                  </CardBody>
+                </CardContainer>
+              </motion.div>
             ))}
+            </AnimatePresence>
           </div>
         )}
       </div>

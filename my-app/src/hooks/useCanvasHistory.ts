@@ -5,6 +5,8 @@ import type { Language } from "../lib/languages";
 import { imageToDataUrl, IMAGE_DISPLAY_WIDTH } from "../lib/images";
 import { detectLanguage } from "../lib/detectLanguage";
 import { FONT_SIZE, measureCanvasText, splitLines } from "../lib/splitLines";
+import { isDataBlock } from "../lib/blockTypes";
+import { parseArrow, serializeArrow } from "../lib/shapes";
 
 // The block fields undo and copy/paste need — both canvas pages' node types
 // have this shape.
@@ -13,6 +15,8 @@ export interface CanvasNode {
   x: number;
   y: number;
   content: string;
+  // undefined for text/code; otherwise a data block (lib/blockTypes) whose
+  // content is JSON: draw points, an image data URL, a shape or an arrow
   type?: string;
   language?: Language;
   points?: Point[];
@@ -21,24 +25,29 @@ export interface CanvasNode {
   // text blocks: where lines wrap (null: they don't) and font size (null: default)
   wrapWidth?: number | null;
   fontSize?: number | null;
+  // text blocks: their color (null: the theme's text color)
+  color?: string | null;
 }
 
 // One entry per undoable canvas action, holding what's needed to reverse it.
 // Typing inside a block isn't tracked here — CodeMirror keeps its own undo
 // history while the block is focused.
 export type HistoryEntry =
-  | { kind: "create"; id: string }
+  | { kind: "create"; id: string; group?: number }
   | { kind: "delete"; nodes: CanvasNode[] } // one eraser drag can delete several
-  // `group` ties together the blocks of one multi-block drag, so a single
-  // undo puts them all back
+  // `group` (on moves, reshapes and resizes) ties together the entries of
+  // one action on several blocks (a multi-block drag, resizing a selection),
+  // so a single undo puts them all back
   | { kind: "move"; id: string; x: number; y: number; group?: number }
   | { kind: "language"; id: string; language: Language; content: string }
   // a drawing's position and stroke before it was resized
-  | { kind: "reshape"; id: string; x: number; y: number; content: string }
+  | { kind: "reshape"; id: string; x: number; y: number; content: string; group?: number }
   | { kind: "link"; id: string; link: string | null }
+  // a text block's color before it was changed
+  | { kind: "color"; id: string; color: string | null }
   // a text block's size (and position — resizing from the left/top moves it)
   // before its handles were dragged
-  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number }
+  | { kind: "resize"; id: string; wrapWidth: number | null; fontSize: number | null; x: number; y: number; group?: number }
   // a block split into one block per line: the block as it was, and the pieces
   | { kind: "split"; original: CanvasNode; ids: string[] };
 
@@ -52,11 +61,22 @@ const MIN_WRAP_WIDTH = 40;
 const DUPLICATE_OFFSET = 24;
 
 // What a block copy puts on the system clipboard. Paste only treats the
-// clipboard as a block if its text still matches, so copying something else
+// clipboard as blocks if its text still matches, so copying something else
 // in the meantime (here or in another app) pastes that instead.
-function clipboardText(node: CanvasNode) {
-  if (node.type === "draw" || node.type === "image" || !node.content.trim()) return "[free-form block]";
+function clipboardText(nodes: CanvasNode[]) {
+  if (nodes.length > 1) return `[free-form: ${nodes.length} blocks]`;
+  const [node] = nodes;
+  if (isDataBlock(node) || !node.content.trim()) return "[free-form block]";
   return node.content;
+}
+
+// A copied arrow attached to a shape that was copied with it attaches to that
+// shape's copy; an end attached to a shape that wasn't copied lets go, so the
+// copy stays where it was pasted instead of snapping back to the original.
+function remapArrow(content: string, newIds: Map<string, string>) {
+  const arrow = parseArrow(content);
+  const end = (id: string | undefined) => (id ? newIds.get(id) : undefined);
+  return serializeArrow({ ...arrow, fromId: end(arrow.fromId), toId: end(arrow.toId) });
 }
 
 function inEditor(target: EventTarget | null) {
@@ -114,6 +134,7 @@ export interface CanvasOps {
   applyLanguage: (id: string, language: Language, content: string) => void;
   applyShape: (id: string, x: number, y: number, content: string) => void;
   applyLink: (id: string, link: string | null) => void;
+  applyColor: (id: string, color: string | null) => void;
   applySize: (id: string, wrapWidth: number | null, fontSize: number | null) => void;
   // saves a copy of a block at (x, y); resolves to its new id, or null on failure
   recreateBlock: (src: CanvasNode, x: number, y: number) => Promise<string | null>;
@@ -153,13 +174,13 @@ type ContextMenuProps = Omit<CanvasContextMenuProps, "isDark">;
 // ids, a ref the page keeps at the pointer's canvas position (where pastes
 // land), and the right-click menu's props while it's open.
 export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, rootRef, onError, canMarquee }: ShortcutOptions) {
-  // Usually one block (a click); several after Select all. Copy, cut and
-  // duplicate act on a single selected block only.
+  // Usually one block (a click); several after Select all or a marquee.
+  // Copy, cut, paste and duplicate act on all of them.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
-  // `text` is null when the system clipboard couldn't be written (see copyNode)
-  const clipboard = useRef<{ node: CanvasNode; text: string | null } | null>(null);
+  // `text` is null when the system clipboard couldn't be written (see copyNodes)
+  const clipboard = useRef<{ nodes: CanvasNode[]; text: string | null } | null>(null);
   const pointer = useRef({ x: 100, y: 100 });
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null; at: { x: number; y: number } } | null>(null);
   const rightDown = useRef<{ x: number; y: number } | null>(null);
@@ -174,18 +195,45 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
 
   // ---- actions, shared by the keyboard and the menu ----
 
-  async function placeCopy(src: CanvasNode, x: number, y: number) {
-    const newId = await ops.recreateBlock(src, x, y);
-    if (!newId) return;
-    history.record({ kind: "create", id: newId });
-    setSelectedId(newId);
+  // Copies of blocks, arranged as they were with their top-left corner at
+  // `at`. They come out selected, and one undo removes them all.
+  async function placeCopies(src: CanvasNode[], at: { x: number; y: number }) {
+    if (!src.length) return;
+    const left = Math.min(...src.map((n) => n.x));
+    const top = Math.min(...src.map((n) => n.y));
+    const group = src.length > 1 ? Date.now() : undefined;
+    const newIds = new Map<string, string>();
+    // arrows last, so the shapes they attach to have their new ids by then
+    const ordered = [...src.filter((n) => n.type !== "arrow"), ...src.filter((n) => n.type === "arrow")];
+    for (const n of ordered) {
+      const copy = n.type === "arrow" ? { ...n, content: remapArrow(n.content, newIds) } : n;
+      const newId = await ops.recreateBlock(copy, at.x + n.x - left, at.y + n.y - top);
+      if (!newId) continue;
+      newIds.set(n.id, newId);
+      history.record({ kind: "create", id: newId, group });
+    }
+    setSelectedIds([...newIds.values()]);
+  }
+
+  // the selected blocks, in the order they're stacked
+  function selectedNodes() {
+    return history.nodesRef.current.filter((n) => selectedIds.includes(n.id));
+  }
+
+  // where copies of `nodes` go when duplicated: a little down and right
+  function duplicateAt(nodes: CanvasNode[]) {
+    return {
+      x: Math.min(...nodes.map((n) => n.x)) + DUPLICATE_OFFSET,
+      y: Math.min(...nodes.map((n) => n.y)) + DUPLICATE_OFFSET,
+    };
   }
 
   // The menu has no copy event to write into, so it uses the Clipboard API,
   // which only exists on https or localhost. Without it, Ctrl+V trusts the
   // in-app copy instead of checking the system clipboard matches.
-  function copyNode(node: CanvasNode) {
-    const entry: { node: CanvasNode; text: string | null } = { node, text: clipboardText(node) };
+  function copyNodes(nodes: CanvasNode[]) {
+    if (!nodes.length) return;
+    const entry: { nodes: CanvasNode[]; text: string | null } = { nodes, text: clipboardText(nodes) };
     clipboard.current = entry;
     if (!navigator.clipboard?.writeText) entry.text = null;
     else navigator.clipboard.writeText(entry.text!).catch(() => (entry.text = null));
@@ -230,13 +278,13 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       if (source.image) {
         const { dataUrl, width } = await imageToDataUrl(source.image);
         const image = { id: "", ...at, type: "image", content: dataUrl, width: Math.min(width, IMAGE_DISPLAY_WIDTH) };
-        await placeCopy(image, at.x, at.y);
+        await placeCopies([image], at);
       } else if (source.text) {
         const language = detectLanguage(source.text);
         // code keeps each line whole, however long
         const tooWide = language === "text" && source.text.split("\n").some((l) => measureCanvasText(l) > PASTE_WRAP_WIDTH);
         const note = { id: "", ...at, content: source.text, language, wrapWidth: tooWide ? PASTE_WRAP_WIDTH : null };
-        await placeCopy(note, at.x, at.y);
+        await placeCopies([note], at);
       }
     } catch (err) {
       onError?.(err instanceof Error ? err.message : "Couldn't paste that.");
@@ -273,7 +321,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // Menu paste has no paste event to read from, so it uses what was copied
   // in the app, or else asks the browser for the system clipboard.
   async function pasteFromMenu(at: { x: number; y: number }) {
-    if (clipboard.current) return placeCopy(clipboard.current.node, at.x, at.y);
+    if (clipboard.current) return placeCopies(clipboard.current.nodes, at);
     try {
       for (const item of await navigator.clipboard.read()) {
         const imageType = item.types.find((t) => t.startsWith("image/"));
@@ -292,36 +340,32 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
   // and `selectedId` — never a stale copy from an earlier render.
 
   const undo = useEffectEvent(async () => {
-    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, restoreBlocks } = ops;
+    const { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applyColor, applySize, restoreBlocks } = ops;
     const exists = (id: string) => history.nodesRef.current.some((n) => n.id === id);
 
-    // Skip entries for blocks someone else has deleted since.
-    let entry;
-    while ((entry = history.pop())) {
+    // Reverses one entry; false if there was nothing left to reverse (its
+    // block deleted by someone else since).
+    async function revert(entry: HistoryEntry): Promise<boolean> {
       if (entry.kind === "create") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         deleteNode(entry.id, false);
       } else if (entry.kind === "move") {
-        const group = entry.group;
-        if (exists(entry.id)) moveNode(entry.id, entry.x, entry.y, false);
-        // the rest of a multi-block drag goes back in the same undo
-        let next;
-        while (group !== undefined && (next = history.peek())?.kind === "move" && next.group === group) {
-          history.pop();
-          if (exists(next.id)) moveNode(next.id, next.x, next.y, false);
-        }
-        if (!exists(entry.id) && group === undefined) continue;
+        if (!exists(entry.id)) return false;
+        moveNode(entry.id, entry.x, entry.y, false);
       } else if (entry.kind === "language") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyLanguage(entry.id, entry.language, entry.content);
       } else if (entry.kind === "reshape") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyShape(entry.id, entry.x, entry.y, entry.content);
       } else if (entry.kind === "link") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applyLink(entry.id, entry.link);
+      } else if (entry.kind === "color") {
+        if (!exists(entry.id)) return false;
+        applyColor(entry.id, entry.color);
       } else if (entry.kind === "resize") {
-        if (!exists(entry.id)) continue;
+        if (!exists(entry.id)) return false;
         applySize(entry.id, entry.wrapWidth, entry.fontSize);
         moveNode(entry.id, entry.x, entry.y, false);
       } else if (entry.kind === "split") {
@@ -338,7 +382,22 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
           if (newId) history.remapId(node.id, newId);
         });
       }
-      return;
+      return true;
+    }
+    const groupOf = (e: HistoryEntry) => ("group" in e ? e.group : undefined);
+
+    // Skip entries for blocks someone else has deleted since. The rest of an
+    // action on several blocks goes back in the same undo.
+    let entry;
+    while ((entry = history.pop())) {
+      let reverted = await revert(entry);
+      const group = groupOf(entry);
+      let next;
+      while (group !== undefined && (next = history.peek()) && groupOf(next) === group) {
+        history.pop();
+        reverted = (await revert(next)) || reverted;
+      }
+      if (reverted || group !== undefined) return;
     }
   });
 
@@ -368,33 +427,41 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       deleteMany(selectedIds);
       return;
     }
+    if (ctrl && key === "d") {
+      const nodes = selectedNodes();
+      if (!nodes.length) return;
+      e.preventDefault(); // the browser's own Ctrl+D bookmarks the page
+      placeCopies(nodes, duplicateAt(nodes));
+      return;
+    }
     const node = history.nodesRef.current.find((n) => n.id === selectedId);
     if (!node) return;
-    if (ctrl && key === "d") {
-      e.preventDefault(); // the browser's own Ctrl+D bookmarks the page
-      placeCopy(node, node.x + DUPLICATE_OFFSET, node.y + DUPLICATE_OFFSET);
-    } else if (!ctrl && (e.key === "Delete" || e.key === "Backspace")) {
+    if (!ctrl && (e.key === "Delete" || e.key === "Backspace")) {
       ops.deleteNode(node.id, true);
       setSelectedId(null);
     }
   });
 
-  // Ctrl+C / Ctrl+X on the selected block. Highlighted text copies as normal.
+  // Ctrl+C / Ctrl+X on the selected blocks. Text highlighted inside a block
+  // copies as normal; with several blocks selected it's always a block copy
+  // (whatever page text the browser thinks is highlighted).
   const onCopyOrCut = useEffectEvent((e: ClipboardEvent) => {
-    const node = history.nodesRef.current.find((n) => n.id === selectedId);
+    const nodes = selectedNodes();
     const hasTextSelection = !!window.getSelection()?.toString();
-    if (!node || hasTextSelection) {
+    if (!nodes.length || (hasTextSelection && (nodes.length === 1 || inEditor(e.target)))) {
       clipboard.current = null; // a normal text copy replaces any copied block
       return;
     }
     e.preventDefault();
     e.stopPropagation();
-    const text = clipboardText(node);
+    const text = clipboardText(nodes);
     e.clipboardData?.setData("text/plain", text);
-    clipboard.current = { node, text };
+    clipboard.current = { nodes, text };
     if (e.type === "cut") {
-      ops.deleteNode(node.id, true);
-      setSelectedId(null);
+      if (nodes.length === 1) {
+        ops.deleteNode(nodes[0].id, true);
+        setSelectedId(null);
+      } else deleteMany(nodes.map((n) => n.id));
     }
   });
 
@@ -405,7 +472,7 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       e.preventDefault();
       e.stopPropagation();
       (document.activeElement as HTMLElement | null)?.blur();
-      placeCopy(copied.node, pointer.current.x, pointer.current.y);
+      placeCopies(copied.nodes, { ...pointer.current });
       return;
     }
     // inside a block or a text box, paste the normal way
@@ -602,14 +669,14 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
           }
         : undefined,
     onCut: () => {
-      if (menuNode) {
-        copyNode(menuNode);
-        ops.deleteNode(menuNode.id, true);
-      }
+      const nodes = history.nodesRef.current.filter((n) => deleteTargets.includes(n.id));
+      copyNodes(nodes);
+      if (nodes.length === 1) ops.deleteNode(nodes[0].id, true);
+      else deleteMany(nodes.map((n) => n.id));
       setMenu(null);
     },
     onCopy: () => {
-      if (menuNode) copyNode(menuNode);
+      copyNodes(history.nodesRef.current.filter((n) => deleteTargets.includes(n.id)));
       setMenu(null);
     },
     onPaste: () => {
@@ -617,7 +684,8 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       setMenu(null);
     },
     onDuplicate: () => {
-      if (menuNode) placeCopy(menuNode, menuNode.x + DUPLICATE_OFFSET, menuNode.y + DUPLICATE_OFFSET);
+      const nodes = history.nodesRef.current.filter((n) => deleteTargets.includes(n.id));
+      if (nodes.length) placeCopies(nodes, duplicateAt(nodes));
       setMenu(null);
     },
     onDelete: () => {
@@ -652,5 +720,6 @@ export function useCanvasShortcuts({ enabled, nodes, history, ops, canvasRef, ro
       }
     : null;
 
-  return { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt };
+  // `select` lets the page select blocks it just made (a new shape)
+  return { selectedIds, select: setSelectedIds, pointer, contextMenu, marquee, deleteAllPrompt };
 }

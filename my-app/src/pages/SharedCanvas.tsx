@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import SelectionBox from "@/components/SelectionBox";
+import { useGroupResize } from "@/hooks/useGroupResize";
+import { useGroupDragFrames } from "@/hooks/useGroupDragFrames";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { motion } from "motion/react";
 import FloatingNode from "@/components/FloatingNode";
 import EraserTrail from "@/components/EraserTrail";
 import SnapGhosts from "@/components/SnapGhost";
 import { useSnapGhosts, SNAP_FADED_OPACITY } from "@/hooks/useSnapGhosts";
 import ScrollToContent from "@/components/ScrollToContent";
+import { useSavedView } from "@/hooks/useSavedView";
+import { useLivePan } from "@/hooks/useLivePan";
 import DrawingNode, { type Point } from "@/components/DrawingNode";
 import ImageNode from "@/components/ImageNode";
 import CanvasContextMenu from "@/components/CanvasContextMenu";
@@ -17,12 +21,11 @@ import PresenceMenu from "@/components/PresenceMenu";
 import { ThemeToggleButton } from "@/components/ThemeToggle";
 import socket from "@/lib/guestSocket";
 import type { Mode } from "@/App";
-import { Pencil, Shapes } from "lucide-react";
 import BackgroundPicker from "../components/BackgroundPicker";
 import { useCanvasBackground } from "../hooks/useCanvasBackground";
 import { canvasBackgroundStyle } from "../lib/canvasBackground";
 import { detectShape } from "@/lib/shapeDetection";
-import { parsePoints } from "@/lib/points";
+import { DEFAULT_DRAW_STYLE, drawStrokeProps, parseDrawing, parsePoints, serializeDrawing } from "@/lib/points";
 import { jsonOrThrow, saveErrorMessage } from "@/lib/saveErrors";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "@/lib/languages";
 import { requestRun } from "@/lib/runCode";
@@ -32,6 +35,16 @@ import { useFreehandStroke } from "@/hooks/useFreehandStroke";
 import { useStackOrder } from "@/hooks/useStackOrder";
 import { createKeyedThrottle } from "@/lib/throttle";
 import { chunkForRestore, toRestorePayload } from "@/lib/restore";
+import { storedType } from "@/lib/blockTypes";
+import { parseArrow } from "@/lib/shapes";
+import { isShapeTool } from "@/hooks/useShapeTool";
+import { useDiagram, type NewBlock } from "@/hooks/useDiagram";
+import ShapeDraftPreview from "@/components/ShapeDraftPreview";
+import CanvasToolbar from "@/components/CanvasToolbar";
+import { toolForKey } from "@/lib/toolKeys";
+import PropertiesPanel from "@/components/PropertiesPanel";
+import ShapeNode from "@/components/ShapeNode";
+import ArrowNode from "@/components/ArrowNode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
 
 // a block as this page holds it — see hooks/useCanvasHistory
@@ -50,6 +63,7 @@ interface ApiBlock {
   link?: string | null;
   wrap_width?: number | null;
   font_size?: number | null;
+  color?: string | null;
 }
 
 // draw blocks store their stroke as a JSON-encoded points array in `content`
@@ -57,7 +71,9 @@ function blockToNode(b: ApiBlock): Node {
   const common = { id: b.id, x: b.x, y: b.y, content: b.content, link: b.link ?? null };
   if (b.type === "draw") return { ...common, type: "draw", points: parsePoints(b.content) ?? [] };
   if (b.type === "image") return { ...common, type: "image", width: b.width };
-  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null };
+  // shape/arrow geometry and styling stay JSON in content (lib/shapes)
+  if (b.type === "shape" || b.type === "arrow") return { ...common, type: b.type };
+  return { ...common, language: b.language, wrapWidth: b.wrap_width ?? null, fontSize: b.font_size ?? null, color: b.color ?? null };
 }
 
 interface RemoteCursor {
@@ -191,7 +207,12 @@ export default function SharedCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { offsetRef.current = offset; }, [offset]);
+  // reopening the link puts you back where you were on it
+  useSavedView(shareId ? `share:${shareId}` : null, scale, offset, setScale, setOffset);
+  // panning moves the canvas directly; the offset state follows when it settles
+  const { panTo, endPan, panning } = useLivePan({ canvasRef, rootRef, offsetRef, scaleRef, setOffset });
+  // mid-pan, offsetRef is ahead of the state (see useLivePan)
+  useEffect(() => { if (!panning.current) offsetRef.current = offset; }, [offset, panning]);
   useEffect(() => { scaleRef.current = scale; }, [scale]);
 
   useEffect(() => {
@@ -267,6 +288,7 @@ export default function SharedCanvas() {
               points: n.type === "draw" && "content" in data ? parsePoints(data.content) ?? n.points : n.points,
               link: "link" in data ? data.link : n.link,
               wrapWidth: "wrapWidth" in data ? data.wrapWidth : n.wrapWidth,
+              color: "color" in data ? data.color : n.color,
               fontSize: "fontSize" in data ? data.fontSize : n.fontSize,
             }
           : n,
@@ -320,11 +342,8 @@ export default function SharedCanvas() {
         const isEditable = (e.target as HTMLElement)?.isContentEditable;
         const inEditor = tag === "TEXTAREA" || tag === "INPUT" || isEditable;
         if (!inEditor && !e.ctrlKey && !e.metaKey && !e.repeat) {
-          if (e.key === "v" || e.key === "V") setMode("select");
-          if (e.key === "h" || e.key === "H") setMode("hand");
-          if (e.key === "t" || e.key === "T") setMode("text");
-          if (e.key === "e" || e.key === "E") setMode("erase");
-          if (e.key === "d" || e.key === "D") setMode("draw");
+          const tool = toolForKey(e.key);
+          if (tool) setMode(tool);
         }
       }
     }
@@ -344,7 +363,7 @@ export default function SharedCanvas() {
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setOffset((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+    panTo({ x: offsetRef.current.x - e.deltaX, y: offsetRef.current.y - e.deltaY }, true);
   }
 
   function handlePanStart(e: React.MouseEvent) {
@@ -354,22 +373,29 @@ export default function SharedCanvas() {
     if (!isMiddle && !isSpaceDrag && !isHandMode) return;
     e.preventDefault();
     document.body.style.cursor = "grabbing";
+    // a closed hand over everything while panning (see .canvas-panning in
+    // index.css): the canvas and blocks set their own open-hand cursors,
+    // which would otherwise win over the body's
+    document.body.classList.add("canvas-panning");
     const startX = e.clientX - offsetRef.current.x;
     const startY = e.clientY - offsetRef.current.y;
     function onMouseMove(e: MouseEvent) {
-      setOffset({ x: e.clientX - startX, y: e.clientY - startY });
+      panTo({ x: e.clientX - startX, y: e.clientY - startY });
     }
     function onMouseUp() {
       const m = modeRef.current;
       document.body.style.cursor = spaceHeld.current || m === "hand" ? "grab" : "";
+      document.body.classList.remove("canvas-panning");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      endPan();
     }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
   function zoomIn() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.min(+(scaleRef.current + 0.1).toFixed(1), 3);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -381,6 +407,7 @@ export default function SharedCanvas() {
   }
 
   function zoomOut() {
+    endPan(); // a pan still settling: zoom from where it is now
     const next = Math.max(+(scaleRef.current - 0.1).toFixed(1), 0.2);
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
@@ -486,7 +513,7 @@ export default function SharedCanvas() {
   const applyShape = useCallback((id: string, x: number, y: number, content: string, save = true) => {
     const cid = canvasIdRef.current;
     if (!canEdit || !cid) return;
-    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: JSON.parse(content) } : n)));
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, x, y, content, points: n.type === "draw" ? parsePoints(content) ?? n.points : n.points } : n)));
     socket.emit("block:moved", cid, { id, x, y });
     socket.emit("block:updated", cid, { id, content });
     if (save) {
@@ -505,26 +532,35 @@ export default function SharedCanvas() {
   // One drag of a drawing's resize handle: every call shows the new shape
   // here and to everyone else; the last one (done) saves it and records a
   // single undo step back to the shape it started from.
-  const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
+  // Shapes reshape the same way, with their whole new content (size or label).
+  const reshapeBlock = useCallback((id: string, x: number, y: number, content: string, done: boolean, group?: number) => {
     if (!resizeStart.current[id]) {
       const before = history.nodesRef.current.find((n) => n.id === id);
       if (before) resizeStart.current[id] = before;
     }
-    applyShape(id, x, y, JSON.stringify(points), done);
+    applyShape(id, x, y, content, done);
     if (!done) return;
     const before = resizeStart.current[id];
     delete resizeStart.current[id];
-    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content });
+    if (before) history.record({ kind: "reshape", id, x: before.x, y: before.y, content: before.content, group });
   }, [history, applyShape]);
+
+  const resizeDrawing = useCallback((id: string, x: number, y: number, points: Point[], done: boolean) => {
+    // keep the drawing's style; only its points change
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    const style = node ? parseDrawing(node.content).style : DEFAULT_DRAW_STYLE;
+    reshapeBlock(id, x, y, serializeDrawing(points, style), done);
+  }, [reshapeBlock, history]);
 
   // Saves a copy of a block as a brand-new block at (x, y) — for paste and
   // for undoing a delete. The server hands back a new id.
   // Sets a text block's wrap width and font size — for its handles and for
   // undo. `save` is false for the in-between frames of a drag.
+  // (A block made this moment isn't in nodesRef yet; new text gets its size
+  // here right away, so there's no "does it exist" check.)
   const applySize = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, save = true) => {
     const cid = canvasIdRef.current;
-    const node = history.nodesRef.current.find((n) => n.id === id);
-    if (!canEdit || !cid || !node) return;
+    if (!canEdit || !cid) return;
     setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, wrapWidth, fontSize } : n)));
     // just the size (not the content again), throttled while dragging and
     // sent right away for the final one
@@ -545,7 +581,7 @@ export default function SharedCanvas() {
   // and to everyone else; the last one (done) saves it and records a single
   // undo step back to the size it started at.
   const textResizeStart = useRef<Record<string, { wrapWidth: number | null; fontSize: number | null; x: number; y: number }>>({});
-  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean) => {
+  const resizeText = useCallback((id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean, group?: number) => {
     const before = history.nodesRef.current.find((n) => n.id === id);
     if (!textResizeStart.current[id] && before) {
       textResizeStart.current[id] = { wrapWidth: before.wrapWidth ?? null, fontSize: before.fontSize ?? null, x: before.x, y: before.y };
@@ -556,10 +592,27 @@ export default function SharedCanvas() {
     if (!done) return;
     const start = textResizeStart.current[id];
     delete textResizeStart.current[id];
-    if (start) history.record({ kind: "resize", id, ...start });
+    if (start) history.record({ kind: "resize", id, ...start, group });
   }, [history, applySize, moveNode]);
 
   // Sets or removes a block's link — for the right-click menu and for undo.
+  // Sets a text block's color (null: back to the theme's) — for the
+  // properties panel and for undo.
+  const applyColor = useCallback((id: string, color: string | null) => {
+    const cid = canvasIdRef.current;
+    if (!canEdit || !cid) return;
+    setNodes((prev) => prev.map((n) => (n.id === id ? { ...n, color } : n)));
+    fetch(`/api/canvases/${cid}/blocks/${id}/color`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ color }),
+    })
+      .then(jsonOrThrow)
+      .catch((err) => showError(saveErrorMessage(err, "Couldn't save the color — check your connection and try again.")));
+    socket.emit("block:updated", cid, { id, color });
+  }, [canEdit]);
+
   const applyLink = useCallback((id: string, link: string | null) => {
     const cid = canvasIdRef.current;
     const node = history.nodesRef.current.find((n) => n.id === id);
@@ -578,7 +631,7 @@ export default function SharedCanvas() {
   const recreateBlock = useCallback(async (src: Node, x: number, y: number) => {
     const cid = canvasIdRef.current;
     if (!canEdit || !cid) return null;
-    const type = src.type === "draw" || src.type === "image" ? src.type : "code";
+    const type = storedType(src);
     try {
       const res = await fetchWithTimeout(`/api/canvases/${cid}/blocks`, {
         method: "POST",
@@ -603,9 +656,10 @@ export default function SharedCanvas() {
         });
       if (src.language) await patch("language", { language: src.language });
       if (src.link) await patch("link", { link: src.link });
+      if (src.color) await patch("color", { color: src.color });
       const size = { wrapWidth: src.wrapWidth ?? null, fontSize: src.fontSize ?? null };
       if (size.wrapWidth !== null || size.fontSize !== null) await patch("size", size);
-      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize };
+      const block = { ...data, language: src.language, link: src.link ?? null, wrap_width: size.wrapWidth, font_size: size.fontSize, color: src.color ?? null };
       setNodes((prev) => [...prev, blockToNode(block)]);
       socket.emit("block:created", cid, block);
       return String(data.id);
@@ -663,11 +717,11 @@ export default function SharedCanvas() {
   }, [canEdit, history]);
 
   // Ctrl+Z undo, click-to-select, Ctrl+C / Ctrl+V on blocks
-  const { selectedIds, pointer, contextMenu, marquee, deleteAllPrompt } = useCanvasShortcuts({
+  const { selectedIds, select, pointer, contextMenu, marquee, deleteAllPrompt } = useCanvasShortcuts({
     enabled: canEdit,
     nodes,
     history,
-    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applySize, recreateBlock, restoreBlocks, clearOutputs },
+    ops: { deleteNode, moveNode, applyLanguage, applyShape, applyLink, applyColor, applySize, recreateBlock, restoreBlocks, clearOutputs },
     onError: showError,
     canvasRef,
     rootRef,
@@ -683,10 +737,50 @@ export default function SharedCanvas() {
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
-  const groupDrag = useRef<{ id: string; group: number } | null>(null);
+  const groupDrag = useRef<{ id: string; group: number; riders: string[] } | null>(null);
+
+  const getScale = useCallback(() => scaleRef.current, []);
+
+  // the diagram tools: shapes, arrows, their style and labels
+  const diagram = useDiagram({
+    enabled: canEdit,
+    nodes,
+    nodesRef: history.nodesRef,
+    selectedIds,
+    select,
+    mode,
+    setMode,
+    toCanvas: (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    reshapeBlock,
+    createBlock: saveNewShape,
+    createText: createTextAt,
+    applyColor,
+    applySize,
+    record: history.record,
+    moveNode,
+    deleteNode,
+    getScale,
+  });
+  // a text block's editing changing: the toolbar shows the text tool while
+  // one is being typed in, and text just put in a shape gets centered there
+  const textEditingChanged = diagram.textEditingChanged;
+  const handleTextEditing = useCallback((editing: boolean) => {
+    setEditingText(editing);
+    textEditingChanged(editing);
+  }, [textEditingChanged]);
+
+  // Text sitting in a dragged shape rides along: it's worked out once when
+  // the drag starts, so text the shape passes over on the way isn't picked up.
+  const ridersOf = diagram.ridersOf;
   const moveSelection = useCallback((id: string, x: number, y: number) => {
     const sel = selectedIdsRef.current;
-    if (sel.length < 2 || !sel.includes(id)) {
+    const ids = sel.length >= 2 && sel.includes(id) ? sel : [id];
+    // a new drag starts once the last one's position has been saved
+    if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) {
+      groupDrag.current = { id, group: Date.now(), riders: ridersOf(ids) };
+    }
+    const moving = [...ids, ...groupDrag.current.riders];
+    if (moving.length === 1) {
       moveNode(id, x, y);
       return;
     }
@@ -695,15 +789,21 @@ export default function SharedCanvas() {
     if (!dragged) return;
     const dx = x - dragged.x;
     const dy = y - dragged.y;
-    // a new drag starts once the last one's position has been saved
-    if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) groupDrag.current = { id, group: Date.now() };
     const group = groupDrag.current.group;
     for (const n of all) {
-      if (!sel.includes(n.id)) continue;
+      if (!moving.includes(n.id)) continue;
       if (n.id === id) moveNode(id, x, y, true, group);
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
-  }, [moveNode, history]);
+  }, [moveNode, history, ridersOf]);
+  // ...and every frame of that drag moves the rest of the selection with it
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
+  // the box around a multi-selection: dragging a corner scales it all
+  const toCanvasPoint = useCallback(
+    (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
+    [],
+  );
+  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
 
   // Runs code and adds its output. Same rules as the main canvas
   // (lib/runOutputs): unchanged code whose output is still showing doesn't run
@@ -851,6 +951,27 @@ export default function SharedCanvas() {
     socket.emit("cursor:move", id, { x, y });
   }
 
+  // Saves a shape or arrow the diagram tools made (hooks/useDiagram).
+  async function saveNewShape(block: NewBlock) {
+    if (!canvasId) return null;
+    try {
+      const res = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(block),
+      });
+      const data = await jsonOrThrow(res);
+      setNodes((prev) => [...prev, blockToNode(data)]);
+      socket.emit("block:created", canvasId, data);
+      history.record({ kind: "create", id: String(data.id) });
+      return String(data.id);
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't save that shape — check your connection and try again."));
+      return null;
+    }
+  }
+
   async function finalizeDrawing(rawPoints: Point[]) {
     if (rawPoints.length < 2 || !canvasId) return;
     const snapped = snapShapes ? detectShape(rawPoints) : null;
@@ -868,7 +989,7 @@ export default function SharedCanvas() {
         credentials: "include",
         body: JSON.stringify({
           type: "draw",
-          content: JSON.stringify(relPoints),
+          content: serializeDrawing(relPoints, diagram.drawStyle),
           x: minX,
           y: minY,
           width: Math.max(maxX - minX, 1),
@@ -895,6 +1016,7 @@ export default function SharedCanvas() {
   }
 
   function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (diagram.startShape(e, isCanvasBackground(e))) return;
     if (!canEdit || modeRef.current !== "draw" || e.button !== 0 || !isCanvasBackground(e)) return;
     stroke.start(
       e,
@@ -928,12 +1050,21 @@ export default function SharedCanvas() {
     if (now - lastTextCreate.current < 500) return;
     lastTextCreate.current = now;
     setMode("select");
+    const id = await createTextAt(x, y, "");
+    // new text takes the color and size picked in the panel
+    if (id) diagram.styleNewText(id);
+  }
+
+  // Makes a text block at canvas (x, y), with the caret in it, and resolves
+  // to its id (null if it couldn't be saved). Also used for text in shapes.
+  async function createTextAt(x: number, y: number, content: string) {
+    if (!canvasId) return null;
     try {
       const res = await fetchWithTimeout(`/api/canvases/${canvasId}/blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ type: "code", content: "", x, y, width: 300 }),
+        body: JSON.stringify({ type: "code", content, x, y, width: 300 }),
       });
       const data = await jsonOrThrow(res);
       // New blocks start as plain text. The create endpoint ignores language,
@@ -954,8 +1085,10 @@ export default function SharedCanvas() {
       setNodes((prev) => [...prev, { id: block.id, x: block.x, y: block.y, content: block.content, language: block.language }]);
       socket.emit("block:created", canvasId, block);
       history.record({ kind: "create", id: data.id });
+      return String(block.id);
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't create the block — check your connection and try again."));
+      return null;
     }
   }
 
@@ -987,34 +1120,11 @@ export default function SharedCanvas() {
       ? "dot-cursor viewer-cursor"
       : mode === "hand"
       ? "cursor-grab"
-      : mode === "draw"
+      : mode === "draw" || isShapeTool(mode)
         ? "cursor-crosshair"
         : mode === "select" || mode === "text"
           ? "dot-cursor" // blue dot, see index.css
           : "cursor-default"; // erase: overridden by the inline eraser cursor
-
-  const toolbarBtn = (m: Mode, label: React.ReactNode, title: string) => (
-    <button
-      onClick={() => setMode(m)}
-      title={title}
-      className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
-        activeTool === m
-          ? "text-gray-800 dark:text-[#f5f5f5]"
-          : "text-gray-400 hover:text-gray-700 dark:text-[#9b9ba8] dark:hover:text-[#f5f5f5]"
-      }`}
-    >
-      {/* One highlight shared by every button (same layoutId), so switching
-          tools slides it over to the new one instead of jumping. */}
-      {activeTool === m && (
-        <motion.span
-          layoutId="toolbar-active"
-          className="absolute inset-0 rounded bg-gray-100 dark:bg-[#3c3c4a]"
-          transition={{ type: "spring", stiffness: 500, damping: 35 }}
-        />
-      )}
-      <span className="relative">{label}</span>
-    </button>
-  );
 
   return (
     <div
@@ -1024,7 +1134,7 @@ export default function SharedCanvas() {
         ...canvasBackgroundStyle(background, isDark, scale, offset),
         cursor: mode === "erase" ? eraserCursor : undefined,
         // touch screens: a finger drag draws instead of scrolling the page
-        touchAction: mode === "draw" ? "none" : undefined,
+        touchAction: mode === "draw" || isShapeTool(mode) ? "none" : undefined,
       }}
       onWheel={handleWheel}
       onMouseMove={handleMouseMove}
@@ -1065,32 +1175,26 @@ export default function SharedCanvas() {
 
       <EraserTrail active={mode === "erase"} isDark={isDark} />
 
-      {/* mode toolbar + run hint, centered as one column — only in edit mode */}
+      {/* mode toolbar + run hint — only in edit mode */}
       {canEdit && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5">
-          <div className="flex items-center gap-0.5 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] p-1 bg-white dark:bg-[#232329]">
-            {toolbarBtn(
-              "select",
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1.5 1L6 12l2.2-3.8L12 6 1.5 1z" /></svg>,
-              "Select (V)",
-            )}
-            {toolbarBtn(
-              "hand",
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V8a2 2 0 0 0-4 0v3M14 11V6a2 2 0 0 0-4 0v5M10 11V8a2 2 0 0 0-4 0v8a6 6 0 0 0 12 0v-5a2 2 0 0 0-4 0v0" /></svg>,
-              "Hand (H)",
-            )}
-            {toolbarBtn("text", <span className="text-xs font-bold leading-none">T</span>, "Text (T)")}
-            {toolbarBtn("draw", <Pencil size={14} />, "Draw (D)")}
-            {toolbarBtn(
-              "erase",
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5" /><path d="M6.5 17.5l4-4" /></svg>,
-              "Erase (E)",
-            )}
-          </div>
-          <span className="font-canvas text-[11px] pointer-events-none select-none text-gray-400 dark:text-gray-500">
-            select code + ctrl+enter to run
-          </span>
-        </div>
+        <CanvasToolbar
+          activeTool={activeTool}
+          onSelect={setMode}
+          toolLocked={diagram.toolLocked}
+          onToggleLock={diagram.toggleToolLock}
+        />
+      )}
+
+      {diagram.panelVisible && (
+        <PropertiesPanel
+          className="absolute left-4 top-20 z-20"
+          value={diagram.panelStyle}
+          onChange={diagram.changeStyle}
+          title={diagram.panelTitle}
+          sections={diagram.panelSections}
+          snap={mode === "draw" ? { on: snapShapes, onToggle: () => setSnapShapes((v) => !v) } : undefined}
+          isDark={isDark}
+        />
       )}
 
       {/* top-right */}
@@ -1106,21 +1210,6 @@ export default function SharedCanvas() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5,3 19,12 5,21" />
             </svg>
-          </button>
-        )}
-        {canEdit && (
-          <button
-            onClick={() => setSnapShapes((v) => !v)}
-            title="Snap drawings to perfect shapes"
-            className={`w-8 h-8 flex items-center justify-center rounded shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)] transition-colors ${
-              snapShapes
-                ? "bg-blue-500 text-white"
-                : isDark
-                  ? "bg-[#232329] text-[#9b9ba8] hover:text-[#f5f5f5]"
-                  : "bg-white text-gray-400 hover:text-gray-700"
-            }`}
-          >
-            <Shapes size={14} />
           </button>
         )}
         <BackgroundPicker
@@ -1144,11 +1233,24 @@ export default function SharedCanvas() {
       <div
         ref={canvasRef}
         className="w-full h-full"
+        // several selected: only the box around them has handles (index.css)
+        data-multi-select={selectedIds.length >= 2 || undefined}
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           transformOrigin: "0 0",
+          // for outlines and handles that keep their size on screen (screenPx)
+          ["--inv-zoom" as string]: 1 / scale,
         }}
       >
+        {canEdit && selectedIds.length >= 2 && mode === "select" && (
+          <SelectionBox
+            ids={selectedIds}
+            scale={scale}
+            toCanvas={toCanvasPoint}
+            onResizeStart={startGroupResize}
+            move={{ positionOf: (id) => history.nodesRef.current.find((n) => n.id === id), onMove: moveSelection, onDragFrame: dragFrame }}
+          />
+        )}
         {canEdit && nodes.length === 0 && mode === "text" && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <p className="text-gray-300 text-sm font-mono select-none">
@@ -1156,6 +1258,8 @@ export default function SharedCanvas() {
             </p>
           </div>
         )}
+
+        {diagram.draft && <ShapeDraftPreview draft={diagram.draft} style={diagram.style} isDark={isDark} />}
 
         {/* isolate: the blocks' z-indexes only order them among each other,
             so snap ghosts, strokes, outputs and cursors still draw on top */}
@@ -1171,6 +1275,7 @@ export default function SharedCanvas() {
                 src={node.content}
                 link={node.link}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1186,10 +1291,58 @@ export default function SharedCanvas() {
                 x={node.x}
                 y={node.y}
                 points={node.points ?? []}
+                drawStyle={diagram.drawStyles.get(node.id) ?? DEFAULT_DRAW_STYLE}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onResize={canEdit ? resizeDrawing : undefined}
                 drawIn={drawingIn.get(node.id)}
+                link={node.link}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                zIndex={stackOrder.get(node.id) ?? 0}
+              />
+            ) : node.type === "shape" ? (
+              <ShapeNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                content={node.content}
+                onMove={moveSelection}
+                onDragFrame={dragFrame}
+                onMarkErase={handleMarkErase}
+                onReshape={canEdit ? reshapeBlock : undefined}
+                onEditText={canEdit ? diagram.addShapeText : undefined}
+                bindHighlight={diagram.bindTargetId === node.id}
+                link={node.link}
+                pendingErase={pendingErase.has(node.id)}
+                selected={selectedIds.includes(node.id)}
+                mode={mode}
+                isMouseDown={isMouseDown}
+                isDark={isDark}
+                // shapes stay below every other block (still ordered among
+                // themselves), so text sitting in one can always be grabbed
+                zIndex={(stackOrder.get(node.id) ?? 0) - nodes.length}
+              />
+            ) : node.type === "arrow" ? (
+              <ArrowNode
+                key={node.id}
+                id={node.id}
+                x={node.x}
+                y={node.y}
+                arrow={diagram.arrows.get(node.id) ?? parseArrow(node.content)}
+                onMove={moveSelection}
+                onDragFrame={dragFrame}
+                onMarkErase={handleMarkErase}
+                onReshape={canEdit ? reshapeBlock : undefined}
+                editing={diagram.labelEditId === node.id}
+                onEditingChange={diagram.setLabelEditing}
+                onBindTarget={diagram.setBindTargetId}
+                isShape={diagram.isShapeId}
                 link={node.link}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}
@@ -1206,9 +1359,11 @@ export default function SharedCanvas() {
                 y={node.y}
                 content={node.content}
                 language={node.language ?? "javascript"}
+                color={node.color}
                 onChange={updateNode}
                 onLanguageChange={canEdit ? changeLanguage : undefined}
                 onMove={moveSelection}
+                onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 pendingErase={pendingErase.has(node.id)}
                 onRun={handleRunNode}
@@ -1218,7 +1373,7 @@ export default function SharedCanvas() {
                 // viewers can't resize
                 onResize={canEdit ? resizeText : undefined}
                 selected={selectedIds.includes(node.id)}
-                onEditingChange={setEditingText}
+                onEditingChange={handleTextEditing}
                 onSaveSelection={canEdit ? saveSelection : undefined}
                 link={node.link}
                 mode={mode}
@@ -1238,10 +1393,9 @@ export default function SharedCanvas() {
             <path
               ref={stroke.pathRef}
               // faded until it's done when snapping is on; it comes to life on release
-              opacity={snapShapes ? SNAP_FADED_OPACITY : 1}
+              opacity={(snapShapes ? SNAP_FADED_OPACITY : 1) * (diagram.drawStyle.opacity / 100)}
               fill="none"
-              stroke={isDark ? "#f5f5f5" : "#1f2937"}
-              strokeWidth={2}
+              {...drawStrokeProps(diagram.drawStyle, isDark)}
               strokeLinecap="round"
               strokeLinejoin="round"
             />

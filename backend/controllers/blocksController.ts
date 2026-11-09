@@ -231,6 +231,27 @@ export async function updateBlockSize(
   }
 }
 
+export async function updateBlockColor(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  const { id: canvasId, blockId } = req.params;
+  const { color } = req.body;
+
+  try {
+    const block = await Blocks.updateBlockColor(canvasId, blockId, color);
+    if (!block) {
+      res.status(404).json({ error: "Block not found" });
+      return;
+    }
+
+    await cacheDel(`blocks:${block.canvas_id}`);
+    res.status(200).json(block);
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}
+
 export async function updateBlockLink(
   req: AuthRequest,
   res: Response,
