@@ -4,6 +4,7 @@ import * as Canvas from "../models/canvas";
 import { AuthRequest } from "../middleware/auth";
 import { handleServerError } from "../utils/errors";
 import redis from "../redis";
+import { MAX_CANVASES_PER_USER } from "../utils/limits";
 import { buildPreviews, PREVIEW_BLOCKS_PER_CANVAS } from "../utils/canvasPreview";
 
 function generateShareId(length = 12): string {
@@ -64,10 +65,17 @@ export async function createCanvas(
   const user_id = req.user!.id;
 
   try {
-    if (req.user!.isGuest) {
+    // guests get one canvas; accounts as many as MAX_CANVASES_PER_USER
+    // allows (no limit unless it's set)
+    const limit = req.user!.isGuest ? 1 : MAX_CANVASES_PER_USER;
+    if (limit > 0) {
       const existing = await Canvas.getByUserId(user_id);
-      if (existing.length >= 1) {
-        res.status(403).json({ error: "Create an account to make more canvases" });
+      if (existing.length >= limit) {
+        res.status(403).json({
+          error: req.user!.isGuest
+            ? "Create an account to make more canvases"
+            : `You've reached the limit of ${limit} canvases. Delete one to make a new one.`,
+        });
         return;
       }
     }
