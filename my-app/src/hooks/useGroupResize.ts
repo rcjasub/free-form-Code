@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 import { scaleFor, scaleNode, stretchFor, type ScalableNode } from "../lib/groupScale";
 import { pauseGlide, resumeGlide } from "../lib/glide";
+import { trackDrag } from "../lib/dragMath";
 
 // Resizing a multi-selection by its box (see SelectionBox): from a corner the
 // whole selection scales evenly around the opposite corner; from a side it
@@ -109,7 +110,7 @@ export function useGroupResize({
     }
 
     function onUp() {
-      window.removeEventListener("pointermove", onMove);
+      stopDrag();
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
       cancelAnimationFrame(frame);
@@ -138,7 +139,9 @@ export function useGroupResize({
     }
 
     document.body.style.cursor = getComputedStyle(e.currentTarget as Element).cursor;
-    window.addEventListener("pointermove", onMove);
+    // toCanvas reads the live view, so re-running onMove on a scroll is
+    // enough for the box to follow it (dragMath)
+    const stopDrag = trackDrag(e.nativeEvent, onMove, "pointermove");
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
   }, []);

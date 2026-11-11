@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
-import { dragFrom, zoomOf } from "../lib/dragMath";
+import { dragFrom, dragTravel, trackDrag, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
@@ -81,13 +81,13 @@ export default React.memo(function ShapeNode({
     const startClient = { x: e.clientX, y: e.clientY };
     const start = { x, y, w: shape.w, h: shape.h };
     const zoom = containerRef.current.getBoundingClientRect().width / shape.w || 1;
+    const travel = dragTravel(startClient, zoom);
     let latest: typeof start | null = null;
     let lastSync = 0;
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      const dx = (mv.clientX - startClient.x) / zoom;
-      const dy = (mv.clientY - startClient.y) / zoom;
+      const { dx, dy } = travel(mv);
       let nw = start.w + (handle.includes("e") ? dx : handle.includes("w") ? -dx : 0);
       let nh = start.h + (handle.includes("s") ? dy : handle.includes("n") ? -dy : 0);
       nw = Math.max(nw, MIN_SIZE);
@@ -111,13 +111,13 @@ export default React.memo(function ShapeNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) reshape({ ...shape, w: latest.w, h: latest.h }, latest.x, latest.y, true);
       setPreview(null);
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
@@ -141,13 +141,13 @@ export default React.memo(function ShapeNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
       onDragFrame?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 

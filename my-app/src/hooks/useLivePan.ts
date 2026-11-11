@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { reportPan } from "../lib/dragMath";
 
 // Smooth panning. Each step of a pan used to set the page's offset state,
 // which re-renders the whole canvas page; with a busy canvas that's tens of
@@ -52,8 +53,11 @@ export function useLivePan({
   const panTo = useCallback(
     (next: Offset, wheel = false) => {
       panning.current = true;
+      // a block being dragged follows the pan (dragMath)
+      const moved = { x: next.x - offsetRef.current.x, y: next.y - offsetRef.current.y };
       offsetRef.current = next;
       paint();
+      reportPan(moved.x, moved.y);
       clearTimeout(settle.current);
       if (wheel) settle.current = setTimeout(endPan, WHEEL_SETTLE_MS);
     },

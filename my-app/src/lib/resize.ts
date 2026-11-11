@@ -1,4 +1,5 @@
 import { pauseGlide, resumeGlide } from "./glide";
+import { dragTravel, trackDrag } from "./dragMath";
 
 // Excalidraw-style resizing for text boxes (text blocks and run outputs):
 // a dot on each corner scales the font (and the wrap width with it); the
@@ -81,8 +82,9 @@ export function startResizeDrag(
 ) {
   e.stopPropagation();
   e.preventDefault();
-  const startClientX = e.clientX;
   const ratio = el.getBoundingClientRect().width / el.offsetWidth || 1;
+  // follows a scroll mid-resize too (dragMath)
+  const travel = dragTravel({ x: e.clientX, y: e.clientY }, ratio);
   const full: ResizeStart = { ...start, width: el.offsetWidth, height: el.offsetHeight };
   let latest: ResizeResult = { wrap: start.wrap, font: start.font, x: start.x, y: start.y };
   let frame = 0;
@@ -90,7 +92,7 @@ export function startResizeDrag(
   if (glides) pauseGlide(el); // the position follows the drag, not a glide
 
   function onMove(mv: PointerEvent) {
-    latest = resizeFrom(handle, full, (mv.clientX - startClientX) / ratio, limits);
+    latest = resizeFrom(handle, full, travel(mv).dx, limits);
     preview(latest);
     if (!frame) {
       frame = requestAnimationFrame(() => {
@@ -101,7 +103,7 @@ export function startResizeDrag(
     }
   }
   function onUp() {
-    window.removeEventListener("pointermove", onMove);
+    stopDrag();
     window.removeEventListener("pointerup", onUp);
     cancelAnimationFrame(frame);
     if (glides) resumeGlide(el);
@@ -109,6 +111,6 @@ export function startResizeDrag(
     // dragged back to where it started: undo any in-between size already sent
     else if (sentFrame) onFrame(latest, false);
   }
-  window.addEventListener("pointermove", onMove);
+  const stopDrag = trackDrag(e.nativeEvent, onMove, "pointermove");
   window.addEventListener("pointerup", onUp);
 }

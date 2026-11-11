@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useLayoutEffect } from "react";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
-import { dragFrom, zoomOf } from "../lib/dragMath";
+import { dragFrom, trackDrag, zoomOf } from "../lib/dragMath";
 import React from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
@@ -259,7 +259,7 @@ export default React.memo(function FloatingNode({
       }
 
       function onMouseUp() {
-        window.removeEventListener("mousemove", onMouseMove);
+        stopDrag();
         window.removeEventListener("mouseup", onMouseUp);
         if (isDragging) {
           onMoveRef.current(id, latest.x, latest.y);
@@ -268,7 +268,7 @@ export default React.memo(function FloatingNode({
         }
       }
 
-      window.addEventListener("mousemove", onMouseMove);
+      const stopDrag = trackDrag(e, onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     }
 
@@ -323,7 +323,7 @@ export default React.memo(function FloatingNode({
     }
 
     function onMouseUp(up: MouseEvent) {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (isDragging) {
         onMoveRef.current(id, latest.x, latest.y);
@@ -334,7 +334,7 @@ export default React.memo(function FloatingNode({
       }
     }
 
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
