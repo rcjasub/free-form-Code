@@ -47,7 +47,11 @@ export interface ShapeData extends DiagramStyle {
   kind: ShapeKind;
   w: number;
   h: number;
+  // The text in the shape. It's part of the shape, so it moves, resizes,
+  // copies, deletes and undoes with it; it's drawn in the stroke color.
   label: string;
+  // the label's size in px; unset means the default (shapeLabelSize)
+  fontSize?: number;
   // keeps the hand-drawn wobble the same every time it's drawn (rough.js)
   seed: number;
   meta?: SectionMeta;
@@ -189,9 +193,35 @@ export function parseShape(content: string): ShapeData {
     // shapes from before this was a choice all had round corners
     edges: oneOf(o.edges, EDGE_STYLES, DEFAULT_SHAPE.edges),
     label: text(o.label, MAX_LABEL) ?? "",
+    ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
     seed: seed(o.seed),
     ...(meta && { meta }),
   };
+}
+
+export const MAX_LABEL_LENGTH = MAX_LABEL;
+const MIN_LABEL_SIZE = 6;
+const MAX_LABEL_SIZE = 200;
+
+// A shape's label size: its own, or the default for its line style.
+export function shapeLabelSize(shape: Pick<ShapeData, "fontSize" | "roughness">): number {
+  return shape.fontSize ?? (shape.roughness > 0 ? 16 : 14);
+}
+
+// Where a shape's label sits, as a fraction of the box kept clear on each
+// side: the label stays inside an ellipse's or diamond's outline, not just
+// its bounding box.
+const LABEL_INSET: Record<ShapeKind, number> = { rect: 0, ellipse: 0.146, diamond: 0.25 };
+export const LABEL_PAD = 8;
+
+export function labelBox(kind: ShapeKind, w: number, h: number) {
+  const f = LABEL_INSET[kind];
+  return { left: w * f + LABEL_PAD, top: h * f + LABEL_PAD, width: Math.max(w * (1 - 2 * f) - 2 * LABEL_PAD, 1) };
+}
+
+// The height a shape needs for a label this tall (in canvas px) to fit.
+export function heightForLabel(kind: ShapeKind, labelHeight: number): number {
+  return Math.ceil((labelHeight + 2 * LABEL_PAD) / (1 - 2 * LABEL_INSET[kind]));
 }
 
 export function serializeShape(shape: ShapeData): string {

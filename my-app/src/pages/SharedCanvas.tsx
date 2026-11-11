@@ -500,6 +500,9 @@ export default function SharedCanvas() {
     if (!canEdit) return;
     const node = history.nodesRef.current.find((n) => n.id === id);
     if (record && node) history.record({ kind: "delete", nodes: [node] });
+    // a move still waiting to be saved would hit a block that's gone (404)
+    clearTimeout(moveSaveTimers.current[id]);
+    delete moveSaveTimers.current[id];
     setNodes((prev) => prev.filter((n) => n.id !== id));
     const cid = canvasIdRef.current;
     if (cid) {
@@ -737,9 +740,7 @@ export default function SharedCanvas() {
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
-  const groupDrag = useRef<{ id: string; group: number; riders: string[] } | null>(null);
-
-  const getScale = useCallback(() => scaleRef.current, []);
+  const groupDrag = useRef<{ id: string; group: number } | null>(null);
 
   // the diagram tools: shapes, arrows, their style and labels
   const diagram = useDiagram({
@@ -753,33 +754,25 @@ export default function SharedCanvas() {
     toCanvas: (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
     reshapeBlock,
     createBlock: saveNewShape,
-    createText: createTextAt,
     applyColor,
     applySize,
     record: history.record,
-    moveNode,
     deleteNode,
-    getScale,
   });
   // a text block's editing changing: the toolbar shows the text tool while
-  // one is being typed in, and text just put in a shape gets centered there
-  const textEditingChanged = diagram.textEditingChanged;
-  const handleTextEditing = useCallback((editing: boolean) => {
-    setEditingText(editing);
-    textEditingChanged(editing);
-  }, [textEditingChanged]);
+  // one is being typed in
+  const handleTextEditing = setEditingText;
 
-  // Text sitting in a dragged shape rides along: it's worked out once when
-  // the drag starts, so text the shape passes over on the way isn't picked up.
-  const ridersOf = diagram.ridersOf;
+  // Moves a dragged block, or the whole selection it's part of. (A shape's
+  // text is its label, so only what's selected moves: text a shape sits on
+  // or passes over stays put.)
   const moveSelection = useCallback((id: string, x: number, y: number) => {
     const sel = selectedIdsRef.current;
-    const ids = sel.length >= 2 && sel.includes(id) ? sel : [id];
+    const moving = sel.length >= 2 && sel.includes(id) ? sel : [id];
     // a new drag starts once the last one's position has been saved
     if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) {
-      groupDrag.current = { id, group: Date.now(), riders: ridersOf(ids) };
+      groupDrag.current = { id, group: Date.now() };
     }
-    const moving = [...ids, ...groupDrag.current.riders];
     if (moving.length === 1) {
       moveNode(id, x, y);
       return;
@@ -795,15 +788,15 @@ export default function SharedCanvas() {
       if (n.id === id) moveNode(id, x, y, true, group);
       else moveNode(n.id, n.x + dx, n.y + dy, true, group);
     }
-  }, [moveNode, history, ridersOf]);
+  }, [moveNode, history]);
   // ...and every frame of that drag moves the rest of the selection with it
-  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef, ridersOf });
+  const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef });
   // the box around a multi-selection: dragging a corner scales it all
   const toCanvasPoint = useCallback(
     (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
     [],
   );
-  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
+  const startGroupResize = useGroupResize({ nodesRef: history.nodesRef, reshapeBlock, resizeText, moveNode, toCanvas: toCanvasPoint });
 
   // Runs code and adds its output. Same rules as the main canvas
   // (lib/runOutputs): unchanged code whose output is still showing doesn't run
@@ -1015,9 +1008,24 @@ export default function SharedCanvas() {
     return e.target === canvasRef.current || e.target === rootRef.current;
   }
 
+  // Where the pen and the shape tools can start: empty canvas, or on top of
+  // a shape, drawing, image or arrow (drawing over them, like on paper).
+  // Text and code blocks are editors, so a press there goes to them.
+  function isDrawSurface(e: React.MouseEvent) {
+    if (isCanvasBackground(e)) return true;
+    const block = (e.target as Element).closest?.<HTMLElement>("[data-node-id]");
+    return !!block && !block.dataset.language && !!canvasRef.current?.contains(block);
+  }
+
+  // the shape a press landed on, if any
+  function shapeUnder(e: React.MouseEvent) {
+    const id = (e.target as Element).closest?.<HTMLElement>("[data-node-id]")?.dataset.nodeId;
+    return id && diagram.isShapeId(id) ? id : null;
+  }
+
   function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (diagram.startShape(e, isCanvasBackground(e))) return;
-    if (!canEdit || modeRef.current !== "draw" || e.button !== 0 || !isCanvasBackground(e)) return;
+    if (diagram.startShape(e, isDrawSurface(e))) return;
+    if (!canEdit || modeRef.current !== "draw" || e.button !== 0 || !isDrawSurface(e)) return;
     stroke.start(
       e,
       (cx, cy) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
@@ -1030,6 +1038,13 @@ export default function SharedCanvas() {
   // just finishes typing. Double-clicking empty canvas makes another.
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canEdit || !canvasId || modeRef.current !== "text") return;
+    // on a shape, the text tool types in the shape (its label)
+    const shapeId = shapeUnder(e);
+    if (shapeId) {
+      setMode("select");
+      diagram.editShapeLabel(shapeId);
+      return;
+    }
     if (!isCanvasBackground(e)) return;
     await createTextBlock(e.clientX, e.clientY);
   }
@@ -1316,7 +1331,9 @@ export default function SharedCanvas() {
                 onDragFrame={dragFrame}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
-                onEditText={canEdit ? diagram.addShapeText : undefined}
+                editing={diagram.labelEditId === node.id}
+                onEditLabel={canEdit ? diagram.editShapeLabel : undefined}
+                onLabelDone={diagram.endLabelEdit}
                 bindHighlight={diagram.bindTargetId === node.id}
                 link={node.link}
                 pendingErase={pendingErase.has(node.id)}
