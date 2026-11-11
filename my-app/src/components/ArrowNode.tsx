@@ -4,15 +4,19 @@ import { dragFrom, dragTravel, trackDrag, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import type { Point } from "./DrawingNode";
 import LinkBadge from "./LinkBadge";
+import LabelEditor from "./LabelEditor";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { DRAG_SYNC_INTERVAL_MS } from "../lib/boxHandles";
-import { serializeArrow, type ArrowData } from "../lib/shapes";
+import { MAX_LABEL_LENGTH, resolveArrow, serializeArrow, shapeLabelSize, type ArrowData, type ShapeBox } from "../lib/shapes";
+import { liveBox, useLiveKey } from "../lib/liveShapes";
 import { themeColor } from "../lib/colors";
 import { arrowPaint } from "../lib/roughPaths";
 import { shapeIdAt } from "../hooks/useShapeTool";
 import PaintPaths from "./PaintPaths";
 
 const END_HANDLE = 10;
+// an arrow's label wraps at this width
+const LABEL_MAX_WIDTH = 240;
 
 interface Props {
   id: string;
@@ -21,6 +25,10 @@ interface Props {
   // Already resolved by the page: an attached end has been moved onto the
   // border of its shape (lib/shapes resolveArrow).
   arrow: ArrowData;
+  // The box each attached end sits on, as of the page's state. While one of
+  // those shapes is dragged or resized, the arrow redraws from where it is
+  // right now instead (lib/liveShapes), so it doesn't trail behind.
+  bindBoxOf?: (id: string) => ShapeBox | null;
   onMove: (id: string, x: number, y: number) => void;
   // every frame of a drag of this block, and once more (done) when it's let
   // go: lets the rest of a multi-selection move in step with it
@@ -42,16 +50,53 @@ interface Props {
   zIndex: number;
 }
 
+// The arrow redrawn from where its shapes are right now, while one of them is
+// being dragged or resized (`live`: lib/liveShapes' key for them; "" when
+// neither is). A plain function of its arguments, `live` included, so the
+// React Compiler's memoizing can't hold on to an older result: it read the
+// live boxes behind the compiler's back when this sat inside a useMemo.
+function followLive(
+  resolved: ArrowData,
+  x: number,
+  y: number,
+  bindBoxOf: ((id: string) => ShapeBox | null) | undefined,
+  live: string,
+): ArrowData {
+  if (!live || !bindBoxOf) return resolved;
+  const boxes = new Map<string, ShapeBox>();
+  for (const shapeId of [resolved.fromId, resolved.toId]) {
+    if (!shapeId) continue;
+    const base = bindBoxOf(shapeId);
+    if (!base) continue;
+    const now = liveBox(shapeId);
+    if (!now) {
+      boxes.set(shapeId, base);
+      continue;
+    }
+    const w = now.w ?? base.w;
+    const h = now.h ?? base.h;
+    // a drawing's outline moves and scales with its box
+    const outline = base.outline?.map((p) => ({
+      x: now.x + ((p.x - base.x) * w) / (base.w || 1),
+      y: now.y + ((p.y - base.y) * h) / (base.h || 1),
+    }));
+    boxes.set(shapeId, { ...base, x: now.x, y: now.y, w, h, ...(outline && { outline }) });
+  }
+  return resolveArrow(resolved, x, y, boxes);
+}
+
 // A line from points[0] to the last point, with a head at the end. Points
 // are relative to (x, y) and may be negative, so the box is fitted around
 // them: the marquee and placement read it as the arrow's size. Selected, each
-// end gets a handle: drag it onto a shape to attach it there, or off to
-// detach it. Double-click to label it.
+// end gets a round handle: drag it onto a shape to attach it there, or off to
+// detach it. Double-click (or Enter, or the text tool) to type its label,
+// which sits on the middle of the line and hides the line behind it.
 export default React.memo(function ArrowNode({
   id,
   x,
   y,
-  arrow,
+  arrow: resolved,
+  bindBoxOf,
   onMove,
   onDragFrame,
   onMarkErase,
@@ -71,6 +116,11 @@ export default React.memo(function ArrowNode({
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
   const [preview, setPreview] = useState<Point[] | null>(null);
+
+  // follows its shapes while they're dragged or resized, every frame
+  const live = useLiveKey([resolved.fromId, resolved.toId]);
+  const arrow = followLive(resolved, x, y, bindBoxOf, live);
+
   const pts = preview ?? arrow.points;
   const minX = Math.min(...pts.map((p) => p.x));
   const minY = Math.min(...pts.map((p) => p.y));
@@ -169,16 +219,37 @@ export default React.memo(function ArrowNode({
     if (canInteract && !attached) handleDragMouseDown(e);
   }
 
-  function commitLabel(label: string) {
+  function startEditing(e: React.MouseEvent) {
+    if (!onReshape || !canInteract) return;
+    e.stopPropagation();
+    onEditingChange?.(id, true);
+  }
+
+  function commitLabel(typed: string) {
     onEditingChange?.(id, false);
-    const trimmed = label.trim();
-    if (trimmed !== (arrow.label ?? "")) {
-      onReshape?.(id, x, y, serializeArrow({ ...arrow, label: trimmed || undefined }), true);
+    const label = typed.trim().slice(0, MAX_LABEL_LENGTH);
+    if (label !== (arrow.label ?? "")) {
+      // the label is saved on the arrow as stored, not as resolved
+      onReshape?.(id, x, y, serializeArrow({ ...resolved, label: label || undefined }), true);
     }
   }
 
-  const labelFont = arrow.roughness > 0 ? "font-canvas text-sm" : "font-mono text-xs";
-  const background = isDark ? "#121212" : "#ffffff";
+  // Like a shape's: the stroke color, sized from the panel, in the font that
+  // goes with the line style. Behind it, the canvas color hides the line.
+  const labelStyle: React.CSSProperties = {
+    left: labelAt.x,
+    top: labelAt.y,
+    maxWidth: LABEL_MAX_WIDTH,
+    color: themeColor(arrow.stroke, isDark),
+    background: isDark ? "#121212" : "#ffffff",
+    fontSize: shapeLabelSize(arrow),
+    lineHeight: 1.25,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    textAlign: "center",
+    padding: "1px 4px",
+  };
+  const labelFont = arrow.roughness > 0 ? "font-canvas" : "font-mono";
 
   return (
     <div
@@ -192,15 +263,14 @@ export default React.memo(function ArrowNode({
         height,
         zIndex,
         opacity: (pendingErase ? 0.3 : 1) * (arrow.opacity / 100),
-        transition: preview ? undefined : GLIDE_TRANSITION,
+        // other people's moves glide; following a shape that's being moved
+        // here mustn't, or the arrow trails behind it
+        transition: preview || live ? undefined : GLIDE_TRANSITION,
         // like a drawing, only the line itself is hit-testable (see DrawingNode)
         pointerEvents: "none",
       }}
     >
       <svg width={width} height={height} style={{ overflow: "visible" }}>
-        {selected && (
-          <path d={straight} fill="none" stroke="#4fb4f2" strokeOpacity={0.35} strokeWidth={arrow.strokeWidth + 8} strokeLinecap="round" />
-        )}
         {mode !== "draw" && (
           <path
             d={straight}
@@ -210,38 +280,31 @@ export default React.memo(function ArrowNode({
             style={{ pointerEvents: "stroke", cursor: canInteract && !attached ? "grab" : undefined }}
             onMouseDown={handleMouseDown}
             onMouseEnter={() => mode === "erase" && isMouseDown.current && onMarkErase(id)}
-            onDoubleClick={(e) => {
-              if (!onReshape || !canInteract) return;
-              e.stopPropagation();
-              onEditingChange?.(id, true);
-            }}
+            onDoubleClick={startEditing}
           />
         )}
         <PaintPaths paint={paint} />
       </svg>
 
       {editing ? (
-        <input
-          autoFocus
-          defaultValue={arrow.label ?? ""}
-          className={`absolute -translate-x-1/2 -translate-y-1/2 px-1 rounded text-center outline-none ${labelFont}`}
-          style={{ left: labelAt.x, top: labelAt.y, width: 140, color: themeColor("auto", isDark), background, pointerEvents: "auto" }}
-          onFocus={(e) => e.currentTarget.select()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onBlur={(e) => commitLabel(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            else if (e.key === "Escape") {
-              e.currentTarget.value = arrow.label ?? "";
-              e.currentTarget.blur();
-            }
-          }}
-        />
+        <div
+          className={`absolute -translate-x-1/2 -translate-y-1/2 ${labelFont}`}
+          style={{ ...labelStyle, minWidth: 24, pointerEvents: "auto" }}
+        >
+          <LabelEditor initial={arrow.label ?? ""} onDone={commitLabel} />
+        </div>
       ) : (
         arrow.label && (
+          // clicking or dragging the label is clicking or dragging the arrow
           <div
-            className={`absolute -translate-x-1/2 -translate-y-1/2 px-1 rounded whitespace-nowrap select-none ${labelFont}`}
-            style={{ left: labelAt.x, top: labelAt.y, color: themeColor("auto", isDark), background }}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 select-none ${labelFont}`}
+            style={{
+              ...labelStyle,
+              pointerEvents: mode === "draw" ? "none" : "auto",
+              cursor: canInteract && !attached ? "grab" : undefined,
+            }}
+            onMouseDown={handleMouseDown}
+            onDoubleClick={startEditing}
           >
             {arrow.label}
           </div>
@@ -257,16 +320,15 @@ export default React.memo(function ArrowNode({
             <div
               key={end}
               title={end === "from" ? "Drag to move the start" : "Drag to move the end"}
-              className="node-handle absolute rounded-full border-2 z-10 cursor-move"
+              className="node-handle absolute rounded-full z-10 cursor-move"
               style={{
                 // the same size on screen at any zoom (see screenPx)
                 left: handleEdge(p.x, END_HANDLE),
                 top: handleEdge(p.y, END_HANDLE),
                 width: screenPx(END_HANDLE),
                 height: screenPx(END_HANDLE),
-                borderWidth: screenPx(2),
-                borderColor: "#4fb4f2",
-                background,
+                border: `${screenPx(1.5)} solid #4fb4f2`,
+                background: isDark ? "#121212" : "#ffffff",
                 pointerEvents: "auto",
               }}
               onMouseDown={(e) => handleEndMouseDown(e, end)}

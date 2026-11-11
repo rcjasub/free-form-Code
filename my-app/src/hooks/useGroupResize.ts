@@ -2,6 +2,10 @@ import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 import { scaleFor, scaleNode, stretchFor, type ScalableNode } from "../lib/groupScale";
 import { pauseGlide, resumeGlide } from "../lib/glide";
 import { trackDrag } from "../lib/dragMath";
+import { clearLive, setLiveMany, type LiveBox } from "../lib/liveShapes";
+import { parseArrow, parseShape } from "../lib/shapes";
+
+const pick = ({ w, h }: { w: number; h: number }) => ({ w, h });
 
 // Resizing a multi-selection by its box (see SelectionBox): from a corner the
 // whole selection scales evenly around the opposite corner; from a side it
@@ -79,11 +83,29 @@ export function useGroupResize({
       el.style.transformOrigin = "0 0";
     }
 
+    // Each shape's box, so arrows attached to them can follow the preview
+    // (lib/liveShapes). Attached arrows are drawn from those, so they aren't
+    // also scaled on screen.
+    const shapes = items
+      .filter(({ node }) => node.type === "shape")
+      .map(({ node }) => ({ id: node.id, x: node.x, y: node.y, ...pick(parseShape(node.content)) }));
+    const followsShapes = (node: ScalableNode) => {
+      if (node.type !== "arrow") return false;
+      const arrow = parseArrow(node.content);
+      return !!(arrow.fromId || arrow.toId);
+    };
+
     // the on-screen preview: each block moved to where it'll go, and scaled
     // the way it'll be resized (text only evenly, images not at all)
     function preview() {
+      setLiveMany(
+        shapes.map((s): [string, LiveBox] => [
+          s.id,
+          { x: anchor.x + (s.x - anchor.x) * sx, y: anchor.y + (s.y - anchor.y) * sy, w: s.w * sx, h: s.h * sy },
+        ]),
+      );
       for (const { node, el, left, top } of items) {
-        if (!el) continue;
+        if (!el || followsShapes(node)) continue;
         const stretches = node.type === "shape" || node.type === "draw" || node.type === "arrow";
         const textScales = !node.type && sx === sy;
         const kx = stretches || textScales ? sx : 1;
@@ -126,6 +148,7 @@ export function useGroupResize({
       // once the real sizes are drawn, drop the preview (in the same frame,
       // so nothing flickers back to its old size)
       requestAnimationFrame(() => {
+        clearLive(shapes.map((s) => s.id));
         for (const { el } of items) {
           if (!el) continue;
           el.style.transform = "";

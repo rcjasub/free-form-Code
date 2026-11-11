@@ -17,6 +17,7 @@ import {
 } from "../lib/shapes";
 import { parseDrawing, serializeDrawing, type DrawStyle } from "../lib/points";
 import { textsInsideShapes } from "../lib/containment";
+import { bindBox } from "../lib/bindable";
 import { FONT_SIZE } from "../lib/splitLines";
 import { AUTO } from "../lib/colors";
 
@@ -93,7 +94,22 @@ export function useDiagram({
     (id: string) => nodesRef.current.some((n) => n.id === id && n.type === "shape"),
     [nodesRef],
   );
-  const shapeTool = useShapeTool({ toCanvas, isShape: isShapeId });
+  // The box an arrow attaches to on a block, as of the page's state: a shape,
+  // or a drawing snapped into a closed outline (lib/bindable).
+  const bindBoxOf = useCallback(
+    (id: string) => {
+      const n = nodesRef.current.find((b) => b.id === id);
+      return n ? bindBox(n) : null;
+    },
+    [nodesRef],
+  );
+  const isBindableId = useCallback((id: string) => !!bindBoxOf(id), [bindBoxOf]);
+  // what the text tool and Enter type into: a shape's or an arrow's label
+  const hasLabel = useCallback(
+    (id: string) => nodesRef.current.some((n) => n.id === id && (n.type === "shape" || n.type === "arrow")),
+    [nodesRef],
+  );
+  const shapeTool = useShapeTool({ toCanvas, isShape: isBindableId });
   const arrows = useResolvedArrows(nodes);
 
   // every drawing's style, kept in a map so each DrawingNode gets the same
@@ -133,7 +149,10 @@ export function useDiagram({
       return { ...current, ...shape, fontSize: shapeLabelSize(shape) };
     }
     if (first?.type === "draw") return { ...current, ...parseDrawing(first.content).style };
-    if (first?.type === "arrow") return { ...current, ...parseArrow(first.content) };
+    if (first?.type === "arrow") {
+      const arrow = parseArrow(first.content);
+      return { ...current, ...arrow, fontSize: shapeLabelSize(arrow) };
+    }
     if (text) return { ...current, stroke: text.color ?? AUTO, fontSize: text.fontSize ?? FONT_SIZE };
     return current;
   }, [selectedElements, selectedTexts, style, textSize]);
@@ -161,8 +180,8 @@ export function useDiagram({
       ? selectedElements.some((n) => n.type === "shape" && parseShape(n.content).kind !== "ellipse")
       : mode === "rect" || mode === "diamond",
     lines: kinds.some((k) => k !== "text"), // stroke width/style, opacity
-    // text blocks, and a selected shape's label
-    fontSize: kinds.includes("text") || (selecting && kinds.includes("shape")),
+    // text blocks, and a selected shape's or arrow's label
+    fontSize: kinds.includes("text") || (selecting && (kinds.includes("shape") || kinds.includes("arrow"))),
   };
 
   // Restyles the selection and becomes the style of the next shape or text.
@@ -173,13 +192,15 @@ export function useDiagram({
     // arrows take everything but the fill; drawings only the stroke settings
     const element = pick(diagram, ["stroke", "strokeWidth", "strokeStyle", "opacity", "roughness"]) as Partial<ElementStyle>;
     const draw = pick(diagram, ["stroke", "strokeWidth", "strokeStyle", "opacity"]) as Partial<DrawStyle>;
-    // a shape takes the font size for its label
-    const shapePatch = { ...diagram, ...(fontSize !== undefined && { fontSize }) };
+    // shapes and arrows take the font size for their labels
+    const size = fontSize !== undefined ? { fontSize } : {};
+    const shapePatch = { ...diagram, ...size };
+    const arrowPatch = { ...element, ...size };
     for (const n of selectedElements) {
       if (n.type === "shape" && Object.keys(shapePatch).length) {
         reshapeBlock(n.id, n.x, n.y, serializeShape({ ...parseShape(n.content), ...shapePatch }), true);
-      } else if (n.type === "arrow" && Object.keys(element).length) {
-        reshapeBlock(n.id, n.x, n.y, serializeArrow({ ...parseArrow(n.content), ...element }), true);
+      } else if (n.type === "arrow" && Object.keys(arrowPatch).length) {
+        reshapeBlock(n.id, n.x, n.y, serializeArrow({ ...parseArrow(n.content), ...arrowPatch }), true);
       } else if (n.type === "draw" && Object.keys(draw).length) {
         const { points, style: current } = parseDrawing(n.content);
         if (points) reshapeBlock(n.id, n.x, n.y, serializeDrawing(points, { ...current, ...draw }), true);
@@ -270,13 +291,22 @@ export function useDiagram({
     setLabelEditId((current) => (current === id ? null : current));
   }, []);
 
+  // Type in a shape's or an arrow's label (the text tool, or Enter)
+  const editLabel = useCallback(
+    (id: string) => {
+      if (isShapeId(id)) editShapeLabel(id);
+      else if (hasLabel(id)) setLabelEditId(id);
+    },
+    [isShapeId, hasLabel, editShapeLabel],
+  );
+
 
   // Pointer down on the canvas: starts a shape drag if a shape tool is on.
   // Shapes start on empty canvas; an arrow can also start on a shape.
   // Returns whether it took the event.
   function startShape(e: React.PointerEvent, onBackground: boolean) {
     if (!enabled || !isShapeTool(mode) || e.button !== 0) return false;
-    const onShape = mode === "arrow" && !!shapeIdAt(e.clientX, e.clientY, isShapeId);
+    const onShape = mode === "arrow" && !!shapeIdAt(e.clientX, e.clientY, isBindableId);
     if (onBackground || onShape) shapeTool.start(e, mode, finishShape);
     return true;
   }
@@ -317,6 +347,10 @@ export function useDiagram({
     startShape,
     arrows,
     isShapeId,
+    isBindableId,
+    bindBoxOf,
+    hasLabel,
+    editLabel,
     labelEditId,
     setLabelEditing,
     bindTargetId: shapeTool.draft?.tool === "arrow" ? (shapeTool.draft.toId ?? null) : bindTargetId,

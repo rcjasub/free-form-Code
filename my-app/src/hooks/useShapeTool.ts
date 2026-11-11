@@ -65,6 +65,18 @@ export function draftToBlock(draft: ShapeDraft, style: DiagramStyle) {
   return { type: "shape", content, x: box.x, y: box.y, width: box.w };
 }
 
+// A pen stroke snapped into a rectangle or an ellipse (lib/shapeDetection),
+// as a real shape block: arrows attach to it and it takes a label, the same
+// as one drawn with the shape tool. Points are in canvas coordinates.
+export function snappedShapeBlock(kind: "rect" | "ellipse", points: Point[], style: DiagramStyle) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return draftToBlock(
+    { tool: kind, from: { x: Math.min(...xs), y: Math.min(...ys) }, to: { x: Math.max(...xs), y: Math.max(...ys) }, square: false },
+    style,
+  );
+}
+
 // The id of the shape block under a screen point, if any. The topmost
 // element under the pointer may be the shape's label or SVG, so each is
 // walked up to its block.
@@ -72,6 +84,15 @@ export function shapeIdAt(clientX: number, clientY: number, isShape: (id: string
   for (const el of document.elementsFromPoint(clientX, clientY)) {
     const id = el.closest<HTMLElement>("[data-node-id]")?.dataset.nodeId;
     if (id && id !== except && isShape(id)) return id;
+  }
+  // A drawing only takes the pointer on its line, so a point inside a snapped
+  // triangle misses it above: inside the box of one counts too (the topmost).
+  const blocks = document.querySelectorAll<HTMLElement>("[data-node-id]");
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const id = blocks[i].dataset.nodeId;
+    if (!id || id === except || !isShape(id)) continue;
+    const r = blocks[i].getBoundingClientRect();
+    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return id;
   }
   return undefined;
 }

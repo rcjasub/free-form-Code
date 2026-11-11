@@ -123,6 +123,15 @@ function dominantTriangle(points: Pt[]): [Pt, Pt, Pt] {
 // ellipse fit on relative merit even where it wouldn't have cleared a fixed
 // "is this a rectangle" cutoff on its own.
 export function detectShape(rawPoints: Pt[]): Pt[] | null {
+  return detectShapeKind(rawPoints)?.points ?? null;
+}
+
+export type SnapKind = "line" | "rect" | "triangle" | "ellipse";
+
+// detectShape, saying which shape it found: a rectangle or ellipse is saved
+// as a real shape (arrows attach to it, it takes a label), the rest as a
+// drawing.
+export function detectShapeKind(rawPoints: Pt[]): { kind: SnapKind; points: Pt[] } | null {
   if (rawPoints.length < 5) return null;
 
   const first = rawPoints[0];
@@ -145,36 +154,85 @@ export function detectShape(rawPoints: Pt[]): Pt[] | null {
   if (!closed) {
     // open stroke: is it basically a straight line end to end?
     const maxDev = Math.max(...rawPoints.map((p) => perpendicularDistance(p, first, last)));
-    return maxDev < diag * 0.08 ? [first, last] : null;
+    return maxDev < diag * 0.08 ? { kind: "line", points: [first, last] } : null;
   }
 
-  const candidates: { shape: Pt[]; err: number }[] = [];
+  const candidates: { kind: SnapKind; shape: Pt[]; err: number }[] = [];
+
+  // A box that's nearly square was meant to be square (and an ellipse in it,
+  // a circle): the clean shape comes out exactly even, centered where it was
+  // drawn. Fitting is still judged against the box as drawn.
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const even = Math.max(width, height) / Math.max(Math.min(width, height), 1) <= SQUARE_RATIO;
+  const half = (width + height) / 4;
+  const hw = even ? half : width / 2;
+  const hh = even ? half : height / 2;
 
   const rectLoop = [
+    { x: cx - hw, y: cy - hh },
+    { x: cx + hw, y: cy - hh },
+    { x: cx + hw, y: cy + hh },
+    { x: cx - hw, y: cy + hh },
+    { x: cx - hw, y: cy - hh },
+  ];
+  const drawnRect = [
     { x: minX, y: minY },
     { x: maxX, y: minY },
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
     { x: minX, y: minY },
   ];
-  candidates.push({ shape: rectLoop, err: polygonFitError(rawPoints, rectLoop) / diag });
+  candidates.push({ kind: "rect", shape: rectLoop, err: polygonFitError(rawPoints, drawnRect) / diag });
 
   const [a, b, c] = dominantTriangle(rawPoints);
   const triLoop = [a, b, c, a];
-  candidates.push({ shape: triLoop, err: polygonFitError(rawPoints, triLoop) / diag });
+  candidates.push({ kind: "triangle", shape: triLoop, err: polygonFitError(rawPoints, triLoop) / diag });
 
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
   const rx = width / 2;
   const ry = height / 2;
   if (rx >= 5 && ry >= 5) {
     candidates.push({
-      shape: ellipsePolygon(cx, cy, rx, ry),
+      kind: "ellipse",
+      shape: ellipsePolygon(cx, cy, hw, hh),
       err: ellipseFitError(rawPoints, cx, cy, rx, ry) / diag,
     });
   }
 
   candidates.sort((x, y) => x.err - y.err);
-  const best = candidates[0];
-  return best.err < 0.12 ? best.shape : null;
+  let best = candidates[0];
+  if (best.err >= 0.12) return null;
+
+  // Rectangle or ellipse? Their fits can come out close for a box drawn with
+  // soft corners. What tells them apart is the corners of the box: a
+  // rectangle's stroke runs right by them, an ellipse's keeps well away
+  // (a circle stays 0.146 of the box's diagonal from each).
+  const rect = candidates.find((k) => k.kind === "rect")!;
+  const ellipse = candidates.find((k) => k.kind === "ellipse");
+  if (ellipse && (best === rect || best === ellipse) && rect.err < 0.12 && ellipse.err < 0.12) {
+    best = cornerDistance(rawPoints, minX, minY, maxX, maxY) / diag < CORNER_SPLIT ? rect : ellipse;
+  }
+  return { kind: best.kind, points: best.shape };
+}
+
+// up to this much longer than wide (or wide than long) counts as square
+const SQUARE_RATIO = 1.12;
+// How close a stroke comes to its box's corners, over the box's diagonal:
+// below this it's a rectangle, above it an ellipse. Measured on simulated
+// hand-drawn strokes (wobble, corners rounded up to 18% of a side, a tilt of
+// up to 6°, loops left open or overshot): rectangles came to at most 0.112,
+// ellipses to no less than 0.123.
+const CORNER_SPLIT = 0.117;
+
+// The average, over the box's four corners, of how close the stroke comes.
+function cornerDistance(points: Pt[], minX: number, minY: number, maxX: number, maxY: number): number {
+  const corners = [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+  let sum = 0;
+  for (const k of corners) sum += Math.min(...points.map((p) => dist(p, k)));
+  return sum / corners.length;
 }
