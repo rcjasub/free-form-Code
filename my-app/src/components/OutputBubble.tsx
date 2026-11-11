@@ -4,6 +4,7 @@ import React from "react";
 import type { Mode } from "../App";
 import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
 import ResizeHandles from "./ResizeHandles";
+import { dragFrom, trackDrag, zoomOf } from "../lib/dragMath";
 
 // Outputs only live on this screen — nobody else sees them — so a drag or
 // resize is shown on this bubble alone while it happens, and the page only
@@ -70,7 +71,8 @@ export default React.memo(function OutputBubble({
 
       const startX = e.clientX;
       const startY = e.clientY;
-      const offset = { x: startX - xRef.current, y: startY - yRef.current };
+      // zoom-aware, and follows a scroll mid-drag (dragMath)
+      const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(el));
       let isDragging = false;
       let latest = { x: xRef.current, y: yRef.current };
 
@@ -82,7 +84,7 @@ export default React.memo(function OutputBubble({
         }
         if (!isDragging) return;
 
-        latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+        latest = drag(mv);
         if (el) {
           el.style.left = `${latest.x}px`;
           el.style.top = `${latest.y}px`;
@@ -91,12 +93,12 @@ export default React.memo(function OutputBubble({
       }
 
       function onMouseUp() {
-        window.removeEventListener("mousemove", onMouseMove);
+        stopDrag();
         window.removeEventListener("mouseup", onMouseUp);
         if (isDragging) onMoveRef.current(id, latest.x, latest.y);
       }
 
-      window.addEventListener("mousemove", onMouseMove);
+      const stopDrag = trackDrag(e, onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     }
 
@@ -130,7 +132,8 @@ export default React.memo(function OutputBubble({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    const offset = { x: startX - xRef.current, y: startY - yRef.current };
+    // zoom-aware, and follows a scroll mid-drag (dragMath)
+    const drag = dragFrom({ x: xRef.current, y: yRef.current }, { x: startX, y: startY }, zoomOf(containerRef.current));
     let isDragging = false;
     let latest = { x: xRef.current, y: yRef.current };
 
@@ -142,7 +145,7 @@ export default React.memo(function OutputBubble({
       }
       if (!isDragging) return;
 
-      latest = { x: mv.clientX - offset.x, y: mv.clientY - offset.y };
+      latest = drag(mv);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
         containerRef.current.style.top = `${latest.y}px`;
@@ -151,12 +154,12 @@ export default React.memo(function OutputBubble({
     }
 
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (isDragging) onMoveRef.current(id, latest.x, latest.y);
     }
 
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 

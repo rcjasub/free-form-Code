@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { HANDLE_SIZE, HANDLES } from "../lib/boxHandles";
-import { dragFrom } from "../lib/dragMath";
+import { dragFrom, trackDrag } from "../lib/dragMath";
 import { pauseGlide, resumeGlide } from "../lib/glide";
 import type { Box } from "../hooks/useGroupResize";
 
@@ -110,7 +110,7 @@ export default function SelectionBox({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) {
         move!.onMove(anchor, latest.x, latest.y);
@@ -118,7 +118,7 @@ export default function SelectionBox({
       }
       resumeGlide(el);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 

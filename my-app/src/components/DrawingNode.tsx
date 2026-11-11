@@ -1,6 +1,6 @@
 import { useRef, useState, useLayoutEffect } from "react";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
-import { dragFrom, zoomOf } from "../lib/dragMath";
+import { dragFrom, dragTravel, trackDrag, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
 import { strokePath } from "../lib/smoothPath";
@@ -101,13 +101,13 @@ export default React.memo(function DrawingNode({
     // Screen pixels per canvas unit, read off the rendered box, so the edge
     // follows the mouse exactly at any zoom level.
     const zoom = containerRef.current.getBoundingClientRect().width / width || 1;
+    const travel = dragTravel(startClient, zoom);
     let latest: { x: number; y: number; points: Point[] } | null = null;
     let lastSync = 0;
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      const dx = (mv.clientX - startClient.x) / zoom;
-      const dy = (mv.clientY - startClient.y) / zoom;
+      const { dx, dy } = travel(mv);
 
       // Dragging an east/south edge grows the box; west/north grows it the
       // other way, so those subtract the mouse movement.
@@ -140,13 +140,13 @@ export default React.memo(function DrawingNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) resize(id, latest.x, latest.y, latest.points, true);
       setPreview(null);
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
@@ -173,13 +173,13 @@ export default React.memo(function DrawingNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       onMoveRef.current(id, latest.x, latest.y);
       onDragFrameRef.current?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 

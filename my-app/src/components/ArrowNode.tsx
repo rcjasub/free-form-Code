@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { handleEdge, screenPx } from "../lib/boxHandles";
-import { dragFrom, zoomOf } from "../lib/dragMath";
+import { dragFrom, dragTravel, trackDrag, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import type { Point } from "./DrawingNode";
 import LinkBadge from "./LinkBadge";
@@ -108,13 +108,13 @@ export default React.memo(function ArrowNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
       onDragFrame?.(id, latest.x, latest.y, true);
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
@@ -131,22 +131,21 @@ export default React.memo(function ArrowNode({
     // longer side (a flat arrow's box is 1px on the other)
     const rect = containerRef.current.getBoundingClientRect();
     const zoom = (width >= height ? rect.width / width : rect.height / height) || 1;
-    const startClient = { x: e.clientX, y: e.clientY };
+    const travel = dragTravel({ x: e.clientX, y: e.clientY }, zoom);
     const start = arrow.points;
     let target: string | null = null;
     let moved = start;
 
     function onMouseMove(mv: MouseEvent) {
       const p = start[index];
-      moved = start.map((q, i) =>
-        i === index ? { x: p.x + (mv.clientX - startClient.x) / zoom, y: p.y + (mv.clientY - startClient.y) / zoom } : q,
-      );
+      const { dx, dy } = travel(mv);
+      moved = start.map((q, i) => (i === index ? { x: p.x + dx, y: p.y + dy } : q));
       setPreview(moved);
       target = shapeIdAt(mv.clientX, mv.clientY, isShape, other) ?? null;
       onBindTarget?.(target);
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       onBindTarget?.(null);
       setPreview(null);
@@ -156,7 +155,7 @@ export default React.memo(function ArrowNode({
       else next.toId = target ?? undefined;
       reshape(id, x, y, serializeArrow(next), true);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 

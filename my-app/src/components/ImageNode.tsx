@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
-import { dragFrom, zoomOf } from "../lib/dragMath";
+import { dragFrom, trackDrag, zoomOf } from "../lib/dragMath";
 import React from "react";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
@@ -82,7 +82,7 @@ export default React.memo(function ImageNode({
       }
     }
     function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
+      stopDrag();
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) {
         onMove(id, latest.x, latest.y);
@@ -90,7 +90,7 @@ export default React.memo(function ImageNode({
       }
       resumeGlide(containerRef.current);
     }
-    window.addEventListener("mousemove", onMouseMove);
+    const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   }
 
