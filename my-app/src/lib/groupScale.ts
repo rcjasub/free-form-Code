@@ -1,5 +1,5 @@
 import { parseDrawing, serializeDrawing } from "./points";
-import { parseArrow, parseShape, serializeArrow, serializeShape } from "./shapes";
+import { parseArrow, parseShape, serializeArrow, serializeShape, shapeLabelSize } from "./shapes";
 
 // Resizing a multi-selection: every block scales around one fixed point (the
 // corner or side opposite the handle being dragged) — by the same factor
@@ -45,7 +45,9 @@ export function scaleNode(node: ScalableNode, anchor: { x: number; y: number }, 
     const shape = parseShape(node.content);
     const w = Math.max(MIN_SHAPE, round(shape.w * sx));
     const h = Math.max(MIN_SHAPE, round(shape.h * sy));
-    return { kind: "content", id: node.id, x, y, content: serializeShape({ ...shape, w, h }) };
+    // scaled evenly (a corner), its label scales too, like a text block does
+    const fontSize = sx === sy && shape.label ? round(shapeLabelSize(shape) * sx) : shape.fontSize;
+    return { kind: "content", id: node.id, x, y, content: serializeShape({ ...shape, w, h, ...(fontSize && { fontSize }) }) };
   }
   if (node.type === "draw") {
     const { points, style } = parseDrawing(node.content);

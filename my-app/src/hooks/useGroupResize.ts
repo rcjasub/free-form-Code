@@ -31,24 +31,21 @@ interface Item {
 
 export function useGroupResize({
   nodesRef,
-  ridersOf,
   reshapeBlock,
   resizeText,
   moveNode,
   toCanvas,
 }: {
   nodesRef: RefObject<ScalableNode[]>;
-  // text sitting in the selected shapes, which scales with them
-  ridersOf: (ids: string[]) => string[];
   reshapeBlock: (id: string, x: number, y: number, content: string, done: boolean, group?: number) => void;
   resizeText: (id: string, wrapWidth: number | null, fontSize: number | null, x: number, y: number, done: boolean, group?: number) => void;
   moveNode: (id: string, x: number, y: number, record?: boolean, group?: number) => void;
   toCanvas: (clientX: number, clientY: number) => Point;
 }) {
   // the latest of each, so the handler below can stay the same function
-  const deps = useRef({ nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas });
+  const deps = useRef({ nodesRef, reshapeBlock, resizeText, moveNode, toCanvas });
   useLayoutEffect(() => {
-    deps.current = { nodesRef, ridersOf, reshapeBlock, resizeText, moveNode, toCanvas };
+    deps.current = { nodesRef, reshapeBlock, resizeText, moveNode, toCanvas };
   });
 
   // corner: which handle of `box` is being dragged (0 = left/top, 1 =
@@ -58,7 +55,7 @@ export function useGroupResize({
     e.preventDefault();
     e.stopPropagation();
     const d = deps.current;
-    const wanted = new Set([...ids, ...d.ridersOf(ids)]);
+    const wanted = new Set(ids);
     const items: Item[] = (d.nodesRef.current ?? [])
       .filter((n) => wanted.has(n.id))
       .map((n) => {

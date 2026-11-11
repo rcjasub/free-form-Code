@@ -6,16 +6,18 @@ import { useResolvedArrows } from "./useResolvedArrows";
 import { draftToBlock, isShapeTool, shapeIdAt, useShapeTool, type ShapeDraft } from "./useShapeTool";
 import {
   DEFAULT_STYLE,
+  MAX_LABEL_LENGTH,
   parseArrow,
   parseShape,
   serializeArrow,
   serializeShape,
+  shapeLabelSize,
   type DiagramStyle,
   type ElementStyle,
 } from "../lib/shapes";
 import { parseDrawing, serializeDrawing, type DrawStyle } from "../lib/points";
-import { canvasSizeOf, centeredIn, focusText, textsInsideShapes } from "../lib/containment";
-import { FONT_SIZE, LINE_HEIGHT } from "../lib/splitLines";
+import { textsInsideShapes } from "../lib/containment";
+import { FONT_SIZE } from "../lib/splitLines";
 import { AUTO } from "../lib/colors";
 
 // What the properties panel edits: the diagram style, plus a text block's
@@ -37,16 +39,12 @@ interface Options {
   reshapeBlock: (id: string, x: number, y: number, content: string, done: boolean) => void;
   // saves a new block (and records its undo step); resolves to its id
   createBlock: (block: NewBlock) => Promise<string | null>;
-  // makes a text block at canvas (x, y) with the caret in it; resolves to its id
-  createText: (x: number, y: number, content: string) => Promise<string | null>;
-  moveNode: (id: string, x: number, y: number, record?: boolean) => void;
   // a text block's color (null: the theme's) and size; they don't record
   // undo themselves, `record` does
   applyColor: (id: string, color: string | null) => void;
   applySize: (id: string, wrapWidth: number | null, fontSize: number | null) => void;
   record: (entry: HistoryEntry) => void;
   deleteNode: (id: string, record?: boolean) => void;
-  getScale: () => number;
 }
 
 // the block types the properties panel styles
@@ -76,13 +74,10 @@ export function useDiagram({
   toCanvas,
   reshapeBlock,
   createBlock,
-  createText,
-  moveNode,
   applyColor,
   applySize,
   record,
   deleteNode,
-  getScale,
 }: Options) {
   const [style, setStyle] = useState<DiagramStyle>(DEFAULT_STYLE);
   // the size new text gets (its color is style.stroke, like Excalidraw)
@@ -133,7 +128,10 @@ export function useDiagram({
     const current = { ...style, fontSize: textSize };
     const first = selectedElements[0];
     const text = selectedTexts[0];
-    if (first?.type === "shape") return { ...current, ...parseShape(first.content) };
+    if (first?.type === "shape") {
+      const shape = parseShape(first.content);
+      return { ...current, ...shape, fontSize: shapeLabelSize(shape) };
+    }
     if (first?.type === "draw") return { ...current, ...parseDrawing(first.content).style };
     if (first?.type === "arrow") return { ...current, ...parseArrow(first.content) };
     if (text) return { ...current, stroke: text.color ?? AUTO, fontSize: text.fontSize ?? FONT_SIZE };
@@ -163,7 +161,8 @@ export function useDiagram({
       ? selectedElements.some((n) => n.type === "shape" && parseShape(n.content).kind !== "ellipse")
       : mode === "rect" || mode === "diamond",
     lines: kinds.some((k) => k !== "text"), // stroke width/style, opacity
-    fontSize: kinds.includes("text"),
+    // text blocks, and a selected shape's label
+    fontSize: kinds.includes("text") || (selecting && kinds.includes("shape")),
   };
 
   // Restyles the selection and becomes the style of the next shape or text.
@@ -174,9 +173,11 @@ export function useDiagram({
     // arrows take everything but the fill; drawings only the stroke settings
     const element = pick(diagram, ["stroke", "strokeWidth", "strokeStyle", "opacity", "roughness"]) as Partial<ElementStyle>;
     const draw = pick(diagram, ["stroke", "strokeWidth", "strokeStyle", "opacity"]) as Partial<DrawStyle>;
+    // a shape takes the font size for its label
+    const shapePatch = { ...diagram, ...(fontSize !== undefined && { fontSize }) };
     for (const n of selectedElements) {
-      if (n.type === "shape" && Object.keys(diagram).length) {
-        reshapeBlock(n.id, n.x, n.y, serializeShape({ ...parseShape(n.content), ...diagram }), true);
+      if (n.type === "shape" && Object.keys(shapePatch).length) {
+        reshapeBlock(n.id, n.x, n.y, serializeShape({ ...parseShape(n.content), ...shapePatch }), true);
       } else if (n.type === "arrow" && Object.keys(element).length) {
         reshapeBlock(n.id, n.x, n.y, serializeArrow({ ...parseArrow(n.content), ...element }), true);
       } else if (n.type === "draw" && Object.keys(draw).length) {
@@ -219,18 +220,18 @@ export function useDiagram({
   }, [makesSomething, select]);
 
   // --- text in shapes ---------------------------------------------------
-  // Text in a shape is an ordinary text block of its own: it can be selected,
-  // restyled and dragged anywhere. It just starts centered in the shape, and
-  // rides along while it sits inside one that's dragged (ridersOf).
+  // A shape's text is its label: part of the shape, so it moves, resizes,
+  // copies, deletes and undoes with it, and syncs as the shape's content. It's
+  // typed right in the shape (ShapeNode). Text blocks only ride along with a
+  // shape (ridersOf) when they sit in it: older canvases put text in shapes
+  // that way, and editing such a shape's label folds that text in.
 
-  // the text block just made for a shape, centered once its typing is done
-  const shapeText = useRef<{ textId: string; shapeId: string } | null>(null);
-  // The page's functions, as of its last render. addShapeText and
-  // textEditingChanged read them from here so they can stay the same
-  // functions across renders (the blocks they're passed to are memoized).
-  const page = useRef({ createText, reshapeBlock, moveNode, deleteNode, getScale, applyColor, applySize, style, textSize });
+  // The page's functions, as of its last render. editShapeLabel and
+  // styleNewText read them from here so they can stay the same functions
+  // across renders (the blocks they're passed to are memoized).
+  const page = useRef({ reshapeBlock, deleteNode, applyColor, applySize, style, textSize });
   useEffect(() => {
-    page.current = { createText, reshapeBlock, moveNode, deleteNode, getScale, applyColor, applySize, style, textSize };
+    page.current = { reshapeBlock, deleteNode, applyColor, applySize, style, textSize };
   });
 
   // A text block just made (text tool, or text in a shape) takes the color
@@ -242,52 +243,33 @@ export function useDiagram({
     if (textSize !== FONT_SIZE) applySize(id, null, textSize);
   }, []);
 
-  // Double-click / Enter on a shape, or a shape just drawn: edit the text
-  // already in it, or start a new text block in its middle. A label from
-  // before text was its own block becomes one here.
-  const addShapeText = useCallback(async (shapeId: string) => {
-    const { createText, reshapeBlock } = page.current;
-    const shape = nodesRef.current.find((n) => n.id === shapeId);
+  // Double-click / Enter on a shape: type in its label. A shape with no label
+  // but plain text blocks sitting in it (how older canvases did it) takes
+  // their text as its label first, and those blocks go.
+  const editShapeLabel = useCallback((shapeId: string) => {
+    const { reshapeBlock, deleteNode } = page.current;
+    const shape = nodesRef.current.find((n) => n.id === shapeId && n.type === "shape");
     if (!shape) return;
-    const inside = textsInsideShapes([shapeId], nodesRef.current);
-    if (inside.length && focusText(inside[0])) return;
     const data = parseShape(shape.content);
-    // starts at the middle and grows to the right while typing; centered after
-    const textId = await createText(shape.x + data.w / 2 - 4, shape.y + data.h / 2 - LINE_HEIGHT / 2, data.label);
-    if (!textId) return;
-    styleNewText(textId);
-    shapeText.current = { textId, shapeId };
-    if (data.label) reshapeBlock(shapeId, shape.x, shape.y, serializeShape({ ...data, label: "" }), true);
-  }, [nodesRef, styleNewText]);
-
-  // Pass a text block's editing changes through here: when the one made for
-  // a shape stops being edited, it's centered in the shape, or removed if
-  // nothing was typed.
-  const textEditingChanged = useCallback((editing: boolean) => {
-    const { moveNode, deleteNode, getScale } = page.current;
-    const pending = shapeText.current;
-    if (editing || !pending) return;
-    shapeText.current = null;
-    const text = nodesRef.current.find((n) => n.id === pending.textId);
-    const shape = nodesRef.current.find((n) => n.id === pending.shapeId);
-    if (!text) return;
-    if (!text.content.trim()) {
-      deleteNode(text.id, false);
-      return;
+    if (!data.label) {
+      const texts = textsInsideShapes([shapeId], nodesRef.current)
+        .map((id) => nodesRef.current.find((n) => n.id === id))
+        .filter((n): n is CanvasNode => !!n && n.language === "text" && !!n.content.trim())
+        .sort((a, b) => a.y - b.y || a.x - b.x);
+      if (texts.length) {
+        const label = texts.map((n) => n.content.trim()).join("\n").slice(0, MAX_LABEL_LENGTH);
+        reshapeBlock(shapeId, shape.x, shape.y, serializeShape({ ...data, label }), true);
+        for (const n of texts) deleteNode(n.id);
+      }
     }
-    const size = canvasSizeOf(text.id, getScale());
-    if (!shape || !size) return;
-    const { w, h } = parseShape(shape.content);
-    const at = centeredIn({ x: shape.x, y: shape.y, w, h }, size.w, size.h);
-    moveNode(text.id, at.x, at.y, false);
+    setLabelEditId(shapeId);
   }, [nodesRef]);
 
-  // The text blocks that move with these blocks: any sitting inside a shape
-  // among them (and not already being moved).
-  const ridersOf = useCallback(
-    (ids: string[]) => textsInsideShapes(ids, nodesRef.current).filter((id) => !ids.includes(id)),
-    [nodesRef],
-  );
+  // a shape's label finished being typed in (ShapeNode saves it)
+  const endLabelEdit = useCallback((id: string) => {
+    setLabelEditId((current) => (current === id ? null : current));
+  }, []);
+
 
   // Pointer down on the canvas: starts a shape drag if a shape tool is on.
   // Shapes start on empty canvas; an arrow can also start on a shape.
@@ -309,7 +291,7 @@ export function useDiagram({
     const only = selectedElements.length === 1 ? selectedElements[0] : null;
     if (e.key === "Enter" && only && only.type !== "draw") {
       e.preventDefault();
-      if (only.type === "shape") addShapeText(only.id);
+      if (only.type === "shape") editShapeLabel(only.id);
       else setLabelEditId(only.id);
     } else if (e.key === "q" || e.key === "Q") {
       setToolLocked((v) => !v);
@@ -339,9 +321,8 @@ export function useDiagram({
     setLabelEditing,
     bindTargetId: shapeTool.draft?.tool === "arrow" ? (shapeTool.draft.toId ?? null) : bindTargetId,
     setBindTargetId,
-    addShapeText,
-    textEditingChanged,
-    ridersOf,
+    editShapeLabel,
+    endLabelEdit,
     toolLocked,
     toggleToolLock: () => setToolLocked((v) => !v),
   };

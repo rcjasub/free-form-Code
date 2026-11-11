@@ -26,12 +26,9 @@ interface Follower {
 export function useGroupDragFrames({
   nodesRef,
   selectedIdsRef,
-  ridersOf,
 }: {
   nodesRef: RefObject<Positioned[]>;
   selectedIdsRef: RefObject<string[]>;
-  // text sitting in the dragged shapes, which moves with them
-  ridersOf: (ids: string[]) => string[];
 }) {
   const session = useRef<{ id: string; x: number; y: number; followers: Follower[] } | null>(null);
 
@@ -40,8 +37,7 @@ export function useGroupDragFrames({
       let s = session.current;
       if (!s || s.id !== id) {
         const sel = selectedIdsRef.current ?? [];
-        const ids = sel.length >= 2 && sel.includes(id) ? sel : [id];
-        const moving = new Set([...ids, ...ridersOf(ids)]);
+        const moving = new Set(sel.length >= 2 && sel.includes(id) ? sel : [id]);
         moving.delete(id);
         const nodes = nodesRef.current ?? [];
         const dragged = nodes.find((n) => n.id === id);
@@ -65,6 +61,6 @@ export function useGroupDragFrames({
       }
       if (done) session.current = null;
     },
-    [nodesRef, selectedIdsRef, ridersOf],
+    [nodesRef, selectedIdsRef],
   );
 }

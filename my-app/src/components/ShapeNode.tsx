@@ -1,17 +1,73 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import { dragFrom, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
 import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
-import { parseShape, serializeShape, type ShapeData } from "../lib/shapes";
+import { MAX_LABEL_LENGTH, heightForLabel, labelBox, parseShape, serializeShape, shapeLabelSize, type ShapeData } from "../lib/shapes";
 import { TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
 
 const MIN_SIZE = 16;
 const round = (n: number) => Math.round(n * 100) / 100;
+
+// Typing a shape's label, in place. Enter makes a new line; clicking away,
+// Escape or Ctrl/Cmd+Enter finishes. `onDone` gets the text and its height.
+function LabelEditor({ initial, onDone }: { initial: string; onDone: (text: string, height: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const done = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.textContent = initial;
+    el.focus();
+    // the caret goes at the end, ready to add to what's there
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    // closed without losing focus first (the editing moved elsewhere): keep
+    // what was typed
+    // (the element is passed in: the ref is already cleared by then)
+    return () => finishRef.current(el);
+    // set once: React doesn't own what's typed in here
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function finish(el = ref.current) {
+    if (done.current || !el) return;
+    done.current = true;
+    onDone(el.innerText, el.offsetHeight);
+  }
+  const finishRef = useRef(finish);
+  useEffect(() => {
+    finishRef.current = finish;
+  });
+
+  return (
+    <div
+      ref={ref}
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      className="outline-none max-w-full"
+      style={{ minWidth: "1ch", cursor: "text" }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onBlur={() => finish()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+          e.preventDefault();
+          // Ctrl+Enter also runs selected code (App): not the label
+          e.stopPropagation();
+          e.currentTarget.blur(); // finishes (onBlur)
+        }
+      }}
+    />
+  );
+}
 
 interface Props {
   id: string;
@@ -26,9 +82,12 @@ interface Props {
   // Resizing (throttled, then once more with done=true) and label edits both
   // hand back the whole new content. Omitted for viewers who can't edit.
   onReshape?: (id: string, x: number, y: number, content: string, done: boolean) => void;
-  // double-click: put text in the shape (a text block of its own; see
-  // useDiagram addShapeText). Omitted for viewers who can't edit.
-  onEditText?: (id: string) => void;
+  // the label is being typed in, right in the shape
+  editing?: boolean;
+  // double-click (or Enter, see useDiagram) starts editing the label, and
+  // finishing it reports back. Omitted for viewers who can't edit.
+  onEditLabel?: (id: string) => void;
+  onLabelDone?: (id: string) => void;
   // an arrow being drawn or dragged will attach here: outline it
   bindHighlight?: boolean;
   pendingErase: boolean;
@@ -52,7 +111,9 @@ export default React.memo(function ShapeNode({
   onDragFrame,
   onMarkErase,
   onReshape,
-  onEditText,
+  editing = false,
+  onEditLabel,
+  onLabelDone,
   bindHighlight,
   pendingErase,
   link,
@@ -72,6 +133,16 @@ export default React.memo(function ShapeNode({
 
   function reshape(next: ShapeData, nx: number, ny: number, done: boolean) {
     onReshape?.(id, nx, ny, serializeShape(next), done);
+  }
+
+  // Typing in the label finished: save it, growing the shape taller if the
+  // text doesn't fit (`height`: the typed text's height, in canvas px).
+  function commitLabel(typed: string, height: number) {
+    onLabelDone?.(id);
+    const label = typed.trim().slice(0, MAX_LABEL_LENGTH);
+    const fits = heightForLabel(shape.kind, height);
+    const h = label && fits > shape.h ? fits : shape.h;
+    if (label !== shape.label || h !== shape.h) reshape({ ...shape, label, h }, x, y, true);
   }
 
   function handleResizeMouseDown(e: React.MouseEvent, handle: Handle) {
@@ -167,8 +238,10 @@ export default React.memo(function ShapeNode({
   // follows the theme; a dot or stripe pattern gets a halo so its lines
   // don't run through the letters.
   const patterned = shape.fill !== TRANSPARENT && shape.fillStyle !== "solid";
-  const labelColor = themeColor("auto", isDark);
-  const labelFont = shape.roughness > 0 ? "font-canvas text-base" : "font-mono text-sm";
+  // the label is drawn in the stroke color, the way a text block's color is
+  const labelColor = themeColor(shape.stroke, isDark);
+  const labelFont = shape.roughness > 0 ? "font-canvas" : "font-mono";
+  const area = labelBox(shape.kind, w, h);
 
   return (
     <div
@@ -190,9 +263,9 @@ export default React.memo(function ShapeNode({
       onMouseDown={handleMouseDown}
       onMouseEnter={() => mode === "erase" && isMouseDown.current && onMarkErase(id)}
       onDoubleClick={(e) => {
-        if (!onEditText || !canInteract) return;
+        if (!onEditLabel || !canInteract) return;
         e.stopPropagation();
-        onEditText(id);
+        onEditLabel(id);
       }}
     >
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
@@ -213,20 +286,28 @@ export default React.memo(function ShapeNode({
         <PaintPaths paint={paint} clipId={`shape-clip-${id}`} />
       </svg>
 
+      {/* The label: centered in the shape, wrapping at its width. While it's
+          typed in it can run past the bottom; saving grows the shape to fit. */}
       <div
-        className={`absolute inset-0 flex items-center justify-center p-2 text-center select-none ${labelFont}`}
+        className={`absolute flex items-center justify-center text-center ${labelFont} ${editing ? "" : "select-none"}`}
         style={{
+          left: area.left,
+          right: area.left,
+          top: area.top,
+          bottom: area.top,
           color: labelColor,
+          fontSize: shapeLabelSize(shape),
+          lineHeight: 1.25,
           // a halo in the canvas color, so hatch lines don't run through the text
           textShadow: !patterned ? undefined : `0 0 3px ${isDark ? "#121212" : "#ffffff"}, 0 0 2px ${isDark ? "#121212" : "#ffffff"}`,
           whiteSpace: "pre-wrap",
-          overflow: "hidden",
-          pointerEvents: "none",
+          overflowWrap: "anywhere",
+          overflow: editing ? "visible" : "hidden",
+          // clicks go through to the shape: the label moves and selects with it
+          pointerEvents: editing ? "auto" : "none",
         }}
       >
-        {/* a label from before text in shapes became its own block; it
-            turns into one the next time text is added (useDiagram) */}
-        {shape.label}
+        {editing ? <LabelEditor initial={shape.label} onDone={commitLabel} /> : shape.label}
       </div>
 
       {link && <LinkBadge link={link} isDark={isDark} />}
