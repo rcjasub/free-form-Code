@@ -1,0 +1,17 @@
+{
+  "name": "free-form-e2e",
+  "private": true,
+  "description": "End-to-end tests: the real app in a real browser, against a running backend",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  }
+}
