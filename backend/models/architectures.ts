@@ -1,9 +1,9 @@
 import pool from "../db";
+import type { ArchitectureModel } from "../schemas/architecture.schema";
 
-// The model the AI drew a canvas's diagram from. Its shape (sections and
-// edges) is validated before it's stored (architecture.schema.ts); here
-// it's just a JSON object.
-export type ArchitectureModel = Record<string, unknown>;
+// The model the AI drew a canvas's diagram from: sections and edges, checked
+// by parseArchitecture before it's stored. Rows are read back as written.
+export type { ArchitectureModel };
 
 export interface Architecture {
   id: string;

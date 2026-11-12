@@ -18,7 +18,7 @@ const params = {
   created_by: "user-1",
   repo_url: "https://github.com/owner/repo",
   commit_sha: "a".repeat(40),
-  model: { sections: [{ id: "api" }], edges: [] },
+  model: { summary: "", sections: [{ id: "api", title: "API", kind: "backend" as const, summary: "", files: [] }], edges: [] },
 };
 
 beforeEach(() => {
