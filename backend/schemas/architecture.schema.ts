@@ -185,3 +185,14 @@ export function parseArchitecture(raw: unknown, options: ParseOptions = {}): Par
 export function architectureJsonSchema(): Record<string, unknown> {
   return z.toJSONSchema(architectureModelSchema, { io: "input" }) as Record<string, unknown>;
 }
+
+// The body of POST /api/canvases/:id/architecture. The API key and any
+// GitHub token travel in headers, not here, so a body that ends up in a log
+// or an error report never holds a secret. The model is one of the two the
+// app offers (services/ai.ts: DEFAULT_MODEL and CAREFUL_MODEL).
+export const AI_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"] as const;
+
+export const generateRequestSchema = z.object({
+  repoUrl: z.string().trim().min(1).max(500),
+  model: z.enum(AI_MODELS).optional(),
+});

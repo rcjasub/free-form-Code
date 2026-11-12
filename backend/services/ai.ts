@@ -40,6 +40,7 @@ export type AiErrorCode =
   | "refused"
   | "truncated"
   | "invalid_output"
+  | "cancelled"
   | "upstream";
 
 // An error that's safe to show the user.
@@ -59,6 +60,9 @@ export interface GenerateOptions {
   apiKey: string;
   model?: string;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  // Cancels the call (and stops paying for it), e.g. when the person who
+  // asked closes the page.
+  signal?: AbortSignal;
   // For tests: a client to use instead of one made from apiKey.
   client?: Anthropic;
 }
@@ -223,9 +227,12 @@ export async function generateArchitecture(snapshot: RepoSnapshot, options: Gene
             ],
           },
         ],
-      });
+      }, { signal: options.signal });
       message = await stream.finalMessage();
     } catch (error) {
+      if (options.signal?.aborted || error instanceof Anthropic.APIUserAbortError) {
+        throw new AiError("cancelled", "Generating the diagram was cancelled.");
+      }
       throw error instanceof AiError ? error : apiError(error);
     }
 
