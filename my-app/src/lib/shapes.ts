@@ -17,6 +17,10 @@ export interface SectionMeta {
   kind?: SectionKind;
   // the repo and commit it was read from, so its files link to GitHub
   repo?: { url: string; commitSha: string };
+  // the section of the group it belongs to (null: none), so a group's frame
+  // carries its own members and not whatever it's dragged over. Missing on
+  // diagrams drawn before this was kept.
+  parent?: string | null;
 }
 
 export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
@@ -179,12 +183,14 @@ function sectionMeta(v: unknown): SectionMeta | undefined {
   const kind = oneOf<SectionKind | "">(m.kind, SECTION_KINDS, "");
   const repo = m.repo && typeof m.repo === "object" ? (m.repo as Json) : null;
   const repoOk = repo && typeof repo.url === "string" && GITHUB_REPO.test(repo.url) && typeof repo.commitSha === "string" && COMMIT_SHA.test(repo.commitSha);
+  const parent = m.parent === null ? null : text(m.parent, MAX_ID);
   return {
     sectionId,
     summary: text(m.summary, 4000) ?? "",
     files,
     ...(kind && { kind }),
     ...(repoOk && { repo: { url: repo.url as string, commitSha: repo.commitSha as string } }),
+    ...(parent !== undefined && { parent }),
   };
 }
 

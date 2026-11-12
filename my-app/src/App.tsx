@@ -54,6 +54,7 @@ import { useArchitectureDiagram } from "./hooks/useArchitectureDiagram";
 import VisualizeRepoDialog from "./components/VisualizeRepoDialog";
 import SectionCard from "./components/SectionCard";
 import { connectionsOf, focusOf, kindsOnCanvas, selectedSection } from "./lib/sectionDetails";
+import { movingWith } from "./lib/containment";
 import DiagramLegend from "./components/DiagramLegend";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
@@ -999,12 +1000,11 @@ export default function App() {
   // one is being typed in
   const handleTextEditing = setEditingText;
 
-  // Moves a dragged block, or the whole selection it's part of. (A shape's
-  // text is its label, so only what's selected moves: text a shape sits on
-  // or passes over stays put.)
+  // Moves a dragged block, or the whole selection it's part of, or a group
+  // frame and what's inside it (lib/containment movingWith). (A shape's text
+  // is its label, so text a shape sits on or passes over stays put.)
   const moveSelection = useCallback((id: string, x: number, y: number) => {
-    const sel = selectedIdsRef.current;
-    const moving = sel.length >= 2 && sel.includes(id) ? sel : [id];
+    const moving = movingWith(id, selectedIdsRef.current, history.nodesRef.current);
     // a new drag starts once the last one's position has been saved
     if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) {
       groupDrag.current = { id, group: Date.now() };

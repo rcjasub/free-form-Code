@@ -1,3 +1,4 @@
+import { frameContents } from "./containment";
 import { parseArrow, parseShape, type SectionMeta, type ShapeData } from "./shapes";
 
 // What a diagram box's details card shows (Phase 2b): the section the AI
@@ -87,16 +88,7 @@ export function focusOf(shapeId: string, nodes: readonly (BlockLike & { x: numbe
       if (toId) ids.add(toId);
     }
   }
-  const self = nodes.find((n) => n.id === shapeId);
-  const frame = self ? parseShape(self.content) : null;
-  if (self && frame?.labelAlign === "top") {
-    for (const node of nodes) {
-      if (node.type !== "shape" || node.id === shapeId) continue;
-      const s = parseShape(node.content);
-      const inside = node.x >= self.x && node.y >= self.y && node.x + s.w <= self.x + frame.w && node.y + s.h <= self.y + frame.h;
-      if (inside) ids.add(node.id);
-    }
-  }
+  for (const id of frameContents(shapeId, nodes)) ids.add(id);
   return ids;
 }
 

@@ -240,9 +240,12 @@ export default React.memo(function ArrowNode({
 
   // Like a shape's: the stroke color, sized from the panel, in the font that
   // goes with the line style. Behind it, the canvas color hides the line.
+  // Its own width (up to the max), not what's left of the arrow's box: a
+  // short arrow would otherwise squeeze it to a letter per line.
   const labelStyle: React.CSSProperties = {
     left: labelAt.x,
     top: labelAt.y,
+    width: "max-content",
     maxWidth: LABEL_MAX_WIDTH,
     color: themeColor(arrow.stroke, isDark),
     background: isDark ? "#121212" : "#ffffff",

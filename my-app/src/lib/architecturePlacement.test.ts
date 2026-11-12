@@ -46,7 +46,7 @@ describe("shapes", () => {
       expect(JSON.parse(block.content)).toEqual(JSON.parse(JSON.stringify(shape)));
       expect(block).toMatchObject({ type: "shape", width: shape.w, language: "javascript", link: null });
       expect(shape).toMatchObject({ kind: "rect", label: section.title, seed: 7 });
-      expect(shape.meta).toEqual({ sectionId, summary: section.summary, files: section.files, kind: section.kind, repo: REPO });
+      expect(shape.meta).toEqual({ sectionId, summary: section.summary, files: section.files, kind: section.kind, parent: section.parentId ?? null, repo: REPO });
     }
   });
 

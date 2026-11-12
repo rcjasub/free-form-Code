@@ -135,6 +135,41 @@ test.describe("signed in", () => {
     await expect(page.getByRole("list", { name: "Diagram key" })).toContainText("Database");
   });
 
+  test("dragging a group's frame brings what's inside it, and one undo puts it back", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    const box = (title: string) => page.locator("[data-node-id]", { hasText: new RegExp(`^${title}$`) });
+    const where = async (title: string) => {
+      const b = (await box(title).boundingBox())!;
+      return { x: Math.round(b.x), y: Math.round(b.y) };
+    };
+    const before = { frame: await where("Shop API"), inner: await where("Orders"), other: await where("Storefront") };
+
+    // grab the frame by its title band and drag it down-right
+    const from = { x: before.frame.x + 12, y: before.frame.y + 12 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 60, from.y + 40, { steps: 8 });
+    await page.mouse.move(from.x + 120, from.y + 80, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(() => where("Shop API")).toEqual({ x: before.frame.x + 120, y: before.frame.y + 80 });
+    await expect.poll(() => where("Orders")).toEqual({ x: before.inner.x + 120, y: before.inner.y + 80 });
+    expect(await where("Storefront")).toEqual(before.other);
+
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await page.keyboard.press("Control+z");
+    await expect.poll(() => where("Shop API")).toEqual(before.frame);
+    await expect.poll(() => where("Orders")).toEqual(before.inner);
+  });
+
   test("shows what went wrong and adds nothing", async ({ page, request }) => {
     await openNewServerCanvas(page, request);
     const message = "Anthropic rejected the API key. Check it's correct and still active.";

@@ -82,6 +82,14 @@ describe("parseShape", () => {
   it("drops meta without a section id", () => {
     expect(parseShape(JSON.stringify({ meta: { summary: "x" } })).meta).toBeUndefined();
   });
+
+  it("keeps a section's group: a section id, none (null), or unknown (missing)", () => {
+    const parentOf = (parent: unknown) => parseShape(JSON.stringify({ meta: { sectionId: "a", parent } })).meta?.parent;
+    expect(parentOf("api")).toBe("api");
+    expect(parentOf(null)).toBeNull();
+    expect(parentOf(undefined)).toBeUndefined();
+    expect(parentOf(7)).toBeUndefined();
+  });
 });
 
 describe("parseArrow", () => {
