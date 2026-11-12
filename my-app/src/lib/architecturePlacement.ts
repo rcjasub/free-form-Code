@@ -58,13 +58,21 @@ export interface DiagramBlocks {
   bounds: { x: number; y: number; w: number; h: number };
 }
 
+export interface DiagramOptions {
+  // the repo and commit the model was read from: each box keeps it, so its
+  // details card can link its files to GitHub
+  repo?: { url: string; commitSha: string };
+  // the hand-drawn wobble's seed for each shape and arrow (fixed in tests)
+  seed?: () => number;
+}
+
 // The blocks for a laid-out architecture, with the diagram's top-left corner
 // at `origin` (canvas coordinates).
 export function diagramBlocks(
   model: ArchitectureModel,
   layout: ArchitectureLayout,
   origin: Point,
-  seed: () => number = newSeed,
+  { repo, seed = newSeed }: DiagramOptions = {},
 ): DiagramBlocks {
   const sections = new Map(model.sections.map((s) => [s.id, s]));
   const at = (p: Point): Point => ({ x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) });
@@ -93,7 +101,7 @@ export function diagramBlocks(
       h: box.h,
       label: section.title,
       seed: seed(),
-      meta: { sectionId: section.id, summary: section.summary, files: section.files },
+      meta: { sectionId: section.id, summary: section.summary, files: section.files, kind: section.kind, ...(repo && { repo }) },
     };
     shapes.push({ sectionId: section.id, block: { type: "shape", content: serializeShape(shape), x, y, width: box.w, ...BLOCK_DEFAULTS } });
   }

@@ -32,7 +32,7 @@ export interface Placed {
 
 export function useArchitectureDiagram({ nodesRef, offsetRef, scaleRef, saveBlocks, recordCreated, setView }: Deps) {
   const place = useCallback(
-    async (model: ArchitectureModel): Promise<Placed> => {
+    async (model: ArchitectureModel, repo?: { url: string; commitSha: string }): Promise<Placed> => {
       const layout = await layoutArchitecture(model);
 
       // Centered where you're looking...
@@ -49,7 +49,7 @@ export function useArchitectureDiagram({ nodesRef, offsetRef, scaleRef, saveBloc
         if (dx !== 0) origin = { x: origin.x + dx, y: Math.min(...existing.map((b) => b.top)) };
       }
 
-      const blocks = diagramBlocks(model, layout, origin);
+      const blocks = diagramBlocks(model, layout, origin, { repo });
       const shapeIds = await saveBlocks(blocks.shapes.map((s) => s.block));
       const idOf = new Map<string, string>();
       blocks.shapes.forEach((s, i) => {

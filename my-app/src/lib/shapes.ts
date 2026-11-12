@@ -13,7 +13,19 @@ export interface SectionMeta {
   sectionId: string;
   summary: string;
   files: string[];
+  // what kind of part it is (frontend, backend, …), for its details card
+  kind?: SectionKind;
+  // the repo and commit it was read from, so its files link to GitHub
+  repo?: { url: string; commitSha: string };
 }
+
+export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
+export type SectionKind = (typeof SECTION_KINDS)[number];
+
+// Only plain GitHub repo URLs and full commit hashes: the card turns these
+// into links, so nothing else may get into an href.
+const GITHUB_REPO = /^https:\/\/github\.com\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 export type StrokeStyle = "solid" | "dashed" | "dotted";
 // a rectangle's or diamond's corners
@@ -164,7 +176,16 @@ function sectionMeta(v: unknown): SectionMeta | undefined {
   const sectionId = text(m.sectionId, MAX_ID);
   if (!sectionId) return undefined;
   const files = Array.isArray(m.files) ? m.files.filter((f): f is string => typeof f === "string").slice(0, 200) : [];
-  return { sectionId, summary: text(m.summary, 4000) ?? "", files };
+  const kind = oneOf<SectionKind | "">(m.kind, SECTION_KINDS, "");
+  const repo = m.repo && typeof m.repo === "object" ? (m.repo as Json) : null;
+  const repoOk = repo && typeof repo.url === "string" && GITHUB_REPO.test(repo.url) && typeof repo.commitSha === "string" && COMMIT_SHA.test(repo.commitSha);
+  return {
+    sectionId,
+    summary: text(m.summary, 4000) ?? "",
+    files,
+    ...(kind && { kind }),
+    ...(repoOk && { repo: { url: repo.url as string, commitSha: repo.commitSha as string } }),
+  };
 }
 
 function oneOf<T extends string>(v: unknown, allowed: readonly string[], fallback: T): T {

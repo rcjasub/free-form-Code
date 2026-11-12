@@ -1,10 +1,11 @@
 import axios from "axios";
+import type { SectionKind } from "../lib/shapes";
 
 const api = axios.create({ baseURL: "/api", withCredentials: true });
 
 // What the AI describes a repo as: the same shape as the backend's contract
 // (backend/schemas/architecture.schema.ts), already checked there.
-export type SectionKind = "frontend" | "backend" | "db" | "service" | "external" | "infra";
+export type { SectionKind };
 
 export interface ArchitectureSection {
   id: string;

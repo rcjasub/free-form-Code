@@ -52,11 +52,13 @@ import { createKeyedThrottle } from "./lib/throttle";
 import { chunkForRestore, toRestorePayload, type RestorePayload } from "./lib/restore";
 import { useArchitectureDiagram } from "./hooks/useArchitectureDiagram";
 import VisualizeRepoDialog from "./components/VisualizeRepoDialog";
+import SectionCard from "./components/SectionCard";
+import { connectionsOf, selectedSection } from "./lib/sectionDetails";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe, type Me } from "./API/auth";
-import type { ArchitectureModel } from "./API/architecture";
+import type { Architecture } from "./API/architecture";
 import { isLocalBlockId, isLocalCanvas, parseCanvasFile, requestPersistentStorage, toCanvasFile } from "./lib/localCanvas";
 import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
 import { announceMoved } from "./hooks/useActiveTab";
@@ -934,9 +936,9 @@ export default function App() {
   });
   const [visualizeOpen, setVisualizeOpen] = useState(false);
   const closeVisualize = useCallback(() => setVisualizeOpen(false), []);
-  const placeDiagram = useCallback(async (model: ArchitectureModel) => {
+  const placeDiagram = useCallback(async (generated: Architecture) => {
     try {
-      await architecture.place(model);
+      await architecture.place(generated.model, { url: generated.repo_url, commitSha: generated.commit_sha });
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't put the diagram on the canvas. Check your connection and try again."));
     }
@@ -1359,6 +1361,24 @@ export default function App() {
           />
         </motion.div>
       )}
+
+      {/* An AI diagram's box, selected on its own: what it is, its files and
+          what it connects to */}
+      {(() => {
+        const section = mode === "select" ? selectedSection(selectedIds, nodes) : null;
+        return (
+          section && (
+            <SectionCard
+              key={section.id}
+              section={section}
+              connections={connectionsOf(section.id, nodes)}
+              isDark={isDark}
+              onSelect={(id) => select([id])}
+              onClose={() => select([])}
+            />
+          )
+        );
+      })()}
 
       {/* top-right: run button and share */}
       <div className="absolute top-3 right-4 z-20 flex items-center gap-2">

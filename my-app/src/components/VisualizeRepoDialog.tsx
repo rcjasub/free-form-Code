@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { isAxiosError } from "axios";
 import { Network } from "lucide-react";
-import { generateArchitecture, type AiModel, type ArchitectureModel } from "@/API/architecture";
+import { generateArchitecture, type AiModel, type Architecture } from "@/API/architecture";
 
 interface Props {
   open: boolean;
@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
   // puts the generated diagram on the canvas; the dialog stays open (and
   // says so) until it's there
-  onDiagram: (model: ArchitectureModel) => Promise<void>;
+  onDiagram: (architecture: Architecture) => Promise<void>;
 }
 
 // Kept in this browser between visits, so the key is typed once. The key
@@ -52,7 +52,8 @@ export default function VisualizeRepoDialog({ open, ...props }: Props) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          // while it fades out, clicks go through to the new diagram
+          exit={{ opacity: 0, pointerEvents: "none" }}
           onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}
           // keep canvas shortcuts (Delete, Ctrl+Z, tools) out of the form
           onKeyDown={(e) => e.stopPropagation()}
@@ -115,7 +116,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
         controller.signal,
       );
       setPhase("placing");
-      await onDiagram(result.architecture.model);
+      await onDiagram(result.architecture);
       onClose();
     } catch (err) {
       if (controller.signal.aborted) return;

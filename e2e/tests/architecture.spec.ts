@@ -94,6 +94,38 @@ test.describe("signed in", () => {
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
   });
 
+  test("clicking a box shows what it is, its files on GitHub and what it connects to", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // click the box, where a person would (its label lets clicks through)
+    const postgres = await page.locator("[data-node-id]", { hasText: /^Postgres$/ }).boundingBox();
+    await page.mouse.click(postgres!.x + 10, postgres!.y + postgres!.height / 2);
+    const card = page.getByRole("complementary", { name: "About Postgres" });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Database");
+    await expect(card).toContainText("Storage.");
+    // Orders → Postgres (SQL)
+    await card.getByRole("button", { name: /Orders/ }).click();
+
+    const orders = page.getByRole("complementary", { name: "About Orders" });
+    await expect(orders).toBeVisible();
+    await expect(orders.getByRole("link", { name: "api/orders.ts" })).toHaveAttribute(
+      "href",
+      `${REPO}/blob/${"a".repeat(40)}/api/orders.ts`,
+    );
+
+    // clicking empty canvas closes it
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await expect(page.getByRole("complementary", { name: /^About / })).toHaveCount(0);
+  });
+
   test("shows what went wrong and adds nothing", async ({ page, request }) => {
     await openNewServerCanvas(page, request);
     const message = "Anthropic rejected the API key. Check it's correct and still active.";

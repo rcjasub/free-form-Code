@@ -25,10 +25,11 @@ const model: ArchitectureModel = {
 };
 
 const fixedSeed = () => 7;
+const REPO = { url: "https://github.com/acme/shop", commitSha: "c".repeat(40) };
 
 async function placed(origin = { x: 1000, y: 500 }) {
   const layout = await layoutArchitecture(model);
-  return { layout, blocks: diagramBlocks(model, layout, origin, fixedSeed) };
+  return { layout, blocks: diagramBlocks(model, layout, origin, { seed: fixedSeed, repo: REPO }) };
 }
 
 describe("shapes", () => {
@@ -45,7 +46,7 @@ describe("shapes", () => {
       expect(JSON.parse(block.content)).toEqual(JSON.parse(JSON.stringify(shape)));
       expect(block).toMatchObject({ type: "shape", width: shape.w, language: "javascript", link: null });
       expect(shape).toMatchObject({ kind: "rect", label: section.title, seed: 7 });
-      expect(shape.meta).toEqual({ sectionId, summary: section.summary, files: section.files });
+      expect(shape.meta).toEqual({ sectionId, summary: section.summary, files: section.files, kind: section.kind, repo: REPO });
     }
   });
 
@@ -149,7 +150,7 @@ const OPUS: ArchitectureModel = {
 describe("arrow labels", () => {
   it("don't land on each other or on a box", async () => {
     const layout = await layoutArchitecture(OPUS);
-    const blocks = diagramBlocks(OPUS, layout, { x: 0, y: 0 }, fixedSeed);
+    const blocks = diagramBlocks(OPUS, layout, { x: 0, y: 0 }, { seed: fixedSeed });
     const arrows = blocks.arrows(new Map(blocks.shapes.map((s) => [s.sectionId, `b-${s.sectionId}`])));
 
     type R = { x: number; y: number; w: number; h: number; name: string };

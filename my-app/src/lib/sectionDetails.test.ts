@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+import { connectionsOf, fileLink, selectedSection } from "./sectionDetails";
+import { DEFAULT_ARROW, DEFAULT_SHAPE, parseShape, serializeArrow, serializeShape } from "./shapes";
+
+// A diagram box's details card: which box it's about, its links and its
+// connections, all worked out from the blocks on the page.
+
+const REPO = { url: "https://github.com/acme/shop", commitSha: "c".repeat(40) };
+const box = (id: string, label: string, meta?: object) => ({
+  id,
+  type: "shape",
+  content: serializeShape({ ...DEFAULT_SHAPE, label, ...(meta && { meta: { sectionId: id, summary: `${label}.`, files: [], ...meta } }) }),
+});
+const arrow = (id: string, fromId?: string, toId?: string, label?: string) => ({
+  id,
+  type: "arrow",
+  content: serializeArrow({ ...DEFAULT_ARROW, fromId, toId, ...(label && { label }) }),
+});
+
+const nodes = [
+  box("web", "Storefront", { kind: "frontend" }),
+  box("api", "Shop API", { kind: "backend", repo: REPO, files: ["api/", "api/server.ts"] }),
+  box("db", "Postgres", { kind: "db" }),
+  box("plain", "Drawn by hand"),
+  { id: "note", content: "a text block" },
+  arrow("a1", "web", "api", "REST"),
+  arrow("a2", "api", "db", "SQL"),
+  arrow("a3", "api", undefined, "loose end"),
+  arrow("a4", "api", "gone", "to a deleted box"),
+];
+
+describe("selectedSection", () => {
+  it("is the one selected box, if the AI made it", () => {
+    expect(selectedSection(["api"], nodes)).toMatchObject({ id: "api", shape: { label: "Shop API" }, meta: { kind: "backend", repo: REPO } });
+  });
+
+  it("is nothing for several blocks, a hand-drawn box, an arrow or text", () => {
+    expect(selectedSection(["api", "db"], nodes)).toBeNull();
+    expect(selectedSection([], nodes)).toBeNull();
+    expect(selectedSection(["plain"], nodes)).toBeNull();
+    expect(selectedSection(["a1"], nodes)).toBeNull();
+    expect(selectedSection(["note"], nodes)).toBeNull();
+  });
+});
+
+describe("connectionsOf", () => {
+  it("lists the boxes at the other ends, outgoing then incoming", () => {
+    expect(connectionsOf("api", nodes)).toEqual([
+      { shapeId: "db", title: "Postgres", via: "SQL", direction: "out" },
+      { shapeId: "web", title: "Storefront", via: "REST", direction: "in" },
+    ]);
+    expect(connectionsOf("plain", nodes)).toEqual([]);
+  });
+});
+
+describe("fileLink", () => {
+  it("links files and folders at the diagram's commit, encoding each part", () => {
+    expect(fileLink(REPO, "api/server.ts")).toBe(`https://github.com/acme/shop/blob/${"c".repeat(40)}/api/server.ts`);
+    expect(fileLink(REPO, "api/")).toBe(`https://github.com/acme/shop/tree/${"c".repeat(40)}/api`);
+    expect(fileLink(REPO, "docs/my file#1.md")).toBe(`https://github.com/acme/shop/blob/${"c".repeat(40)}/docs/my%20file%231.md`);
+  });
+});
+
+describe("what a box may carry", () => {
+  const read = (meta: object) => parseShape(JSON.stringify({ ...DEFAULT_SHAPE, meta: { sectionId: "s", summary: "", files: [], ...meta } })).meta;
+
+  it("keeps a known kind and a GitHub repo with a full commit", () => {
+    expect(read({ kind: "db", repo: REPO })).toMatchObject({ kind: "db", repo: REPO });
+  });
+
+  it("drops anything else, since the repo ends up in links", () => {
+    expect(read({ kind: "spaceship" })?.kind).toBeUndefined();
+    for (const url of ["javascript:alert(1)", "https://evil.com/acme/shop", "https://github.com/acme/shop/../../x", "https://github.com/acme"]) {
+      expect(read({ repo: { url, commitSha: REPO.commitSha } })?.repo).toBeUndefined();
+    }
+    expect(read({ repo: { url: REPO.url, commitSha: "main" } })?.repo).toBeUndefined();
+  });
+});
