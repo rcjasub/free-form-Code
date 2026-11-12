@@ -12,10 +12,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { architectureJsonSchema, parseArchitecture, type ArchitectureModel } from "../schemas/architecture.schema";
 import type { RepoSnapshot } from "./github";
 
-export const DEFAULT_MODEL = "claude-opus-5-5";
+// Sonnet by default: on this repo it drew nearly the same diagram as Opus
+// for 40% of the cost ($0.13 vs $0.27-0.33, 12 s vs 19 s). Opus is the
+// option for a more careful diagram (it placed migrations and browser
+// storage more accurately), e.g. for a demo.
+export const DEFAULT_MODEL = "claude-sonnet-5-5";
+export const CAREFUL_MODEL = "claude-opus-5-5";
 // Grouping a codebase into sections is closer to careful reading than to
-// hard reasoning; medium keeps a diagram to about a minute. (It's also this
-// model's default, set explicitly so a model change doesn't change it.)
+// hard reasoning; medium gave good diagrams in 12-19 s. Set explicitly,
+// since the models default to different levels.
 export const DEFAULT_EFFORT = "medium" as const;
 const MAX_TOKENS = 64_000;
 // Models with server-side fallbacks (Haiku has none).

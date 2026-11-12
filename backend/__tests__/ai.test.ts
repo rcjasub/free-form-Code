@@ -33,7 +33,7 @@ const goodModel = {
 
 type Content = Array<{ type: string; text?: string }>;
 const answer = (body: unknown, extra: Partial<{ stop_reason: string; model: string; content: Content }> = {}) => ({
-  model: "claude-opus-5-5",
+  model: "claude-sonnet-5-5",
   stop_reason: "end_turn",
   content: [{ type: "text", text: typeof body === "string" ? body : JSON.stringify(body) }],
   usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 900 },
@@ -60,7 +60,7 @@ describe("the request", () => {
     await generateArchitecture(snapshot, { apiKey: API_KEY, client });
 
     const req = requests[0];
-    expect(req.model).toBe("claude-opus-5-5");
+    expect(req.model).toBe("claude-sonnet-5-5");
     expect(req.output_config).toEqual({ effort: "medium", format: { type: "json_schema", schema: outputSchema() } });
     expect(req.fallbacks).toBe("default");
     expect(req.betas).toEqual(["server-side-fallback-2026-07-01"]);
