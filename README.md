@@ -176,9 +176,9 @@ Code runs in [Piston](https://github.com/engineer-man/piston), a self-hosted exe
 |---|---|---|---|
 | Frontend unit | Vitest + React Testing Library | Canvas math, shapes, undo history, snapping | `cd my-app && npm test` |
 | Backend unit | Jest | Controllers, validation, access checks, sockets | `cd backend && npm test` |
-| End-to-end | Playwright | The real app in a real browser: guest canvases, shapes and labels, arrows, undo, two tabs collaborating live, persistence, sign-up | `cd e2e && npm test` |
+| End-to-end | Playwright | The real app in a real browser: guest canvases, shapes and labels, arrows, undo, two tabs collaborating live, persistence, signing up and deleting an account | `cd e2e && npm test` |
 
-The end-to-end tests run against a live stack. Locally, start Postgres and Redis (`docker compose up -d postgres redis`), then `npm test` in `e2e/`: it reuses `npm run dev` if it's already running, or starts the backend and frontend itself. The first time, install the browser with `npx playwright install chromium`. Each run signs up a throwaway `e2e_…` account.
+The end-to-end tests run against a live stack. Locally, start Postgres and Redis (`docker compose up -d postgres redis`), then `npm test` in `e2e/`: it reuses `npm run dev` if it's already running, or starts the backend and frontend itself. The first time, install the browser with `npx playwright install chromium`. Each run signs up throwaway `e2e_…` accounts and deletes them again at the end. Sign-up, sign-in and account deletion share a limit of 10 per 2 minutes per IP and a run uses 6, so running the suite twice within 2 minutes can fail with "Too many attempts".
 
 All three suites run in CI on every pull request ([`.github/workflows/node.js.yml`](.github/workflows/node.js.yml)).
 

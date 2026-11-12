@@ -67,6 +67,23 @@ export async function findUserByEmail(email: string): Promise<User | null> {
   return result.rows[0] ?? null;
 }
 
+export async function findUserById(id: string): Promise<User | null> {
+  const result = await pool.query<User>(`SELECT * FROM users WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}
+
+// Deletes an account; its canvases, blocks and share links go with it
+// (ON DELETE CASCADE). Resolves to the deleted canvases (id and share link),
+// read in the same statement, so their cached copies can be cleared.
+export async function deleteUser(id: string): Promise<{ id: string; share_id: string }[]> {
+  const result = await pool.query<{ id: string; share_id: string }>(
+    `WITH gone AS (DELETE FROM users WHERE id = $1 RETURNING id)
+     SELECT c.id, c.share_id FROM canvases c WHERE c.user_id IN (SELECT id FROM gone)`,
+    [id],
+  );
+  return result.rows;
+}
+
 // Marks a guest as active, at most once an hour so a busy guest isn't a
 // write per request. Resolves to true when it wrote.
 export async function touchGuest(id: string): Promise<boolean> {

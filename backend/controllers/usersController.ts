@@ -7,6 +7,7 @@ import * as Canvas from "../models/canvas";
 import pool from "../db";
 import { handleServerError } from "../utils/errors";
 import { AuthRequest, TokenPayload, COOKIE_OPTIONS, setGuestCookie } from "../middleware/auth";
+import { cacheDel } from "../redis";
 
 function generateShareId(length = 12): string {
   return randomBytes(length).toString("base64url").slice(0, length);
@@ -145,6 +146,40 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
+// DELETE /api/auth/me: deletes the signed-in account and everything it owns,
+// after checking its password again. Guests don't have one; their accounts
+// are removed automatically once idle (cleanup.ts).
+export async function deleteAccount(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const user = await Users.findUserById(req.user!.id);
+    if (!user) {
+      // already gone (deleted from another device): just sign this one out
+      res.clearCookie("token");
+      res.status(404).json({ error: "Account not found" });
+      return;
+    }
+    if (user.is_guest || !user.password_hash) {
+      res.status(403).json({ error: "Guest accounts are removed automatically" });
+      return;
+    }
+    const match = await bcrypt.compare(req.body.password, user.password_hash);
+    if (!match) {
+      res.status(401).json({ error: "Incorrect password" });
+      return;
+    }
+
+    const canvases = await Users.deleteUser(user.id);
+    // nothing deleted may still be served from the cache
+    await Promise.all(
+      canvases.flatMap((c) => [cacheDel(`canvas:${c.id}`), cacheDel(`share:${c.share_id}`), cacheDel(`blocks:${c.id}`)]),
+    );
+    res.clearCookie("token");
+    res.status(200).json({ message: "Account deleted", canvasesDeleted: canvases.length });
+  } catch (err) {
+    handleServerError(res, err);
+  }
+}
+
 export async function me(req: Request, res: Response): Promise<void> {
   const token = req.cookies?.token;
   if (!token) {
@@ -153,6 +188,13 @@ export async function me(req: Request, res: Response): Promise<void> {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    // A login is a signed cookie that lasts a day; an account deleted on
+    // another device would otherwise still look signed in here until then.
+    if (!(await Users.findUserById(decoded.id))) {
+      res.clearCookie("token");
+      res.status(200).json({ user: null });
+      return;
+    }
     res
       .status(200)
       .json({

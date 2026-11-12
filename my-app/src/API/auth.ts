@@ -15,6 +15,12 @@ export async function getMe(): Promise<Me | null> {
   return data.user;
 }
 
+// Deletes the signed-in account and everything it owns. Takes its password
+// again; rejects with 401 if it's wrong.
+export function deleteAccount(password: string) {
+  return api.delete<{ message: string; canvasesDeleted: number }>("/auth/me", { data: { password } });
+}
+
 export function startGuest() {
   return api.post<{ user: Me; canvasId: string }>("/auth/guest");
 }
