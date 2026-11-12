@@ -1,4 +1,6 @@
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect, useId, useRef, useCallback } from "react";
+import { UserMinusIcon, type UserMinusIconHandle } from "@/components/ui/user-minus-icon";
+import DeleteAccountDialog from "@/components/DeleteAccountDialog";
 import { AnimatePresence, animate, motion, useMotionTemplate, useMotionValue } from "motion/react";
 
 const LogoutIcon = ({ size = 16 }: { size?: number }) => (
@@ -10,9 +12,11 @@ const LogoutIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 // The header's actions in one floating pill: the theme toggle, a divider,
-// and sign out (which turns the canvas menu's "Delete all" red and nudges
-// its arrow out on hover).
-function HeaderActions({ onSignOut }: { onSignOut: () => void }) {
+// sign out (which turns the canvas menu's "Delete all" red and nudges its
+// arrow out on hover), and delete account, a round icon button that turns
+// red and plays its icon on hover. Guests have no account to delete.
+function HeaderActions({ onSignOut, onDeleteAccount }: { onSignOut: () => void; onDeleteAccount?: () => void }) {
+  const deleteIcon = useRef<UserMinusIconHandle>(null);
   return (
     <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-white/80 p-1 shadow-sm backdrop-blur-md dark:border-[#2e2e3a] dark:bg-[#1a1a22]/80">
       <ThemeToggleButton className="size-8 rounded-full bg-transparent p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:bg-transparent dark:text-gray-300 dark:hover:bg-[#2e2e3a] dark:hover:text-white" />
@@ -27,6 +31,19 @@ function HeaderActions({ onSignOut }: { onSignOut: () => void }) {
         </span>
         Sign out
       </button>
+      {onDeleteAccount && (
+        <button
+          type="button"
+          onClick={onDeleteAccount}
+          onMouseEnter={() => deleteIcon.current?.startAnimation()}
+          onMouseLeave={() => deleteIcon.current?.stopAnimation()}
+          title="Delete account"
+          aria-label="Delete account"
+          className="flex size-8 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-[#FF3B6B]/10 hover:text-[#FF3B6B] dark:text-gray-400 dark:hover:bg-[#FF3B6B]/10 dark:hover:text-[#FF3B6B]"
+        >
+          <UserMinusIcon ref={deleteIcon} size={16} />
+        </button>
+      )}
     </div>
   );
 }
@@ -203,6 +220,9 @@ export default function Dashboard() {
   // the background picked on the canvas (dots, grid or blank). It's one
   // setting for the whole browser, so every card shows the same one.
   const [background, setBackground] = useState(loadCanvasBackground);
+  // the "Delete account" confirmation is open
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const closeDeleteDialog = useCallback(() => setConfirmingDelete(false), []);
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -345,8 +365,15 @@ export default function Dashboard() {
             <TextRoll>Free-Form</TextRoll>
           </h1>
         </div>
-        <HeaderActions onSignOut={signOut} />
+        <HeaderActions onSignOut={signOut} onDeleteAccount={() => setConfirmingDelete(true)} />
       </div>
+      <DeleteAccountDialog
+        open={confirmingDelete}
+        canvasCount={loading ? null : canvases.length}
+        onClose={closeDeleteDialog}
+        // signed out by the server; back to the start, with no way back here
+        onDeleted={() => navigate("/", { replace: true })}
+      />
 
       {/* content */}
       <div className="relative z-10 max-w-4xl mx-auto px-8 py-12">

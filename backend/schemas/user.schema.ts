@@ -9,6 +9,12 @@ export const registerSchema = z.object({
   password: z.string().min(8),
 });
 
+// Deleting an account takes its password again, so a session cookie alone
+// (a shared computer, a stolen cookie, a cross-site request) can't do it.
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Password is required").max(72),
+});
+
 export const loginSchema = z.object({
   email: z.email(),
   password: z
