@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { randomBytes } from "crypto";
 import { deleteAccountSchema } from "../schemas/user.schema";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
@@ -29,7 +30,8 @@ function fakeRes() {
   } as any;
 }
 
-const PASSWORD = "correct-horse-battery";
+// made up fresh every run: no password lives in the repo
+const PASSWORD = randomBytes(12).toString("hex");
 let account: Users.User;
 
 beforeAll(async () => {
@@ -72,7 +74,7 @@ describe("deleteAccount", () => {
     mockUsers.findUserById.mockResolvedValue(account);
     const res = fakeRes();
 
-    await deleteAccount(req("not-the-password"), res);
+    await deleteAccount(req(`${PASSWORD}-wrong`), res);
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(mockUsers.deleteUser).not.toHaveBeenCalled();
@@ -83,7 +85,7 @@ describe("deleteAccount", () => {
     mockUsers.findUserById.mockResolvedValue({ ...account, is_guest: true, email: null, password_hash: null });
     const res = fakeRes();
 
-    await deleteAccount(req("anything"), res);
+    await deleteAccount(req(PASSWORD), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(mockUsers.deleteUser).not.toHaveBeenCalled();

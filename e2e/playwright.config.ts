@@ -22,6 +22,7 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   reporter: CI ? [["list"], ["html", { open: "never" }]] : "list",
   globalSetup: "./global-setup.ts",
+  globalTeardown: "./global-teardown.ts",
   use: {
     baseURL: BASE_URL,
     viewport: { width: 1280, height: 800 },
