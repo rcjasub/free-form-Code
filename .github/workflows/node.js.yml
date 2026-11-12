@@ -94,3 +94,100 @@ jobs:
       - name: Type check & build
         run: npm run build
         working-directory: my-app
+
+  # ── End-to-end ────────────────────────────────────────────────────────────
+  # The real frontend and backend, against real Postgres and Redis, driven in
+  # a real browser with Playwright (e2e/). Playwright starts both servers.
+  e2e:
+    name: End-to-end — Playwright
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        # A throwaway database that only lives inside this job, so it takes
+        # no password at all: there's none to keep in this file.
+        env:
+          POSTGRES_DB: freeformcode
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # read by the backend Playwright starts (it creates the tables on startup);
+    # no database password (see above), and the JWT secret is made up fresh
+    # each run (first step below)
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: freeformcode
+      DB_USER: postgres
+      REDIS_URL: redis://localhost:6379
+      # where Vite's proxy expects the backend (its own default is 3001)
+      PORT: 4000
+      # 127.0.0.1, not localhost: on the runner localhost can mean IPv6 (::1)
+      CLIENT_URL: http://127.0.0.1:5173
+      E2E_BASE_URL: http://127.0.0.1:5173
+
+    steps:
+      - name: Make a throwaway JWT secret for this run
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            my-app/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: my-app
+
+      - name: Install Playwright and its browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Type check the tests
+        run: npm run typecheck
+        working-directory: e2e
+
+      - name: Run end-to-end tests
+        run: npx playwright test
+        working-directory: e2e
+
+      # screenshots and traces of anything that failed
+      - name: Upload the test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

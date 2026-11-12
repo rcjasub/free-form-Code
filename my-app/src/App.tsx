@@ -7,7 +7,8 @@ import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "luci
 import { motion } from "motion/react";
 import { SIDEBAR_TRANSITION, sidebarOpenShift } from "./lib/sidebarLayout";
 import { useParams, useNavigate } from "react-router-dom";
-import { detectShape } from "./lib/shapeDetection";
+import { detectShapeKind } from "./lib/shapeDetection";
+import { snappedShapeBlock } from "./hooks/useShapeTool";
 import { DEFAULT_DRAW_STYLE, drawStrokeProps, parseDrawing, parsePoints, serializeDrawing } from "./lib/points";
 import { saveErrorMessage } from "./lib/saveErrors";
 import FloatingNode from "./components/FloatingNode";
@@ -428,9 +429,19 @@ export default function App() {
 
   async function finalizeDrawing(rawPoints: Point[]) {
     if (rawPoints.length < 2 || !canvasId) return;
-    const snapped = snapShapes ? detectShape(rawPoints) : null;
+    const snap = snapShapes ? detectShapeKind(rawPoints) : null;
     // the stroke as drawn stays faded while the clean shape draws itself in
-    if (snapped) addGhost(rawPoints);
+    if (snap) addGhost(rawPoints, diagram.drawStyle);
+    // a snapped rectangle or ellipse becomes a real shape: arrows attach to
+    // it and it takes a label (a triangle or a line stays a drawing)
+    if (snap && (snap.kind === "rect" || snap.kind === "ellipse")) {
+      const block = snappedShapeBlock(snap.kind, snap.points, diagram.style);
+      const id = block ? await saveNewShape(block) : null;
+      // it draws itself in over the faded stroke, like a snapped drawing
+      if (id) drawIn(id, "trace");
+      return;
+    }
+    const snapped = snap?.points ?? null;
     const points = snapped ?? rawPoints;
     const minX = Math.min(...points.map((p) => p.x));
     const minY = Math.min(...points.map((p) => p.y));
@@ -473,10 +484,10 @@ export default function App() {
     return !!block && !block.dataset.language && !!canvasRef.current?.contains(block);
   }
 
-  // the shape a press landed on, if any
-  function shapeUnder(e: React.MouseEvent) {
+  // the shape or arrow a press landed on, if any: the text tool types in it
+  function labelTargetUnder(e: React.MouseEvent) {
     const id = (e.target as Element).closest?.<HTMLElement>("[data-node-id]")?.dataset.nodeId;
-    return id && diagram.isShapeId(id) ? id : null;
+    return id && diagram.hasLabel(id) ? id : null;
   }
 
   function handleDrawPointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -494,11 +505,11 @@ export default function App() {
   // just finishes typing. Double-clicking empty canvas makes another.
   async function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (mode !== "text") return;
-    // on a shape, the text tool types in the shape (its label)
-    const shapeId = shapeUnder(e);
-    if (shapeId) {
+    // on a shape or an arrow, the text tool types in its label
+    const labelled = labelTargetUnder(e);
+    if (labelled) {
       setMode("select");
-      diagram.editShapeLabel(shapeId);
+      diagram.editLabel(labelled);
       return;
     }
     if (!isCanvasBackground(e)) return;
@@ -1420,6 +1431,7 @@ export default function App() {
             ) : node.type === "shape" ? (
               <ShapeNode
                 key={node.id}
+                drawIn={drawingIn.get(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}
@@ -1456,7 +1468,8 @@ export default function App() {
                 editing={diagram.labelEditId === node.id}
                 onEditingChange={diagram.setLabelEditing}
                 onBindTarget={diagram.setBindTargetId}
-                isShape={diagram.isShapeId}
+                isShape={diagram.isBindableId}
+                bindBoxOf={diagram.bindBoxOf}
                 link={node.link}
                 pendingErase={pendingErase.has(node.id)}
                 selected={selectedIds.includes(node.id)}

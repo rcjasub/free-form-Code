@@ -63,7 +63,10 @@ export interface ArrowData extends ElementStyle {
   toId?: string;
   // relative to the block's x/y; at least two (start and end)
   points: Point[];
+  // text along the arrow, at its middle; drawn in the stroke color
   label?: string;
+  // the label's size in px; unset means the default (shapeLabelSize)
+  fontSize?: number;
   seed: number;
 }
 
@@ -74,6 +77,9 @@ export interface ShapeBox {
   w: number;
   h: number;
   kind: ShapeKind;
+  // a closed outline (canvas coordinates) to attach to instead of `kind`'s:
+  // a drawing snapped into a triangle (lib/bindable)
+  outline?: Point[];
 }
 
 export const DEFAULT_STYLE: DiagramStyle = {
@@ -245,6 +251,7 @@ export function parseArrow(content: string): ArrowData {
     ...(fromId && { fromId }),
     ...(toId && { toId }),
     ...(label && { label }),
+    ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
   };
 }
 
@@ -273,6 +280,7 @@ export function anchorPoint(shape: ShapeBox, toward: Point): Point {
   const a = shape.w / 2;
   const b = shape.h / 2;
   if ((dx === 0 && dy === 0) || a <= 0 || b <= 0) return c; // no direction to go in
+  if (shape.outline) return outlineAnchor(c, { x: dx, y: dy }, shape.outline) ?? c;
 
   const reach =
     shape.kind === "ellipse"
@@ -281,6 +289,24 @@ export function anchorPoint(shape: ShapeBox, toward: Point): Point {
         ? Math.abs(dx) / a + Math.abs(dy) / b
         : Math.max(Math.abs(dx) / a, Math.abs(dy) / b);
   return { x: c.x + dx / reach, y: c.y + dy / reach };
+}
+
+// Where the ray from `c` along `d` first crosses a closed outline: for each
+// edge p→q, solve c + t·d = p + u·(q − p) and keep the smallest t > 0 with
+// u in [0, 1]. Null if the ray misses (c outside an odd outline).
+function outlineAnchor(c: Point, d: Point, outline: Point[]): Point | null {
+  let best = Infinity;
+  for (let i = 0; i + 1 < outline.length; i++) {
+    const p = outline[i];
+    const e = { x: outline[i + 1].x - p.x, y: outline[i + 1].y - p.y };
+    const denom = d.x * e.y - d.y * e.x;
+    if (Math.abs(denom) < 1e-9) continue; // parallel
+    const w = { x: p.x - c.x, y: p.y - c.y };
+    const t = (w.x * e.y - w.y * e.x) / denom;
+    const u = (w.x * d.y - w.y * d.x) / denom;
+    if (t > 1e-9 && u >= 0 && u <= 1 && t < best) best = t;
+  }
+  return best === Infinity ? null : { x: c.x + d.x * best, y: c.y + d.y * best };
 }
 
 // An arrow as it should be drawn right now: each attached end is moved onto

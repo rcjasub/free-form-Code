@@ -1,4 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import LabelEditor from "./LabelEditor";
+import type { DrawIn } from "../hooks/useSnapGhosts";
+import { clearLive, setLive } from "../lib/liveShapes";
 import { SELECTION_OUTLINE } from "../lib/boxHandles";
 import { dragFrom, dragTravel, trackDrag, zoomOf } from "../lib/dragMath";
 import type { Mode } from "../App";
@@ -12,62 +15,6 @@ import PaintPaths from "./PaintPaths";
 
 const MIN_SIZE = 16;
 const round = (n: number) => Math.round(n * 100) / 100;
-
-// Typing a shape's label, in place. Enter makes a new line; clicking away,
-// Escape or Ctrl/Cmd+Enter finishes. `onDone` gets the text and its height.
-function LabelEditor({ initial, onDone }: { initial: string; onDone: (text: string, height: number) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const done = useRef(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.textContent = initial;
-    el.focus();
-    // the caret goes at the end, ready to add to what's there
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
-    window.getSelection()?.removeAllRanges();
-    window.getSelection()?.addRange(range);
-    // closed without losing focus first (the editing moved elsewhere): keep
-    // what was typed
-    // (the element is passed in: the ref is already cleared by then)
-    return () => finishRef.current(el);
-    // set once: React doesn't own what's typed in here
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function finish(el = ref.current) {
-    if (done.current || !el) return;
-    done.current = true;
-    onDone(el.innerText, el.offsetHeight);
-  }
-  const finishRef = useRef(finish);
-  useEffect(() => {
-    finishRef.current = finish;
-  });
-
-  return (
-    <div
-      ref={ref}
-      contentEditable="plaintext-only"
-      suppressContentEditableWarning
-      className="outline-none max-w-full"
-      style={{ minWidth: "1ch", cursor: "text" }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
-      onBlur={() => finish()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
-          e.preventDefault();
-          // Ctrl+Enter also runs selected code (App): not the label
-          e.stopPropagation();
-          e.currentTarget.blur(); // finishes (onBlur)
-        }
-      }}
-    />
-  );
-}
 
 interface Props {
   id: string;
@@ -97,6 +44,9 @@ interface Props {
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
   zIndex: number;
+  // a pen stroke that just snapped into this shape: it draws itself in
+  // (useSnapGhosts), the way a snapped drawing does
+  drawIn?: DrawIn;
 }
 
 // A rectangle, ellipse or diamond with a centered label — the box of an
@@ -122,6 +72,7 @@ export default React.memo(function ShapeNode({
   isMouseDown,
   isDark,
   zIndex,
+  drawIn,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shape = useMemo(() => parseShape(content), [content]);
@@ -175,6 +126,8 @@ export default React.memo(function ShapeNode({
         h: round(nh),
       };
       setPreview(latest);
+      // arrows attached here follow every frame (lib/liveShapes)
+      setLive(id, latest);
       const now = performance.now();
       if (now - lastSync >= DRAG_SYNC_INTERVAL_MS) {
         lastSync = now;
@@ -186,6 +139,7 @@ export default React.memo(function ShapeNode({
       window.removeEventListener("mouseup", onMouseUp);
       if (latest) reshape({ ...shape, w: latest.w, h: latest.h }, latest.x, latest.y, true);
       setPreview(null);
+      clearLive([id]);
       resumeGlide(containerRef.current);
     }
     const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
@@ -283,7 +237,7 @@ export default React.memo(function ShapeNode({
             <path d={shapeClipPath(shape.kind, w, h, shape.edges)} />
           </clipPath>
         </defs>
-        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} />
+        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} />
       </svg>
 
       {/* The label: centered in the shape, wrapping at its width. While it's

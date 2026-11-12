@@ -140,8 +140,15 @@ Runs on every push to `main` and every pull request targeting `main`.
 |---|---|
 | backend | checkout → install deps → `tsc --noEmit` (type check) → `npm test` (against real Postgres + Redis) |
 | frontend | checkout → install deps → `npm test` (Vitest) → `npm run build` (type check + bundle) |
+| e2e | checkout → install backend, frontend and Playwright deps + Chromium → type check the tests → `npx playwright test` (Playwright starts the backend and the Vite dev server itself, against real Postgres + Redis) → on failure, upload the report with screenshots and traces |
 
-Both jobs run in parallel.
+All three jobs run in parallel.
+
+#### Why the e2e job exists
+
+The unit tests check pieces on their own, with the database and sockets mocked. The end-to-end tests check that the pieces work together the way a person uses them: a shape drawn in one tab appears in another, a label survives a reload, an arrow stays attached when its shape moves. Bugs in the seams between the frontend, the backend and the socket layer only show up there.
+
+The suite signs up one account in `e2e/global-setup.ts` and shares its login, because sign-up is rate-limited to 10 per 2 minutes per IP. Tests run one at a time (`workers: 1`) for the same reason.
 
 ### `docker.yml` — CD on `main`
 
