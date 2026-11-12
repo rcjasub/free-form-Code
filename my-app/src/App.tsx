@@ -53,7 +53,8 @@ import { chunkForRestore, toRestorePayload, type RestorePayload } from "./lib/re
 import { useArchitectureDiagram } from "./hooks/useArchitectureDiagram";
 import VisualizeRepoDialog from "./components/VisualizeRepoDialog";
 import SectionCard from "./components/SectionCard";
-import { connectionsOf, selectedSection } from "./lib/sectionDetails";
+import { connectionsOf, focusOf, kindsOnCanvas, selectedSection } from "./lib/sectionDetails";
+import DiagramLegend from "./components/DiagramLegend";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
@@ -1362,12 +1363,21 @@ export default function App() {
         </motion.div>
       )}
 
-      {/* An AI diagram's box, selected on its own: what it is, its files and
-          what it connects to */}
+      {/* AI diagrams: a box selected on its own shows its details card, and
+          the rest of the canvas dims except what it connects to, so one
+          flow can be followed through a busy diagram. Otherwise, a key to
+          the boxes' colors. */}
       {(() => {
         const section = mode === "select" ? selectedSection(selectedIds, nodes) : null;
+        if (!section) {
+          const kinds = kindsOnCanvas(nodes);
+          return kinds.length > 0 && <DiagramLegend kinds={kinds} isDark={isDark} />;
+        }
+        const lit = [...focusOf(section.id, nodes)].map((id) => `[data-node-id="${CSS.escape(id)}"]`).join(",");
         return (
-          section && (
+          <>
+            {/* a filter, so it sits on top of each block's own opacity */}
+            <style>{`[data-node-id]:not(${lit}) { filter: opacity(0.25); transition: filter 0.15s; }`}</style>
             <SectionCard
               key={section.id}
               section={section}
@@ -1376,7 +1386,7 @@ export default function App() {
               onSelect={(id) => select([id])}
               onClose={() => select([])}
             />
-          )
+          </>
         );
       })()}
 

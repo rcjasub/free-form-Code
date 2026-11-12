@@ -111,6 +111,12 @@ test.describe("signed in", () => {
     await expect(card).toBeVisible();
     await expect(card).toContainText("Database");
     await expect(card).toContainText("Storage.");
+    // the rest of the canvas dims, except what it connects to
+    const filterOf = (title: string) =>
+      page.locator("[data-node-id]", { hasText: new RegExp(`^${title}$`) }).evaluate((el) => getComputedStyle(el).filter);
+    await expect.poll(() => filterOf("Storefront")).toBe("opacity(0.25)");
+    expect(await filterOf("Orders")).toBe("none");
+    expect(await filterOf("Postgres")).toBe("none");
     // Orders → Postgres (SQL)
     await card.getByRole("button", { name: /Orders/ }).click();
 
@@ -124,6 +130,9 @@ test.describe("signed in", () => {
     // clicking empty canvas closes it
     await page.mouse.click(EMPTY.x, EMPTY.y);
     await expect(page.getByRole("complementary", { name: /^About / })).toHaveCount(0);
+    expect(await filterOf("Storefront")).toBe("none");
+    // with nothing selected, a key to the colors
+    await expect(page.getByRole("list", { name: "Diagram key" })).toContainText("Database");
   });
 
   test("shows what went wrong and adds nothing", async ({ page, request }) => {

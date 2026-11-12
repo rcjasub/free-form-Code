@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectionsOf, fileLink, selectedSection } from "./sectionDetails";
+import { connectionsOf, fileLink, focusOf, kindsOnCanvas, selectedSection } from "./sectionDetails";
 import { DEFAULT_ARROW, DEFAULT_SHAPE, parseShape, serializeArrow, serializeShape } from "./shapes";
 
 // A diagram box's details card: which box it's about, its links and its
@@ -74,5 +74,32 @@ describe("what a box may carry", () => {
       expect(read({ repo: { url, commitSha: REPO.commitSha } })?.repo).toBeUndefined();
     }
     expect(read({ repo: { url: REPO.url, commitSha: "main" } })?.repo).toBeUndefined();
+  });
+});
+
+describe("focusOf", () => {
+  const at = (n: { id: string; type?: string; content: string }, x = 0, y = 0) => ({ ...n, x, y });
+  const placed = nodes.map((n) => at(n));
+
+  it("keeps the box, its arrows and the boxes at their other ends", () => {
+    expect([...focusOf("api", placed)].sort()).toEqual(["a1", "a2", "a3", "a4", "api", "db", "gone", "web"].sort());
+    expect([...focusOf("db", placed)].sort()).toEqual(["a2", "api", "db"]);
+  });
+
+  it("a group's frame also keeps the boxes inside it", () => {
+    const frame = at({ id: "g", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 400, h: 300, labelAlign: "top" }) }, 100, 100);
+    const inside = at({ id: "in", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 100, h: 50 }) }, 150, 160);
+    const outside = at({ id: "out", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 100, h: 50 }) }, 450, 160);
+    expect([...focusOf("g", [frame, inside, outside])].sort()).toEqual(["g", "in"]);
+    // a plain box doesn't hold what overlaps it
+    const plain = at({ id: "p", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 400, h: 300 }) }, 100, 100);
+    expect([...focusOf("p", [plain, inside])]).toEqual(["p"]);
+  });
+});
+
+describe("kindsOnCanvas", () => {
+  it("lists the kinds present, in the legend's order", () => {
+    expect(kindsOnCanvas(nodes)).toEqual(["frontend", "backend", "db"]);
+    expect(kindsOnCanvas([])).toEqual([]);
   });
 });

@@ -71,3 +71,42 @@ export const KIND_NAMES: Record<NonNullable<SectionMeta["kind"]>, string> = {
   infra: "Infrastructure",
   external: "Outside service",
 };
+
+// What stays lit while a box is selected (the rest of the canvas dims): the
+// box, the arrows attached to it, the boxes at their other ends and, for a
+// group's frame, the boxes inside it. Follows one flow through a busy
+// diagram.
+export function focusOf(shapeId: string, nodes: readonly (BlockLike & { x: number; y: number })[]): Set<string> {
+  const ids = new Set([shapeId]);
+  for (const node of nodes) {
+    if (node.type !== "arrow") continue;
+    const { fromId, toId } = parseArrow(node.content);
+    if (fromId === shapeId || toId === shapeId) {
+      ids.add(node.id);
+      if (fromId) ids.add(fromId);
+      if (toId) ids.add(toId);
+    }
+  }
+  const self = nodes.find((n) => n.id === shapeId);
+  const frame = self ? parseShape(self.content) : null;
+  if (self && frame?.labelAlign === "top") {
+    for (const node of nodes) {
+      if (node.type !== "shape" || node.id === shapeId) continue;
+      const s = parseShape(node.content);
+      const inside = node.x >= self.x && node.y >= self.y && node.x + s.w <= self.x + frame.w && node.y + s.h <= self.y + frame.h;
+      if (inside) ids.add(node.id);
+    }
+  }
+  return ids;
+}
+
+// The kinds of AI-diagram boxes on the canvas, in the legend's order.
+export function kindsOnCanvas(nodes: readonly BlockLike[]): NonNullable<SectionMeta["kind"]>[] {
+  const present = new Set<string>();
+  for (const node of nodes) {
+    if (node.type !== "shape") continue;
+    const kind = parseShape(node.content).meta?.kind;
+    if (kind) present.add(kind);
+  }
+  return (Object.keys(KIND_NAMES) as NonNullable<SectionMeta["kind"]>[]).filter((k) => present.has(k));
+}

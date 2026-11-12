@@ -30,7 +30,7 @@ import {
 // How each kind of section looks: a color from the canvas palette (a deep
 // line and a pale fill of the same hue), so a diagram reads at a glance and
 // stays editable from the properties panel.
-const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill" | "strokeStyle">> = {
+export const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill" | "strokeStyle">> = {
   frontend: { stroke: "blue", fill: "blue", strokeStyle: "solid" },
   backend: { stroke: "green", fill: "green", strokeStyle: "solid" },
   service: { stroke: "yellow", fill: "yellow", strokeStyle: "solid" },
