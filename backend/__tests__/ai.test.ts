@@ -55,7 +55,7 @@ function fakeClient(...replies: unknown[]) {
 const API_KEY = `sk-ant-api03-${randomBytes(30).toString("base64url")}`;
 
 describe("the request", () => {
-  test("sends the snapshot first and cached, with the contract as the response format", async () => {
+  test("sends the snapshot first, with the contract as the response format", async () => {
     const { client, requests } = fakeClient(answer(goodModel));
     await generateArchitecture(snapshot, { apiKey: API_KEY, client });
 
@@ -67,9 +67,20 @@ describe("the request", () => {
     expect(req.system).toBe(SYSTEM_PROMPT);
     expect(req.thinking).toBeUndefined();
     const [repo, ask] = req.messages[0].content;
-    expect(repo.cache_control).toEqual({ type: "ephemeral" });
+    // Not cached: a cache write costs more than it saves without a retry.
+    expect(repo.cache_control).toBeUndefined();
     expect(repo.text).toBe(renderSnapshot(snapshot));
     expect(ask.text).toBe("Describe this repository's architecture.");
+  });
+
+  test("fallbacks are only asked for on models that have them", async () => {
+    for (const [model, hasFallbacks] of [["claude-sonnet-5-5", true], ["claude-haiku-5-5", false]] as const) {
+      const { client, requests } = fakeClient(answer(goodModel));
+      await generateArchitecture(snapshot, { apiKey: API_KEY, client, model });
+      expect(requests[0].model).toBe(model);
+      expect("fallbacks" in requests[0]).toBe(hasFallbacks);
+      expect("betas" in requests[0]).toBe(hasFallbacks);
+    }
   });
 
   test("the snapshot lists facts, every path and each file, marking cut ones", () => {
@@ -111,7 +122,7 @@ describe("answers", () => {
 
     expect(result.attempts).toBe(2);
     const retry = requests[1].messages[0].content;
-    // Same cached snapshot first, so the retry reads it from the cache.
+    // The same snapshot first, then the reasons.
     expect(retry[0]).toEqual(requests[0].messages[0].content[0]);
     expect(retry[1].text).toContain('edges.0.to: "db" isn\'t a section');
     expect(retry[1].text).toContain(JSON.stringify(broken));
