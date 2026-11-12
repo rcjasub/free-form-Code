@@ -1,8 +1,15 @@
 import { useCallback, useState } from "react";
 import { strokePath } from "../lib/smoothPath";
 import type { Point } from "../components/DrawingNode";
+import type { DrawStyle } from "../lib/points";
 
 export type DrawIn = "trace" | "brighten";
+
+export interface SnapGhost {
+  id: number;
+  d: string;
+  style: DrawStyle;
+}
 
 // While snapping is on, the live stroke is drawn at this opacity — the same
 // as the faded outline it leaves (snap-ghost in index.css).
@@ -18,14 +25,16 @@ const DRAW_IN_MS = 900;
 // didn't, it just brightens to full. Only on this screen; never saved, and
 // others just see the finished drawing.
 export function useSnapGhosts() {
-  const [ghosts, setGhosts] = useState<{ id: number; d: string }[]>([]);
+  const [ghosts, setGhosts] = useState<SnapGhost[]>([]);
   // new drawings that animate in when they first appear, and how: "trace"
   // (a snapped shape draws itself) or "brighten" (faded stroke to full)
   const [drawingIn, setDrawingIn] = useState<Map<string, DrawIn>>(new Map());
 
-  const addGhost = useCallback((rawPoints: Point[]) => {
+  // `style`: what the stroke was drawn with, so its ghost is the same color,
+  // width and dash, not the theme's default
+  const addGhost = useCallback((rawPoints: Point[], style: DrawStyle) => {
     const id = Date.now() + Math.random();
-    setGhosts((prev) => [...prev, { id, d: strokePath(rawPoints) }]);
+    setGhosts((prev) => [...prev, { id, d: strokePath(rawPoints), style }]);
     setTimeout(() => setGhosts((prev) => prev.filter((g) => g.id !== id)), GHOST_MS);
   }, []);
 

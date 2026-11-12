@@ -1,20 +1,25 @@
-// The faded original of a snapped stroke (see hooks/useSnapGhosts).
-// Drawn in canvas coordinates, inside the panned/zoomed canvas layer.
-export default function SnapGhosts({ ghosts, isDark }: { ghosts: { id: number; d: string }[]; isDark: boolean }) {
+import { drawStrokeProps } from "../lib/points";
+import type { SnapGhost } from "../hooks/useSnapGhosts";
+
+// The faded original of a snapped stroke (see hooks/useSnapGhosts), in the
+// color, width and dash it was drawn with. Drawn in canvas coordinates,
+// inside the panned/zoomed canvas layer.
+export default function SnapGhosts({ ghosts, isDark }: { ghosts: SnapGhost[]; isDark: boolean }) {
   if (!ghosts.length) return null;
   return (
     <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>
       {ghosts.map((g) => (
-        <path
-          key={g.id}
-          d={g.d}
-          className="snap-ghost"
-          fill="none"
-          stroke={isDark ? "#f5f5f5" : "#1f2937"}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        // the stroke's own opacity on the group; the fade (snap-ghost) on the path
+        <g key={g.id} opacity={g.style.opacity / 100}>
+          <path
+            d={g.d}
+            className="snap-ghost"
+            fill="none"
+            {...drawStrokeProps(g.style, isDark)}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
       ))}
     </svg>
   );

@@ -1,5 +1,7 @@
 import { useCallback, useRef, type RefObject } from "react";
 import { pauseGlide, resumeGlide } from "../lib/glide";
+import { clearLive, setLiveMany, type LiveBox } from "../lib/liveShapes";
+import { parseArrow } from "../lib/shapes";
 
 // Keeps a multi-selection together while one of its blocks is dragged.
 //
@@ -15,12 +17,20 @@ interface Positioned {
   id: string;
   x: number;
   y: number;
+  type?: string;
+  content: string;
 }
 
 interface Follower {
+  id: string;
   el: HTMLElement;
   x: number;
   y: number;
+}
+
+function isAttached(content: string) {
+  const arrow = parseArrow(content);
+  return !!(arrow.fromId || arrow.toId);
 }
 
 export function useGroupDragFrames({
@@ -41,14 +51,17 @@ export function useGroupDragFrames({
         moving.delete(id);
         const nodes = nodesRef.current ?? [];
         const dragged = nodes.find((n) => n.id === id);
-        if (!dragged || moving.size === 0) return; // a single block: it moves itself
+        if (!dragged) return;
         const followers: Follower[] = [];
         for (const n of nodes) {
           if (!moving.has(n.id)) continue;
+          // an arrow attached to a shape is drawn from its shapes' live
+          // positions (lib/liveShapes); moving it as well would move it twice
+          if (n.type === "arrow" && isAttached(n.content)) continue;
           const el = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(n.id)}"]`);
           if (!el) continue;
           pauseGlide(el);
-          followers.push({ el, x: n.x, y: n.y });
+          followers.push({ id: n.id, el, x: n.x, y: n.y });
         }
         s = session.current = { id, x: dragged.x, y: dragged.y, followers };
       }
@@ -59,7 +72,13 @@ export function useGroupDragFrames({
         f.el.style.top = `${f.y + dy}px`;
         if (done) resumeGlide(f.el);
       }
-      if (done) session.current = null;
+      // where everything moving is, for arrows attached to it
+      if (done) {
+        clearLive([id, ...s.followers.map((f) => f.id)]);
+        session.current = null;
+      } else {
+        setLiveMany([[id, { x, y }], ...s.followers.map((f): [string, LiveBox] => [f.id, { x: f.x + dx, y: f.y + dy }])]);
+      }
     },
     [nodesRef, selectedIdsRef],
   );
