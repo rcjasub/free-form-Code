@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { isAxiosError } from "axios";
 import { Network } from "lucide-react";
-import { generateArchitecture, type AiModel, type Architecture } from "@/API/architecture";
+import { generateArchitecture, type AiModel, type Architecture, type DetailLevel } from "@/API/architecture";
 
 interface Props {
   open: boolean;
@@ -19,6 +19,7 @@ interface Props {
 const KEY_STORAGE = "free-form:anthropic-key";
 const URL_STORAGE = "free-form:last-repo-url";
 const MODEL_STORAGE = "free-form:ai-model";
+const DETAIL_STORAGE = "free-form:ai-detail";
 
 function load(key: string): string {
   try {
@@ -40,6 +41,11 @@ function save(key: string, value: string) {
 const MODELS: { id: AiModel; name: string; note: string }[] = [
   { id: "claude-sonnet-5-5", name: "Sonnet", note: "Faster, about half the cost" },
   { id: "claude-opus-5-5", name: "Opus", note: "More careful, for demos" },
+];
+
+const DETAILS: { id: DetailLevel; name: string; note: string }[] = [
+  { id: "overview", name: "Overview", note: "The main parts, 5–9 boxes" },
+  { id: "detailed", name: "Detailed", note: "Their pieces too, a bit more cost and time" },
 ];
 
 // Asks for a GitHub repo and draws its architecture on the canvas: the AI
@@ -72,6 +78,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
   const [repoUrl, setRepoUrl] = useState(() => load(URL_STORAGE));
   const [apiKey, setApiKey] = useState(() => load(KEY_STORAGE));
   const [model, setModel] = useState<AiModel>(() => (load(MODEL_STORAGE) === "claude-opus-5-5" ? "claude-opus-5-5" : "claude-sonnet-5-5"));
+  const [detail, setDetail] = useState<DetailLevel>(() => (load(DETAIL_STORAGE) === "detailed" ? "detailed" : "overview"));
   const [githubToken, setGithubToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -106,12 +113,13 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
     save(KEY_STORAGE, apiKey.trim());
     save(URL_STORAGE, repoUrl.trim());
     save(MODEL_STORAGE, model);
+    save(DETAIL_STORAGE, detail);
     const controller = new AbortController();
     request.current = controller;
     try {
       const result = await generateArchitecture(
         canvasId,
-        { repoUrl: repoUrl.trim(), model },
+        { repoUrl: repoUrl.trim(), model, detail },
         { apiKey: apiKey.trim(), githubToken: githubToken.trim() || undefined },
         controller.signal,
       );
@@ -188,6 +196,28 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
           >
             <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
             <span className="block text-xs text-gray-500 dark:text-gray-400">{m.note}</span>
+          </button>
+        ))}
+      </div>
+
+      <span className={label}>Detail</span>
+      <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Detail">
+        {DETAILS.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            role="radio"
+            aria-checked={detail === d.id}
+            disabled={busy}
+            onClick={() => setDetail(d.id)}
+            className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+              detail === d.id
+                ? "border-[#4f8cff] bg-[#4f8cff]/10"
+                : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
+            }`}
+          >
+            <span className="block text-sm font-medium text-gray-900 dark:text-white">{d.name}</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">{d.note}</span>
           </button>
         ))}
       </div>

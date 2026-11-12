@@ -4,7 +4,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { randomBytes } from "crypto";
-import { AiError, generateArchitecture, outputSchema, renderSnapshot, SYSTEM_PROMPT } from "../services/ai";
+import { AiError, DETAIL_LEVELS, generateArchitecture, outputSchema, renderSnapshot, SYSTEM_PROMPT } from "../services/ai";
 import type { RepoSnapshot } from "../services/github";
 
 const snapshot: RepoSnapshot = {
@@ -66,11 +66,24 @@ describe("the request", () => {
     expect(req.betas).toEqual(["server-side-fallback-2026-07-01"]);
     expect(req.system).toBe(SYSTEM_PROMPT);
     expect(req.thinking).toBeUndefined();
-    const [repo, ask] = req.messages[0].content;
+    const [repo, level, ask] = req.messages[0].content;
     // Not cached: a cache write costs more than it saves without a retry.
     expect(repo.cache_control).toBeUndefined();
     expect(repo.text).toBe(renderSnapshot(snapshot));
+    expect(level.text).toBe(DETAIL_LEVELS.overview);
     expect(ask.text).toBe("Describe this repository's architecture.");
+  });
+
+  test("asks for the level of detail chosen, and keeps it on a retry", async () => {
+    const broken = { ...goodModel, edges: [{ from: "web", to: "nowhere", label: "" }] };
+    const { client, requests } = fakeClient(answer(broken), answer(goodModel));
+    await generateArchitecture(snapshot, { apiKey: API_KEY, client, detail: "detailed" });
+    expect(requests).toHaveLength(2);
+    for (const req of requests) expect(req.messages[0].content[1].text).toBe(DETAIL_LEVELS.detailed);
+    expect(DETAIL_LEVELS.detailed).toContain("15 to 40");
+    expect(DETAIL_LEVELS.overview).toContain("5 to 9 sections in all");
+    // the fixed instructions don't pin a level of their own
+    expect(SYSTEM_PROMPT).not.toContain("4 to 15");
   });
 
   test("fallbacks are only asked for on models that have them", async () => {
@@ -124,15 +137,15 @@ describe("answers", () => {
     const retry = requests[1].messages[0].content;
     // The same snapshot first, then the reasons.
     expect(retry[0]).toEqual(requests[0].messages[0].content[0]);
-    expect(retry[1].text).toContain('edges.0.to: "db" isn\'t a section');
-    expect(retry[1].text).toContain(JSON.stringify(broken));
+    expect(retry[2].text).toContain('edges.0.to: "db" isn\'t a section');
+    expect(retry[2].text).toContain(JSON.stringify(broken));
     expect(result.usage.inputTokens).toBe(200);
   });
 
   test("an answer that isn't JSON is retried too", async () => {
     const { client, requests } = fakeClient(answer("Here is the diagram: {"), answer(goodModel));
     await expect(generateArchitecture(snapshot, { apiKey: API_KEY, client })).resolves.toMatchObject({ attempts: 2 });
-    expect(requests[1].messages[0].content[1].text).toContain("the answer wasn't valid JSON");
+    expect(requests[1].messages[0].content[2].text).toContain("the answer wasn't valid JSON");
   });
 
   test("two bad answers give up with the reasons", async () => {

@@ -65,6 +65,7 @@ test.describe("signed in", () => {
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
     await page.getByRole("radio", { name: /Opus/ }).click();
+    await page.getByRole("radio", { name: /Detailed/ }).click();
     await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
 
@@ -77,7 +78,7 @@ test.describe("signed in", () => {
     // The key travels in a header, never in the body.
     expect(sent).toHaveLength(1);
     expect(sent[0].headers()["x-anthropic-key"]).toBe(API_KEY);
-    expect(sent[0].postDataJSON()).toEqual({ repoUrl: REPO, model: "claude-opus-5-5" });
+    expect(sent[0].postDataJSON()).toEqual({ repoUrl: REPO, model: "claude-opus-5-5", detail: "detailed" });
 
     // Saved on the server: still there after a reload.
     await page.reload();

@@ -195,4 +195,6 @@ export const AI_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"] as const;
 export const generateRequestSchema = z.object({
   repoUrl: z.string().trim().min(1).max(500),
   model: z.enum(AI_MODELS).optional(),
+  // how much of the system to show (services/ai.ts DETAIL_LEVELS)
+  detail: z.enum(["overview", "detailed"]).optional(),
 });

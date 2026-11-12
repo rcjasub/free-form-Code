@@ -31,6 +31,18 @@ const MAX_ATTEMPTS = 2;
 // the tree is there so the AI knows what else exists and can name folders.
 const MAX_TREE_PATHS = 2_000;
 
+// How much of the system a diagram shows. Overview is what a new team
+// member wants on day one, small enough to take in at a glance (5 to 9
+// boxes, like a hand-drawn architecture sketch); detailed goes a level deeper, still within the
+// contract's limits (40 sections, 80 edges, 3 levels).
+export const DETAIL_LEVELS = {
+  overview:
+    "Level of detail: an overview, the level a new team member would want on their first day, small enough to take in at a glance. 5 to 9 sections in all, nested ones included: fold small pieces into the part they belong to (all the API's routes, middleware and models are one API section) rather than giving them their own section, and nest only where a group of 2 or 3 clearly helps.",
+  detailed:
+    "Level of detail: detailed, a level deeper than an overview. Usually 15 to 40 sections: keep the main parts as top-level sections and put their important pieces inside them as nested sections (route groups, workers, modules, stores, major UI areas), up to 3 levels deep. Give each piece its own files and connect pieces directly where they talk to each other.",
+} as const;
+export type DetailLevel = keyof typeof DETAIL_LEVELS;
+
 export type AiErrorCode =
   | "invalid_key"
   | "bad_key"
@@ -60,6 +72,8 @@ export interface GenerateOptions {
   apiKey: string;
   model?: string;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  // how much of the system to show (DETAIL_LEVELS); overview by default
+  detail?: DetailLevel;
   // Cancels the call (and stops paying for it), e.g. when the person who
   // asked closes the page.
   signal?: AbortSignal;
@@ -100,7 +114,7 @@ What an edge is:
 - label says how, in a few words: "REST", "WebSocket", "SQL", "enqueues jobs".
 - Every from and to must be the id of a section you listed. No edge from a section to itself, and no repeated pairs.
 
-Aim for the level a new team member would want on their first day: usually 4 to 15 top-level sections. Prefer what the code shows over what the README claims; include what both show. Don't invent parts the snapshot gives no evidence of. Tests, docs and build tooling are not sections unless they are part of how the system runs (a CI pipeline that deploys it can be an infra section).
+Use the level of detail the request asks for. Prefer what the code shows over what the README claims; include what both show. Don't invent parts the snapshot gives no evidence of. Tests, docs and build tooling are not sections unless they are part of how the system runs (a CI pipeline that deploys it can be an infra section).
 
 summary at the top level is one or two sentences on what the whole project is.
 
@@ -223,6 +237,8 @@ export async function generateArchitecture(snapshot: RepoSnapshot, options: Gene
             role: "user",
             content: [
               { type: "text", text: repoText },
+              // kept on a retry, which replaces only the ask
+              { type: "text", text: DETAIL_LEVELS[options.detail ?? "overview"] },
               { type: "text", text: retry ?? "Describe this repository's architecture." },
             ],
           },

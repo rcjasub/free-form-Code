@@ -9,6 +9,7 @@
 // Options (env vars):
 //   AI_MODEL       default claude-sonnet-5-5; claude-opus-5-5 for a more careful diagram
 //   AI_EFFORT      low | medium | high | xhigh | max   default medium
+//   AI_DETAIL      overview | detailed   default overview
 //   GITHUB_TOKEN   for private repos or more GitHub calls
 //   OUT            also write the model as JSON to this file
 
@@ -38,6 +39,7 @@ async function main() {
     apiKey,
     model: process.env.AI_MODEL || undefined,
     effort: (process.env.AI_EFFORT as GenerateOptions["effort"]) || undefined,
+    detail: process.env.AI_DETAIL === "detailed" ? "detailed" : undefined,
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
 

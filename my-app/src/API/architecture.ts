@@ -48,12 +48,16 @@ export interface GenerateResult {
 // The two models offered: Sonnet by default, Opus for a more careful diagram.
 export type AiModel = "claude-sonnet-5-5" | "claude-opus-5-5";
 
+// How much of the system to show: about 5-9 boxes, or 15-40 with the
+// main parts' pieces nested inside them.
+export type DetailLevel = "overview" | "detailed";
+
 // Reads the repo and has the AI describe it, saving the result as the
 // canvas's current architecture. The API key (and a GitHub token, for
 // private repos) go in headers and are used for this one request.
 export async function generateArchitecture(
   canvasId: string,
-  request: { repoUrl: string; model?: AiModel },
+  request: { repoUrl: string; model?: AiModel; detail?: DetailLevel },
   secrets: { apiKey: string; githubToken?: string },
   signal?: AbortSignal,
 ): Promise<GenerateResult> {

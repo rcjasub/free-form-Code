@@ -112,6 +112,16 @@ describe("generating", () => {
     expect(res.status).toBe(400);
     expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
+
+  test("the level of detail is passed on, and only the two levels are accepted", async () => {
+    await post({ ...valid, detail: "detailed" });
+    expect(mockGenerate.mock.calls[0][1].detail).toBe("detailed");
+    await post(valid);
+    expect(mockGenerate.mock.calls[1][1].detail).toBeUndefined();
+
+    expect((await post({ ...valid, detail: "everything" })).status).toBe(400);
+    expect(mockGenerate).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("checks before anything is spent", () => {

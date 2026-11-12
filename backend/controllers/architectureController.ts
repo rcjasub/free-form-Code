@@ -2,7 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import * as Architectures from "../models/architectures";
 import { readRepo, RepoReadError, type RepoReadErrorCode } from "../services/github";
-import { AiError, generateArchitecture, type AiErrorCode } from "../services/ai";
+import { AiError, generateArchitecture, type AiErrorCode, type DetailLevel } from "../services/ai";
 import { handleServerError } from "../utils/errors";
 
 // Repo and AI failures are the user's to fix (a typo in the URL, a wrong
@@ -44,14 +44,14 @@ function header(req: AuthRequest, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-// POST /api/canvases/:id/architecture  { repoUrl, model? }
+// POST /api/canvases/:id/architecture  { repoUrl, model?, detail? }
 // Headers: X-Anthropic-Key (required), X-GitHub-Token (optional).
 // Reads the repo, asks the AI for its architecture and saves it as the
 // canvas's current one. Body checked by generateRequestSchema; access by
 // requireCanvasAccess.
 export async function generate(req: AuthRequest, res: Response): Promise<void> {
   const canvasId = req.params.id;
-  const { repoUrl, model } = req.body as { repoUrl: string; model?: string };
+  const { repoUrl, model, detail } = req.body as { repoUrl: string; model?: string; detail?: DetailLevel };
   const apiKey = header(req, "x-anthropic-key");
   if (!apiKey) {
     res.status(400).json({ error: "Add your Anthropic API key to generate a diagram.", code: "missing_key" });
@@ -72,7 +72,7 @@ export async function generate(req: AuthRequest, res: Response): Promise<void> {
 
   try {
     const snapshot = await readRepo(repoUrl, { token: header(req, "x-github-token") });
-    const result = await generateArchitecture(snapshot, { apiKey, model, signal: abort.signal });
+    const result = await generateArchitecture(snapshot, { apiKey, model, detail, signal: abort.signal });
     const architecture = await Architectures.create({
       canvas_id: canvasId,
       created_by: req.user?.id ?? null,
