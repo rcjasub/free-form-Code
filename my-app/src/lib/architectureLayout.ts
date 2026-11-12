@@ -79,8 +79,9 @@ export interface Size {
 // Box sizes as the canvas will draw them: a rect's label at the default 14px.
 export const LABEL_FONT_SIZE = 14;
 const LINE_HEIGHT = 20;
-// the average width of a character, as a share of the font size
-const CHAR_WIDTH = 0.56;
+// a character's width as a share of the font size: shape labels are drawn in
+// the monospace font (font-mono) unless the shape is hand-drawn
+const CHAR_WIDTH = 0.6;
 const MIN_W = 140;
 const MAX_W = 240;
 const MIN_H = 64;

@@ -4,6 +4,7 @@ import {
   DEFAULT_ARROW,
   DEFAULT_SHAPE,
   parseArrow,
+  pointAlong,
   parseShape,
   resolveArrow,
   serializeArrow,
@@ -23,6 +24,31 @@ describe("parseShape", () => {
     const shape = { ...DEFAULT_SHAPE, kind: "ellipse" as const, w: 120, h: 60, fill: "#a5d8ff", label: "API", seed: 42,
       meta: { sectionId: "api", summary: "Express routes", files: ["backend/server.ts"] } };
     expect(parseShape(serializeShape(shape))).toEqual(shape);
+  });
+
+  it("finds the point a share of the way along a line, bends included", () => {
+    expect(pointAlong([{ x: 0, y: 0 }, { x: 100, y: 0 }], 0.25)).toEqual({ x: 25, y: 0 });
+    // 100 across then 100 down: halfway is the corner, three quarters is 50 down
+    const bent = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    expect(pointAlong(bent, 0.5)).toEqual({ x: 100, y: 0 });
+    expect(pointAlong(bent, 0.75)).toEqual({ x: 100, y: 50 });
+    expect(pointAlong(bent, 2)).toEqual({ x: 100, y: 100 });
+    expect(pointAlong([{ x: 5, y: 5 }, { x: 5, y: 5 }], 0.5)).toEqual({ x: 5, y: 5 });
+  });
+
+  it("keeps an arrow's label position, kept off its very ends", () => {
+    const arrow = { ...DEFAULT_ARROW, label: "SQL", labelAt: 0.3 };
+    expect(parseArrow(serializeArrow(arrow)).labelAt).toBe(0.3);
+    expect(parseArrow(JSON.stringify({ ...arrow, labelAt: 5 })).labelAt).toBe(0.9);
+    expect(parseArrow(JSON.stringify({ ...arrow, labelAt: "middle" })).labelAt).toBeUndefined();
+    expect(parseArrow(JSON.stringify(DEFAULT_ARROW)).labelAt).toBeUndefined();
+  });
+
+  it("keeps a frame's top-aligned label, and drops any other alignment", () => {
+    const frame = { ...DEFAULT_SHAPE, label: "Express API", labelAlign: "top" as const };
+    expect(parseShape(serializeShape(frame))).toEqual(frame);
+    expect(parseShape(JSON.stringify({ ...DEFAULT_SHAPE, labelAlign: "<script>" })).labelAlign).toBeUndefined();
+    expect(parseShape(JSON.stringify(DEFAULT_SHAPE)).labelAlign).toBeUndefined();
   });
 
   it("falls back to the default on bad JSON or a non-object", () => {

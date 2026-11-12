@@ -7,7 +7,7 @@ import LinkBadge from "./LinkBadge";
 import LabelEditor from "./LabelEditor";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { DRAG_SYNC_INTERVAL_MS } from "../lib/boxHandles";
-import { MAX_LABEL_LENGTH, resolveArrow, serializeArrow, shapeLabelSize, type ArrowData, type ShapeBox } from "../lib/shapes";
+import { MAX_LABEL_LENGTH, pointAlong, resolveArrow, serializeArrow, shapeLabelSize, type ArrowData, type ShapeBox } from "../lib/shapes";
 import { liveBox, useLiveKey } from "../lib/liveShapes";
 import { themeColor } from "../lib/colors";
 import { arrowPaint } from "../lib/roughPaths";
@@ -134,10 +134,14 @@ export default React.memo(function ArrowNode({
   const canInteract = mode === "select" || mode === "text";
   const last = pts.length - 1;
 
+  // where its own position says (a generated diagram's arrows), or else
+  // the middle: of the line, or a bent arrow's middle point
   const labelAt =
-    pts.length === 2
-      ? { x: (local[0].x + local[1].x) / 2, y: (local[0].y + local[1].y) / 2 }
-      : local[Math.floor(last / 2)];
+    arrow.labelAt !== undefined
+      ? pointAlong(local, arrow.labelAt)
+      : pts.length === 2
+        ? { x: (local[0].x + local[1].x) / 2, y: (local[0].y + local[1].y) / 2 }
+        : local[Math.floor(last / 2)];
 
   function handleDragMouseDown(e: React.MouseEvent) {
     const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));

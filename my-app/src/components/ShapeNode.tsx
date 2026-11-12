@@ -14,6 +14,8 @@ import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
 
 const MIN_SIZE = 16;
+// a frame's title starts this much further in than a centered label's box
+const TITLE_INDENT = 6;
 const round = (n: number) => Math.round(n * 100) / 100;
 
 interface Props {
@@ -196,6 +198,7 @@ export default React.memo(function ShapeNode({
   const labelColor = themeColor(shape.stroke, isDark);
   const labelFont = shape.roughness > 0 ? "font-canvas" : "font-mono";
   const area = labelBox(shape.kind, w, h);
+  const asTitle = shape.labelAlign === "top";
 
   return (
     <div
@@ -241,11 +244,13 @@ export default React.memo(function ShapeNode({
       </svg>
 
       {/* The label: centered in the shape, wrapping at its width. While it's
-          typed in it can run past the bottom; saving grows the shape to fit. */}
+          typed in it can run past the bottom; saving grows the shape to fit.
+          A frame's label (labelAlign "top") is a bold title at its top left
+          instead, clear of the shapes inside it. */}
       <div
-        className={`absolute flex items-center justify-center text-center ${labelFont} ${editing ? "" : "select-none"}`}
+        className={`absolute flex ${asTitle ? "items-start justify-start text-left font-bold" : "items-center justify-center text-center"} ${labelFont} ${editing ? "" : "select-none"}`}
         style={{
-          left: area.left,
+          left: asTitle ? area.left + TITLE_INDENT : area.left,
           right: area.left,
           top: area.top,
           bottom: area.top,

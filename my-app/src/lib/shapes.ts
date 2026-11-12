@@ -52,6 +52,9 @@ export interface ShapeData extends DiagramStyle {
   label: string;
   // the label's size in px; unset means the default (shapeLabelSize)
   fontSize?: number;
+  // "top": the label sits at the top left instead of the middle, as a
+  // title, for a frame that holds other shapes (an AI diagram's group)
+  labelAlign?: "top";
   // keeps the hand-drawn wobble the same every time it's drawn (rough.js)
   seed: number;
   meta?: SectionMeta;
@@ -67,6 +70,10 @@ export interface ArrowData extends ElementStyle {
   label?: string;
   // the label's size in px; unset means the default (shapeLabelSize)
   fontSize?: number;
+  // where the label sits, as a share of the arrow's length from its start;
+  // unset means the middle (of a bent arrow: its middle point). Set when a
+  // diagram is generated, so labels don't land on each other.
+  labelAt?: number;
   seed: number;
 }
 
@@ -200,6 +207,7 @@ export function parseShape(content: string): ShapeData {
     edges: oneOf(o.edges, EDGE_STYLES, DEFAULT_SHAPE.edges),
     label: text(o.label, MAX_LABEL) ?? "",
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
+    ...(o.labelAlign === "top" && { labelAlign: "top" as const }),
     seed: seed(o.seed),
     ...(meta && { meta }),
   };
@@ -252,7 +260,27 @@ export function parseArrow(content: string): ArrowData {
     ...(toId && { toId }),
     ...(label && { label }),
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
+    ...(isNum(o.labelAt) && { labelAt: between(o.labelAt, MIN_LABEL_AT, 1 - MIN_LABEL_AT, 0.5) }),
   };
+}
+
+// how close to either end a label may sit, as a share of the arrow
+const MIN_LABEL_AT = 0.1;
+
+// The point a share `t` of the way along a line through `points`.
+export function pointAlong(points: Point[], t: number): Point {
+  const lengths = points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y));
+  const total = lengths.reduce((a, b) => a + b, 0);
+  if (total === 0) return points[0];
+  let left = Math.min(Math.max(t, 0), 1) * total;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] || i === lengths.length - 1) {
+      const f = lengths[i] === 0 ? 0 : Math.min(left / lengths[i], 1);
+      return { x: points[i].x + (points[i + 1].x - points[i].x) * f, y: points[i].y + (points[i + 1].y - points[i].y) * f };
+    }
+    left -= lengths[i];
+  }
+  return points[points.length - 1];
 }
 
 export function serializeArrow(arrow: ArrowData): string {
