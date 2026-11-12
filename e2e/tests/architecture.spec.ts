@@ -1,0 +1,139 @@
+import { randomBytes } from "crypto";
+import { expect, test, type Page, type Request } from "@playwright/test";
+import { USER_STATE } from "../global-setup";
+import { EMPTY, blockIds, mouseOnCanvas, openNewServerCanvas, startAsGuest } from "./helpers";
+
+// "Visualize repo" (Phase 2): the dialog, the request it sends, and the
+// diagram it draws. The AI call itself is replaced in the browser with a
+// fixed answer, so these never reach GitHub or Anthropic and cost nothing;
+// the backend side is covered by its own tests.
+
+// Made up per run: no key-shaped literal lives in the repo.
+const API_KEY = `sk-ant-api03-${randomBytes(30).toString("base64url")}`;
+const REPO = "https://github.com/acme/shop";
+
+const model = {
+  summary: "A small shop.",
+  sections: [
+    { id: "web", title: "Storefront", kind: "frontend", summary: "The site.", files: ["web/"], parentId: null },
+    { id: "api", title: "Shop API", kind: "backend", summary: "The server.", files: ["api/"], parentId: null },
+    { id: "orders", title: "Orders", kind: "backend", summary: "Checkout.", files: ["api/orders.ts"], parentId: "api" },
+    { id: "db", title: "Postgres", kind: "db", summary: "Storage.", files: [], parentId: null },
+  ],
+  edges: [
+    { from: "web", to: "api", label: "REST" },
+    { from: "orders", to: "db", label: "SQL" },
+    // a group to its own child: not drawn
+    { from: "api", to: "orders", label: "" },
+  ],
+};
+// 4 shapes and 2 arrows
+const DIAGRAM_BLOCKS = 6;
+
+// Answers the generate request with `reply`, recording what was sent.
+async function fakeGenerate(page: Page, reply: { status: number; body: unknown }) {
+  const sent: Request[] = [];
+  await page.route("**/api/canvases/*/architecture", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    sent.push(route.request());
+    await route.fulfill({ status: reply.status, contentType: "application/json", body: JSON.stringify(reply.body) });
+  });
+  return sent;
+}
+
+const ok = (canvasId: string) => ({
+  status: 201,
+  body: {
+    architecture: { id: "arch-1", canvas_id: canvasId, repo_url: REPO, commit_sha: "a".repeat(40), model, created_at: new Date().toISOString() },
+    warnings: [],
+    servedBy: "claude-opus-5-5",
+  },
+});
+
+async function openDialog(page: Page) {
+  await page.getByTitle("Draw a GitHub repo's architecture").click();
+  await expect(page.getByRole("dialog", { name: "Visualize a repo" })).toBeVisible();
+}
+
+test.describe("signed in", () => {
+  test.use({ storageState: USER_STATE });
+
+  test("draws the AI's diagram on the canvas, saved, as one undo step", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    const sent = await fakeGenerate(page, ok(canvasId));
+
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByRole("radio", { name: /Opus/ }).click();
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    for (const title of ["Storefront", "Shop API", "Orders", "Postgres", "REST", "SQL"]) {
+      await expect(page.getByText(title, { exact: true })).toBeVisible();
+    }
+
+    // The key travels in a header, never in the body.
+    expect(sent).toHaveLength(1);
+    expect(sent[0].headers()["x-anthropic-key"]).toBe(API_KEY);
+    expect(sent[0].postDataJSON()).toEqual({ repoUrl: REPO, model: "claude-opus-5-5" });
+
+    // Saved on the server: still there after a reload.
+    await page.reload();
+    await mouseOnCanvas(page);
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+
+    // One undo removes all of it (undo history starts with the page, so draw
+    // a second one to take back).
+    await openDialog(page);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(2 * DIAGRAM_BLOCKS);
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+  });
+
+  test("shows what went wrong and adds nothing", async ({ page, request }) => {
+    await openNewServerCanvas(page, request);
+    const message = "Anthropic rejected the API key. Check it's correct and still active.";
+    await fakeGenerate(page, { status: 422, body: { error: message, code: "bad_key" } });
+
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+
+    await expect(page.getByRole("alert")).toHaveText(message);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(await blockIds(page)).toEqual([]);
+  });
+
+  test("remembers the key in this browser until it's forgotten", async ({ page, request }) => {
+    await openNewServerCanvas(page, request);
+    await fakeGenerate(page, { status: 422, body: { error: "Nope.", code: "bad_key" } });
+
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+
+    await openDialog(page);
+    await expect(page.getByLabel("Anthropic API key")).toHaveValue(API_KEY);
+    await expect(page.getByLabel("GitHub repo")).toHaveValue(REPO);
+    await page.getByRole("button", { name: "Forget it" }).click();
+    await expect(page.getByLabel("Anthropic API key")).toHaveValue("");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await openDialog(page);
+    await expect(page.getByLabel("Anthropic API key")).toHaveValue("");
+  });
+});
+
+test("a guest is asked to sign up instead", async ({ page }) => {
+  await startAsGuest(page);
+  await page.getByTitle("Sign up to draw a repo's architecture").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("dialog", { name: "Visualize a repo" })).toHaveCount(0);
+});

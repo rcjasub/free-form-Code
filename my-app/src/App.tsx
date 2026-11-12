@@ -3,7 +3,7 @@ import SelectionBox from "./components/SelectionBox";
 import { useGroupResize } from "./hooks/useGroupResize";
 import { useGroupDragFrames } from "./hooks/useGroupDragFrames";
 import { useTheme } from "next-themes";
-import { CloudUpload, HardDrive, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
+import { CloudUpload, HardDrive, LayoutDashboard, LogOut, Network, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { SIDEBAR_TRANSITION, sidebarOpenShift } from "./lib/sidebarLayout";
 import { useParams, useNavigate } from "react-router-dom";
@@ -49,11 +49,14 @@ import {
   restoreBlocks as restoreBlocksApi,
 } from "./lib/blockStore";
 import { createKeyedThrottle } from "./lib/throttle";
-import { chunkForRestore, toRestorePayload } from "./lib/restore";
+import { chunkForRestore, toRestorePayload, type RestorePayload } from "./lib/restore";
+import { useArchitectureDiagram } from "./hooks/useArchitectureDiagram";
+import VisualizeRepoDialog from "./components/VisualizeRepoDialog";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe, type Me } from "./API/auth";
+import type { ArchitectureModel } from "./API/architecture";
 import { isLocalBlockId, isLocalCanvas, parseCanvasFile, requestPersistentStorage, toCanvasFile } from "./lib/localCanvas";
 import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
 import { announceMoved } from "./hooks/useActiveTab";
@@ -895,6 +898,50 @@ export default function App() {
     return ids;
   }, [canvasId, isGuest]);
 
+  // An AI-drawn architecture diagram (Phase 2): new blocks saved in as few
+  // requests as the restore route allows, put on the page and sent to
+  // collaborators (its shapes, then the arrows that attach to them).
+  const saveNewBlocks = useCallback(async (blocks: RestorePayload[]) => {
+    if (!canvasId) return [];
+    const ids: string[] = [];
+    for (const chunk of chunkForRestore(blocks)) {
+      const { data } = await restoreBlocksApi(canvasId, chunk, isGuest);
+      setNodes((prev) => [...prev, ...data.map(blockToNode)]);
+      for (const row of data) {
+        broadcast("block:created", canvasId, row);
+        ids.push(String(row.id));
+      }
+    }
+    return ids;
+  }, [canvasId, isGuest]);
+  // the whole diagram is one undo step
+  const recordDiagram = useCallback((ids: string[]) => {
+    const group = Date.now();
+    for (const id of ids) history.record({ kind: "create", id, group });
+  }, [history]);
+  const showDiagram = useCallback((newScale: number, newOffset: { x: number; y: number }) => {
+    endPan();
+    setScale(newScale);
+    setOffset(newOffset);
+  }, [endPan]);
+  const architecture = useArchitectureDiagram({
+    nodesRef: history.nodesRef,
+    offsetRef,
+    scaleRef,
+    saveBlocks: saveNewBlocks,
+    recordCreated: recordDiagram,
+    setView: showDiagram,
+  });
+  const [visualizeOpen, setVisualizeOpen] = useState(false);
+  const closeVisualize = useCallback(() => setVisualizeOpen(false), []);
+  const placeDiagram = useCallback(async (model: ArchitectureModel) => {
+    try {
+      await architecture.place(model);
+    } catch (err) {
+      showError(saveErrorMessage(err, "Couldn't put the diagram on the canvas. Check your connection and try again."));
+    }
+  }, [architecture]);
+
   // Sets a block's language and content — saving content only if it changed.
   const applyLanguage = useCallback((id: string, language: Language, content: string) => {
     if (!canvasId) return;
@@ -1238,6 +1285,13 @@ export default function App() {
           </SidebarNote>
         )}
         {!isGuest && <SidebarItem icon={<LayoutDashboard />} label="Dashboard" onClick={() => navigate("/dashboard")} />}
+        {/* AI diagrams are saved with the canvas, so they need an account */}
+        <SidebarItem
+          icon={<Network />}
+          label="Visualize repo"
+          title={isGuest ? "Sign up to draw a repo's architecture" : "Draw a GitHub repo's architecture"}
+          onClick={() => (isGuest ? navigate("/", { state: { mode: "register" } }) : setVisualizeOpen(true))}
+        />
         {isGuest && (
           <>
             <SidebarItem icon={<DownloadDoneIcon size={22} active={exported} className="-mx-[2px]" />} label="Export" title="Download a backup file" onClick={exportCanvas} />
@@ -1274,6 +1328,9 @@ export default function App() {
         )}
       </Sidebar>
       <input ref={importInput} type="file" accept="application/json,.json" hidden onChange={importCanvas} />
+      {canvasId && !isGuest && (
+        <VisualizeRepoDialog open={visualizeOpen} canvasId={canvasId} onClose={closeVisualize} onDiagram={placeDiagram} />
+      )}
 
       <EraserTrail active={mode === "erase"} isDark={isDark} />
 
