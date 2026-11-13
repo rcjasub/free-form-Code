@@ -1243,6 +1243,11 @@ export default function App() {
 
   const isDark = resolvedTheme === "dark";
 
+  // An AI diagram's box selected on its own: its details card, and what
+  // stays lit around it (the rest dims; its arrows flow).
+  const focusedSection = mode === "select" ? selectedSection(selectedIds, nodes) : null;
+  const focus = focusedSection ? focusOf(focusedSection.id, nodes) : null;
+
   const eraserSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${isDark ? '#f5f5f5' : '#374151'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5"/><path d="M6.5 17.5l4-4"/></svg>`;
   const eraserCursor = `url('data:image/svg+xml;base64,${btoa(eraserSvg)}') 4 20, auto`;
 
@@ -1387,12 +1392,12 @@ export default function App() {
           flow can be followed through a busy diagram. Otherwise, a key to
           the boxes' colors. */}
       {(() => {
-        const section = mode === "select" ? selectedSection(selectedIds, nodes) : null;
+        const section = focusedSection;
         if (!section) {
           const kinds = kindsOnCanvas(nodes);
           return kinds.length > 0 && <DiagramLegend kinds={kinds} isDark={isDark} />;
         }
-        const lit = [...focusOf(section.id, nodes)].map((id) => `[data-node-id="${CSS.escape(id)}"]`).join(",");
+        const lit = [...(focus ?? [])].map((id) => `[data-node-id="${CSS.escape(id)}"]`).join(",");
         return (
           <>
             {/* a filter, so it sits on top of each block's own opacity */}
@@ -1565,6 +1570,7 @@ export default function App() {
               <ArrowNode
                 key={node.id}
                 introDelay={introDelays.get(node.id)}
+                flowing={focus?.has(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}

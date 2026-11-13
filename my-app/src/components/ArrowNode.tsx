@@ -50,6 +50,8 @@ interface Props {
   zIndex: number;
   // a new AI diagram building itself in: when this arrow's turn comes, in ms
   introDelay?: number;
+  // runs with moving dashes in its direction (an AI diagram's selected box)
+  flowing?: boolean;
 }
 
 // The arrow redrawn from where its shapes are right now, while one of them is
@@ -115,6 +117,7 @@ export default React.memo(function ArrowNode({
   isDark,
   zIndex,
   introDelay,
+  flowing,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
@@ -265,6 +268,7 @@ export default React.memo(function ArrowNode({
     <div
       ref={containerRef}
       data-node-id={id}
+      data-flow={flowing || undefined}
       className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}`}
       style={{
         ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),

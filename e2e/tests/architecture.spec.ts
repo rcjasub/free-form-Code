@@ -118,6 +118,12 @@ test.describe("signed in", () => {
     await expect.poll(() => filterOf("Storefront")).toBe("opacity(0.25)");
     expect(await filterOf("Orders")).toBe("none");
     expect(await filterOf("Postgres")).toBe("none");
+    // its one arrow (Orders → Postgres) runs with moving dashes; the head
+    // doesn't (once the diagram has finished building itself in)
+    await expect(page.locator(".intro-in")).toHaveCount(0);
+    await expect(page.locator("[data-flow]")).toHaveCount(1);
+    expect(await page.locator("[data-flow] path:not([data-arrow-head])").first().evaluate((p) => getComputedStyle(p).animationName)).toBe("arrow-flow");
+    expect(await page.locator("[data-flow] path[data-arrow-head]").first().evaluate((p) => getComputedStyle(p).animationName)).toBe("none");
     // Orders → Postgres (SQL)
     await card.getByRole("button", { name: /Orders/ }).click();
 
@@ -146,6 +152,8 @@ test.describe("signed in", () => {
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
+    // measured once the diagram has finished building itself in (it slides up into place)
+    await expect(page.locator(".intro-in")).toHaveCount(0);
     const box = (title: string) => page.locator("[data-node-id]", { hasText: new RegExp(`^${title}$`) });
     const where = async (title: string) => {
       const b = (await box(title).boundingBox())!;
