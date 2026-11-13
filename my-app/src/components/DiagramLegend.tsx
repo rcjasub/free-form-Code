@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { KIND_STYLE } from "../lib/architecturePlacement";
 import { fillColor, themeColor, TRANSPARENT } from "../lib/colors";
 import { KIND_NAMES } from "../lib/sectionDetails";
+import { KIND_ICONS } from "../lib/kindIcons";
 import type { SectionKind } from "../lib/shapes";
 
 interface Props {
@@ -56,6 +57,7 @@ export default function DiagramLegend({ kinds, isDark }: Props) {
         <ul className="mt-1.5 space-y-1" aria-label="Diagram key">
           {kinds.map((kind) => {
             const look = KIND_STYLE[kind];
+            const Icon = KIND_ICONS[kind];
             return (
               <li key={kind} className="flex items-center gap-2">
                 <span
@@ -67,12 +69,15 @@ export default function DiagramLegend({ kinds, isDark }: Props) {
                     background: look.fill === TRANSPARENT ? "transparent" : fillColor(look.fill, isDark),
                   }}
                 />
+                <Icon aria-hidden className="size-3.5 shrink-0" style={{ color: themeColor(look.stroke, isDark) }} />
                 {KIND_NAMES[kind]}
               </li>
             );
           })}
           <li className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
             <span aria-hidden className="h-3 w-5 shrink-0 rounded-[3px] border-[1.5px] border-dashed border-gray-400" />
+            {/* where the others have their icon, so the names line up */}
+            <span aria-hidden className="size-3.5 shrink-0" />
             Group
           </li>
         </ul>

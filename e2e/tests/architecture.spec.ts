@@ -105,6 +105,10 @@ test.describe("signed in", () => {
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
+    // each box shows its kind's icon
+    await expect(page.locator("[data-node-id]", { hasText: /^Postgres$/ }).locator("svg.lucide-database")).toHaveCount(1);
+    await expect(page.locator("[data-node-id]", { hasText: /^Storefront$/ }).locator("svg.lucide-monitor")).toHaveCount(1);
+
     // click the box, where a person would (its label lets clicks through)
     const postgres = await page.locator("[data-node-id]", { hasText: /^Postgres$/ }).boundingBox();
     await page.mouse.click(postgres!.x + 10, postgres!.y + postgres!.height / 2);

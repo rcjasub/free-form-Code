@@ -12,10 +12,17 @@ import { MAX_LABEL_LENGTH, heightForLabel, labelBox, parseShape, serializeShape,
 import { TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
+import { KIND_ICONS } from "../lib/kindIcons";
 
 const MIN_SIZE = 16;
 // a frame's title starts this much further in than a centered label's box
 const TITLE_INDENT = 6;
+
+// An AI diagram's box shows what kind of part it is (lib/kindIcons): a small
+// icon in its corner, or before a frame's title, in the box's own color.
+const ICON_SIZE = 15;
+// room the icon takes before a frame's title
+const TITLE_ICON_ROOM = ICON_SIZE + 6;
 const round = (n: number) => Math.round(n * 100) / 100;
 
 interface Props {
@@ -202,6 +209,7 @@ export default React.memo(function ShapeNode({
   const labelFont = shape.roughness > 0 ? "font-canvas" : "font-mono";
   const area = labelBox(shape.kind, w, h);
   const asTitle = shape.labelAlign === "top";
+  const KindIcon = shape.meta?.kind ? KIND_ICONS[shape.meta.kind] : null;
 
   return (
     <div
@@ -247,6 +255,23 @@ export default React.memo(function ShapeNode({
         <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} intro={introDelay !== undefined} />
       </svg>
 
+      {KindIcon && (
+        <KindIcon
+          aria-hidden
+          size={ICON_SIZE}
+          strokeWidth={2}
+          className="absolute"
+          style={{
+            // a frame's goes before its title; a box's in its corner
+            left: asTitle ? area.left + TITLE_INDENT : 7,
+            top: asTitle ? area.top + 3 : 7,
+            color: labelColor,
+            opacity: 0.9,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
       {/* The label: centered in the shape, wrapping at its width. While it's
           typed in it can run past the bottom; saving grows the shape to fit.
           A frame's label (labelAlign "top") is a bold title at its top left
@@ -254,7 +279,7 @@ export default React.memo(function ShapeNode({
       <div
         className={`absolute flex ${asTitle ? "items-start justify-start text-left font-bold" : "items-center justify-center text-center"} ${labelFont} ${editing ? "" : "select-none"}`}
         style={{
-          left: asTitle ? area.left + TITLE_INDENT : area.left,
+          left: asTitle ? area.left + TITLE_INDENT + (KindIcon ? TITLE_ICON_ROOM : 0) : area.left,
           right: area.left,
           top: area.top,
           bottom: area.top,
