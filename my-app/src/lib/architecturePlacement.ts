@@ -204,3 +204,40 @@ export function viewToFit(
   const center = { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
   return { scale, offset: { x: screen.width / 2 - center.x * scale, y: screen.height / 2 - center.y * scale } };
 }
+
+export interface IntroSchedule {
+  // ms after the shapes appear, in the order given
+  shapeDelays: number[];
+  arrowDelays: number[];
+  // when the last one has finished
+  totalMs: number;
+}
+
+// How long a block's build-in takes (the intro-in / intro-trace animations
+// in index.css), and how long the whole diagram may spread over: a large
+// diagram builds faster per block, a small one at an easy pace.
+const INTRO_BLOCK_MS = 600;
+const SHAPES_SPREAD_MS = 1400;
+const ARROWS_SPREAD_MS = 700;
+
+// The order a new diagram builds itself in: boxes left to right (top to
+// bottom within a column, a frame before what's inside it), then the
+// arrows, also left to right, once the boxes are there.
+export function introSchedule(
+  shapes: readonly { x: number; y: number }[],
+  arrows: readonly { x: number; y: number }[],
+): IntroSchedule {
+  const order = (blocks: readonly { x: number; y: number }[]) =>
+    blocks.map((b, i) => ({ b, i })).sort((p, q) => p.b.x - q.b.x || p.b.y - q.b.y || p.i - q.i);
+  const spread = (blocks: readonly { x: number; y: number }[], total: number, start: number) => {
+    const step = blocks.length > 1 ? Math.min(90, total / (blocks.length - 1)) : 0;
+    const delays: number[] = new Array(blocks.length);
+    order(blocks).forEach(({ i }, rank) => (delays[i] = Math.round(start + rank * step)));
+    return delays;
+  };
+  const shapeDelays = spread(shapes, SHAPES_SPREAD_MS, 0);
+  const arrowsStart = (shapes.length ? Math.max(...shapeDelays) : 0) + 250;
+  const arrowDelays = spread(arrows, ARROWS_SPREAD_MS, arrowsStart);
+  const last = Math.max(0, ...shapeDelays, ...arrowDelays);
+  return { shapeDelays, arrowDelays, totalMs: last + INTRO_BLOCK_MS };
+}

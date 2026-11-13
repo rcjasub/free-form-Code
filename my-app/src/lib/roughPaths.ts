@@ -17,6 +17,8 @@ export interface Paint {
   dash?: string; // only on the outline, never on pattern lines
   isFill: boolean; // clipped to the shape (see shapeClipPath)
   opacity?: number;
+  // an arrow's head, which stays solid while its line is animated
+  isHead?: boolean;
 }
 
 const generator = rough.generator();
@@ -169,6 +171,6 @@ export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed">, 
       disableMultiStroke: true,
     }),
     { ...arrow, strokeStyle: "solid" },
-  ).map((p) => ({ ...p, isFill: false }));
+  ).map((p) => ({ ...p, isFill: false, isHead: true }));
   return [...line, ...head];
 }

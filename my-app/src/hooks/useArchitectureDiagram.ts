@@ -2,7 +2,7 @@ import { useCallback, type RefObject } from "react";
 import type { ArchitectureModel } from "../API/architecture";
 import type { CanvasNode } from "./useCanvasHistory";
 import { layoutArchitecture, type Point } from "../lib/architectureLayout";
-import { diagramBlocks, viewToFit } from "../lib/architecturePlacement";
+import { diagramBlocks, introSchedule, viewToFit } from "../lib/architecturePlacement";
 import { boxesOf, clearOffset, type Box } from "../lib/placement";
 import { toRestorePayload, type RestorePayload } from "../lib/restore";
 
@@ -19,7 +19,9 @@ interface Deps {
   scaleRef: RefObject<number>;
   // Saves blocks, in as few requests as allowed, puts them on the page and
   // tells collaborators. Resolves to the saved ids, in the order given.
-  saveBlocks: (blocks: RestorePayload[]) => Promise<string[]>;
+  // `introDelays`: each block builds itself in after this many ms (here
+  // only; others just see the blocks arrive).
+  saveBlocks: (blocks: RestorePayload[], introDelays?: number[]) => Promise<string[]>;
   // records the new blocks as one undo step
   recordCreated: (ids: string[]) => void;
   setView: (scale: number, offset: Point) => void;
@@ -50,7 +52,12 @@ export function useArchitectureDiagram({ nodesRef, offsetRef, scaleRef, saveBloc
       }
 
       const blocks = diagramBlocks(model, layout, origin, { repo });
-      const shapeIds = await saveBlocks(blocks.shapes.map((s) => s.block));
+      // It builds itself in: boxes left to right, then the arrows. The
+      // arrows are saved a moment after the boxes appear, so their delays
+      // are shortened by that moment.
+      const shapeBlocks = blocks.shapes.map((s) => s.block);
+      const shapeIds = await saveBlocks(shapeBlocks, introSchedule(shapeBlocks, []).shapeDelays);
+      const shownAt = performance.now();
       const idOf = new Map<string, string>();
       blocks.shapes.forEach((s, i) => {
         if (shapeIds[i]) idOf.set(s.sectionId, shapeIds[i]);
@@ -59,7 +66,10 @@ export function useArchitectureDiagram({ nodesRef, offsetRef, scaleRef, saveBloc
       // anyway, so one undo clears what did land.
       let arrowIds: string[] = [];
       try {
-        arrowIds = await saveBlocks(blocks.arrows(idOf));
+        const arrowBlocks = blocks.arrows(idOf);
+        const planned = introSchedule(shapeBlocks, arrowBlocks).arrowDelays;
+        const late = performance.now() - shownAt;
+        arrowIds = await saveBlocks(arrowBlocks, planned.map((d) => Math.max(0, Math.round(d - late))));
       } finally {
         recordCreated([...shapeIds, ...arrowIds].filter(Boolean));
       }

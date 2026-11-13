@@ -114,6 +114,9 @@ function broadcast(event: string, canvasId: string, payload: unknown) {
   socket.emit(event, canvasId, payload);
 }
 
+// a block's build-in (index.css intro-in) has finished this long after its delay
+const INTRO_DONE_MS = 700;
+
 const CURSOR_COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 function getCursorColor(userId: string): string {
   let hash = 0;
@@ -902,14 +905,30 @@ export default function App() {
     return ids;
   }, [canvasId, isGuest]);
 
+  // An AI diagram's blocks building themselves in: each one's delay, until
+  // it has (lib/architecturePlacement introSchedule)
+  const [introDelays, setIntroDelays] = useState<Map<string, number>>(() => new Map());
   // An AI-drawn architecture diagram (Phase 2): new blocks saved in as few
   // requests as the restore route allows, put on the page and sent to
   // collaborators (its shapes, then the arrows that attach to them).
-  const saveNewBlocks = useCallback(async (blocks: RestorePayload[]) => {
+  const saveNewBlocks = useCallback(async (blocks: RestorePayload[], delays?: number[]) => {
     if (!canvasId) return [];
     const ids: string[] = [];
     for (const chunk of chunkForRestore(blocks)) {
       const { data } = await restoreBlocksApi(canvasId, chunk, isGuest);
+      // each one's build-in delay goes on with it, in the same update, so
+      // nothing shows fully drawn first
+      if (delays) {
+        const start = ids.length;
+        const intro: [string, number][] = data.map((row: { id: unknown }, i: number): [string, number] => [String(row.id), delays[start + i] ?? 0]);
+        setIntroDelays((prev) => new Map([...prev, ...intro]));
+        const done = Math.max(0, ...intro.map(([, d]) => d)) + INTRO_DONE_MS;
+        setTimeout(() => setIntroDelays((prev) => {
+          const next = new Map(prev);
+          for (const [id] of intro) next.delete(id);
+          return next;
+        }), done);
+      }
       setNodes((prev) => [...prev, ...data.map(blockToNode)]);
       for (const row of data) {
         broadcast("block:created", canvasId, row);
@@ -1519,6 +1538,7 @@ export default function App() {
               <ShapeNode
                 key={node.id}
                 drawIn={drawingIn.get(node.id)}
+                introDelay={introDelays.get(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}
@@ -1544,6 +1564,7 @@ export default function App() {
             ) : node.type === "arrow" ? (
               <ArrowNode
                 key={node.id}
+                introDelay={introDelays.get(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}

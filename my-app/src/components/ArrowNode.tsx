@@ -48,6 +48,8 @@ interface Props {
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
   zIndex: number;
+  // a new AI diagram building itself in: when this arrow's turn comes, in ms
+  introDelay?: number;
 }
 
 // The arrow redrawn from where its shapes are right now, while one of them is
@@ -112,6 +114,7 @@ export default React.memo(function ArrowNode({
   isMouseDown,
   isDark,
   zIndex,
+  introDelay,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
@@ -262,8 +265,9 @@ export default React.memo(function ArrowNode({
     <div
       ref={containerRef}
       data-node-id={id}
-      className="absolute outline-none"
+      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}`}
       style={{
+        ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: x + minX,
         top: y + minY,
         width,
@@ -290,7 +294,7 @@ export default React.memo(function ArrowNode({
             onDoubleClick={startEditing}
           />
         )}
-        <PaintPaths paint={paint} />
+        <PaintPaths paint={paint} intro={introDelay !== undefined} />
       </svg>
 
       {editing ? (

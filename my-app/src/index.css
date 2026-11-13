@@ -378,6 +378,40 @@ body.canvas-panning * {
   .snap-brighten { animation: none; }
 }
 
+/* An AI diagram building itself in (useArchitectureDiagram): each block
+   fades in after its own delay (--intro-delay) while its outline traces
+   itself, frames and boxes left to right, then the arrows. "backwards"
+   holds the hidden start during the delay without pinning the end, so a
+   block's own opacity applies after. The page removes these classes once
+   it's done (the trace replaces a dashed outline's dash while it runs). */
+.intro-in {
+  animation: intro-fade 450ms ease-out var(--intro-delay, 0ms) backwards;
+}
+@keyframes intro-fade {
+  from { opacity: 0; transform: translateY(6px); }
+}
+.intro-in .intro-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: snap-draw 600ms cubic-bezier(0.4, 0, 0.2, 1) var(--intro-delay, 0ms) forwards;
+}
+
+/* The arrows of a selected AI-diagram box run with moving dashes, in the
+   direction they point (the head stays solid). */
+[data-flow] path:not([data-arrow-head]) {
+  stroke-dasharray: 8 6;
+  animation: arrow-flow 0.7s linear infinite;
+}
+@keyframes arrow-flow {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-in, .intro-in .intro-trace { animation: none; stroke-dashoffset: 0; }
+  [data-flow] path:not([data-arrow-head]) { animation: none; }
+}
+
 /* With several blocks selected, the box around them (SelectionBox) does the
    resizing; each block's own handles would only crowd it. */
 [data-multi-select] .node-handle {

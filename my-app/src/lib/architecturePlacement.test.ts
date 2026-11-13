@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ArchitectureModel } from "../API/architecture";
 import { layoutArchitecture } from "./architectureLayout";
-import { diagramBlocks, labelSize, viewToFit } from "./architecturePlacement";
+import { diagramBlocks, introSchedule, labelSize, viewToFit } from "./architecturePlacement";
 import { parseArrow, parseShape, pointAlong, resolveArrow, type ShapeBox } from "./shapes";
 
 // Placing an AI-described architecture (Phase 2, step 7): the blocks it
@@ -173,5 +173,30 @@ describe("arrow labels", () => {
     });
     expect(labels).toHaveLength(15);
     expect(clashes).toEqual([]);
+  });
+});
+
+describe("building in", () => {
+  it("boxes go left to right (top first within a column, a frame before its contents), then the arrows", () => {
+    const shapes = [{ x: 500, y: 0 }, { x: 0, y: 200 }, { x: 0, y: 0 }, { x: 24, y: 44 }];
+    const arrows = [{ x: 300, y: 0 }, { x: 100, y: 0 }];
+    const { shapeDelays, arrowDelays, totalMs } = introSchedule(shapes, arrows);
+    // order: (0,0), (0,200), (24,44)... sorted by x then y
+    expect(shapeDelays[2]).toBe(0);
+    expect(shapeDelays[2]).toBeLessThan(shapeDelays[1]);
+    expect(shapeDelays[1]).toBeLessThan(shapeDelays[3]);
+    expect(shapeDelays[3]).toBeLessThan(shapeDelays[0]);
+    expect(Math.min(...arrowDelays)).toBeGreaterThan(Math.max(...shapeDelays));
+    expect(arrowDelays[1]).toBeLessThan(arrowDelays[0]);
+    expect(totalMs).toBe(Math.max(...arrowDelays) + 600);
+  });
+
+  it("a big diagram builds faster per block, but takes no longer than a couple of seconds", () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ x: i * 10, y: 0 }));
+    const { shapeDelays, arrowDelays, totalMs } = introSchedule(many, many.slice(0, 80));
+    expect(Math.max(...shapeDelays)).toBeLessThanOrEqual(1400);
+    expect(totalMs).toBeLessThan(3000);
+    expect(arrowDelays.every((d) => d > 0)).toBe(true);
+    expect(introSchedule([{ x: 0, y: 0 }], [])).toEqual({ shapeDelays: [0], arrowDelays: [], totalMs: 600 });
   });
 });

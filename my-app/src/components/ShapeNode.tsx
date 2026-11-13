@@ -49,6 +49,8 @@ interface Props {
   // a pen stroke that just snapped into this shape: it draws itself in
   // (useSnapGhosts), the way a snapped drawing does
   drawIn?: DrawIn;
+  // a new AI diagram building itself in: when this box's turn comes, in ms
+  introDelay?: number;
 }
 
 // A rectangle, ellipse or diamond with a centered label — the box of an
@@ -75,6 +77,7 @@ export default React.memo(function ShapeNode({
   isDark,
   zIndex,
   drawIn,
+  introDelay,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shape = useMemo(() => parseShape(content), [content]);
@@ -204,8 +207,9 @@ export default React.memo(function ShapeNode({
     <div
       ref={containerRef}
       data-node-id={id}
-      className="absolute group outline-none"
+      className={`absolute group outline-none${introDelay !== undefined ? " intro-in" : ""}`}
       style={{
+        ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: shown.x,
         top: shown.y,
         width: w,
@@ -240,7 +244,7 @@ export default React.memo(function ShapeNode({
             <path d={shapeClipPath(shape.kind, w, h, shape.edges)} />
           </clipPath>
         </defs>
-        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} />
+        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} intro={introDelay !== undefined} />
       </svg>
 
       {/* The label: centered in the shape, wrapping at its width. While it's
