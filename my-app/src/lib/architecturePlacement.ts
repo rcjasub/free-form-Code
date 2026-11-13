@@ -105,7 +105,8 @@ export function diagramBlocks(
       h: box.h,
       label: section.title,
       seed: seed(),
-      meta: { sectionId: section.id, summary: section.summary, files: section.files, kind: section.kind, parent: section.parentId ?? null, ...(repo && { repo }) },
+      meta: { sectionId: section.id, summary: section.summary, files: section.files, kind: section.kind, ...(repo && { repo }) },
+      group: section.parentId ?? null,
     };
     shapes.push({ sectionId: section.id, block: { type: "shape", content: serializeShape(shape), x, y, width: box.w, ...BLOCK_DEFAULTS } });
   }

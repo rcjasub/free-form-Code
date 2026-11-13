@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import SelectionBox from "./components/SelectionBox";
 import { useGroupResize } from "./hooks/useGroupResize";
 import { useGroupDragFrames } from "./hooks/useGroupDragFrames";
+import { useDragAssist } from "./hooks/useDragAssist";
+import AlignmentGuides from "./components/AlignmentGuides";
 import { useTheme } from "next-themes";
 import { CloudUpload, HardDrive, LayoutDashboard, LogOut, Network, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
@@ -74,7 +76,7 @@ import ShapeDraftPreview from "./components/ShapeDraftPreview";
 import CanvasToolbar from "./components/CanvasToolbar";
 import PropertiesPanel from "./components/PropertiesPanel";
 import { toolForKey } from "./lib/toolKeys";
-import { parseArrow } from "./lib/shapes";
+import { parseArrow, parseShape, serializeShape } from "./lib/shapes";
 import ShapeNode from "./components/ShapeNode";
 import ArrowNode from "./components/ArrowNode";
 import { DownloadDoneIcon, ImportIcon } from "./components/ui/animated-state-icons";
@@ -1029,7 +1031,8 @@ export default function App() {
       groupDrag.current = { id, group: Date.now() };
     }
     if (moving.length === 1) {
-      moveNode(id, x, y);
+      // grouped, so a drop into a group's frame undoes with it (regroup)
+      moveNode(id, x, y, true, groupDrag.current.group);
       return;
     }
     const all = history.nodesRef.current;
@@ -1046,6 +1049,14 @@ export default function App() {
   }, [moveNode, history]);
   // ...and every frame of that drag moves the rest of the selection with it
   const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef });
+  // a shape dropped into or out of a group's frame (hooks/useDragAssist):
+  // its new group, undone in one step with the move
+  const regroup = useCallback((id: string, x: number, y: number, group: string | null) => {
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    reshapeBlock(id, x, y, serializeShape({ ...parseShape(node.content), group }), true, groupDrag.current?.group);
+  }, [history, reshapeBlock]);
+  const dragAssist = useDragAssist({ nodesRef: history.nodesRef, selectedIdsRef, scaleRef, regroup });
   // the box around a multi-selection: dragging a corner scales it all
   const toCanvasPoint = useCallback(
     (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
@@ -1550,6 +1561,7 @@ export default function App() {
                 content={node.content}
                 onMove={moveSelection}
                 onDragFrame={dragFrame}
+                dragAssist={dragAssist}
                 onMarkErase={handleMarkErase}
                 onReshape={reshapeBlock}
                 editing={diagram.labelEditId === node.id}
@@ -1626,6 +1638,7 @@ export default function App() {
         </div>
 
         <SnapGhosts ghosts={snapGhosts} isDark={isDark} />
+        <AlignmentGuides />
 
         {stroke.drawing && (
           <svg

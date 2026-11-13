@@ -17,10 +17,6 @@ export interface SectionMeta {
   kind?: SectionKind;
   // the repo and commit it was read from, so its files link to GitHub
   repo?: { url: string; commitSha: string };
-  // the section of the group it belongs to (null: none), so a group's frame
-  // carries its own members and not whatever it's dragged over. Missing on
-  // diagrams drawn before this was kept.
-  parent?: string | null;
 }
 
 export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
@@ -74,6 +70,12 @@ export interface ShapeData extends DiagramStyle {
   // keeps the hand-drawn wobble the same every time it's drawn (rough.js)
   seed: number;
   meta?: SectionMeta;
+  // The group (a frame's section id) this shape belongs to; null: none. A
+  // frame carries its members, not whatever it's dragged over, and a shape
+  // joins or leaves one by being dropped in or out (lib/containment).
+  // Missing on shapes from before groups were kept: a frame from then goes
+  // by what's inside it.
+  group?: string | null;
 }
 
 export interface ArrowData extends ElementStyle {
@@ -183,14 +185,12 @@ function sectionMeta(v: unknown): SectionMeta | undefined {
   const kind = oneOf<SectionKind | "">(m.kind, SECTION_KINDS, "");
   const repo = m.repo && typeof m.repo === "object" ? (m.repo as Json) : null;
   const repoOk = repo && typeof repo.url === "string" && GITHUB_REPO.test(repo.url) && typeof repo.commitSha === "string" && COMMIT_SHA.test(repo.commitSha);
-  const parent = m.parent === null ? null : text(m.parent, MAX_ID);
   return {
     sectionId,
     summary: text(m.summary, 4000) ?? "",
     files,
     ...(kind && { kind }),
     ...(repoOk && { repo: { url: repo.url as string, commitSha: repo.commitSha as string } }),
-    ...(parent !== undefined && { parent }),
   };
 }
 
@@ -223,6 +223,7 @@ function seed(v: unknown) {
 export function parseShape(content: string): ShapeData {
   const o = asObject(content);
   const meta = sectionMeta(o.meta);
+  const group = o.group === null ? null : text(o.group, MAX_ID);
   return {
     ...elementStyle(o),
     kind: oneOf(o.kind, SHAPE_KINDS, DEFAULT_SHAPE.kind),
@@ -237,6 +238,7 @@ export function parseShape(content: string): ShapeData {
     ...(o.labelAlign === "top" && { labelAlign: "top" as const }),
     seed: seed(o.seed),
     ...(meta && { meta }),
+    ...(group !== undefined && { group }),
   };
 }
 

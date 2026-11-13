@@ -165,13 +165,16 @@ test.describe("signed in", () => {
     };
     const before = { frame: await where("Shop API"), inner: await where("Orders"), other: await where("Storefront") };
 
-    // grab the frame by its title band and drag it down-right
+    // grab the frame by its title band and drag it down-right (Alt: no
+    // lining up with other boxes on the way, so it lands exactly there)
     const from = { x: before.frame.x + 12, y: before.frame.y + 12 };
+    await page.keyboard.down("Alt");
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x + 60, from.y + 40, { steps: 8 });
     await page.mouse.move(from.x + 120, from.y + 80, { steps: 8 });
     await page.mouse.up();
+    await page.keyboard.up("Alt");
 
     await expect.poll(() => where("Shop API")).toEqual({ x: before.frame.x + 120, y: before.frame.y + 80 });
     await expect.poll(() => where("Orders")).toEqual({ x: before.inner.x + 120, y: before.inner.y + 80 });
@@ -181,6 +184,77 @@ test.describe("signed in", () => {
     await page.keyboard.press("Control+z");
     await expect.poll(() => where("Shop API")).toEqual(before.frame);
     await expect.poll(() => where("Orders")).toEqual(before.inner);
+  });
+
+  test("a box dropped into a group joins it, and one undo takes it back out", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".intro-in")).toHaveCount(0);
+
+    const box = (title: string) => page.locator("[data-node-id]", { hasText: new RegExp(`^${title}$`) });
+    const where = async (title: string) => {
+      const b = (await box(title).boundingBox())!;
+      return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
+    };
+    const frame = await where("Shop API");
+    const orders = await where("Orders");
+    const db = await where("Postgres");
+    // make room: the frame grows down so Postgres fits under Orders
+    const handle = page.locator("[data-node-id]", { hasText: /^Shop API$/ });
+    await handle.click({ position: { x: 12, y: 12 } });
+    const grow = db.h + 40;
+    const corner = { x: frame.x + frame.w + 4, y: frame.y + frame.h + 4 };
+    await page.mouse.move(corner.x, corner.y);
+    await page.mouse.down();
+    await page.mouse.move(corner.x + db.w, corner.y + grow, { steps: 8 });
+    await page.mouse.up();
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+
+    // drag Postgres in, under Orders: the frame lights up on the way
+    const from = { x: db.x + 10, y: db.y + db.h / 2 };
+    const to = { x: orders.x + 10, y: orders.y + orders.h + 30 + db.h / 2 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 10 });
+    await expect(page.locator("[data-drop-target]")).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator("[data-drop-target]")).toHaveCount(0);
+    // a block's move is saved (and its next move recorded for undo) once
+    // it has settled for 300ms; a person doesn't grab the frame sooner
+    await page.waitForTimeout(400);
+
+    // now it travels with the frame
+    const dbIn = await where("Postgres");
+    const grab = { x: frame.x + 12, y: frame.y + 12 };
+    await page.keyboard.down("Alt");
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(grab.x - 100, grab.y + 50, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await expect.poll(async () => (await where("Postgres")).x).toBe(dbIn.x - 100);
+
+    // undo the frame's move, then the drop: Postgres is back out, and on its own again
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await where("Postgres")).x).toBe(dbIn.x);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => ({ x: (await where("Postgres")).x, y: (await where("Postgres")).y })).toEqual({ x: db.x, y: db.y });
+    // (dragged back over the frame's spot, it isn't picked up)
+    await page.keyboard.down("Alt");
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(grab.x - 100, grab.y, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await expect.poll(async () => (await where("Shop API")).x).toBe(frame.x - 100);
+    expect((await where("Postgres")).x).toBe(db.x);
   });
 
   test("shows what went wrong and adds nothing", async ({ page, request }) => {

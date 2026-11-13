@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frameContents, movingWith } from "./containment";
+import { dropTarget, frameContents, groupAfterDrop, movingWith } from "./containment";
 import { DEFAULT_ARROW, DEFAULT_SHAPE, serializeArrow, serializeShape } from "./shapes";
 
 // Group frames move as one: dragging a frame on its own brings what's
@@ -41,9 +41,9 @@ describe("frameContents", () => {
   });
 });
 
-describe("frameContents, for an AI diagram's groups (which know their members)", () => {
-  // like `shape`, with the section meta an AI diagram gives each box
-  const section = (id: string, parent: string | null, x: number, y: number, w: number, h: number, frame = false) => ({
+describe("groups that know their members", () => {
+  // like `shape`, with the section meta and group an AI diagram gives each box
+  const section = (id: string, group: string | null, x: number, y: number, w: number, h: number, frame = false) => ({
     id,
     type: "shape",
     x,
@@ -53,7 +53,8 @@ describe("frameContents, for an AI diagram's groups (which know their members)",
       w,
       h,
       ...(frame && { labelAlign: "top" as const }),
-      meta: { sectionId: `s-${id}`, summary: "", files: [], parent: parent && `s-${parent}` },
+      meta: { sectionId: `s-${id}`, summary: "", files: [] },
+      group: group && `s-${group}`,
     }),
   });
   const diagram = [
@@ -76,6 +77,24 @@ describe("frameContents, for an AI diagram's groups (which know their members)",
   it("leaves behind a member dragged out of it, until it's put back", () => {
     const out = diagram.map((n) => (n.id === "auth" ? { ...n, x: 700 } : n));
     expect(frameContents("api", out).sort()).toEqual(["jobs", "queue"]);
+  });
+
+  it("a shape dropped in a frame joins the innermost one; dropped outside, it leaves", () => {
+    // the sketch, dropped in the nested frame, then in the outer one only
+    expect(dropTarget("sketch", 330, 280, diagram)?.id).toBe("jobs");
+    expect(groupAfterDrop("sketch", 330, 280, diagram)).toBe("s-jobs");
+    expect(groupAfterDrop("sketch", 130, 330, diagram)).toBe("s-api");
+    // half in: not in
+    expect(groupAfterDrop("sketch", 580, 330, diagram)).toBeUndefined();
+    // a member dropped out leaves; dropped where it already belongs, nothing changes
+    expect(groupAfterDrop("auth", 700, 150, diagram)).toBeNull();
+    expect(groupAfterDrop("auth", 140, 160, diagram)).toBeUndefined();
+  });
+
+  it("a frame isn't dropped into itself or what it holds", () => {
+    // "jobs" dropped where it is: inside "api", not inside itself
+    expect(dropTarget("jobs", 300, 150, diagram)?.id).toBe("api");
+    expect(dropTarget("api", 100, 100, diagram)).toBeNull();
   });
 });
 

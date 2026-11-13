@@ -83,12 +83,12 @@ describe("parseShape", () => {
     expect(parseShape(JSON.stringify({ meta: { summary: "x" } })).meta).toBeUndefined();
   });
 
-  it("keeps a section's group: a section id, none (null), or unknown (missing)", () => {
-    const parentOf = (parent: unknown) => parseShape(JSON.stringify({ meta: { sectionId: "a", parent } })).meta?.parent;
-    expect(parentOf("api")).toBe("api");
-    expect(parentOf(null)).toBeNull();
-    expect(parentOf(undefined)).toBeUndefined();
-    expect(parentOf(7)).toBeUndefined();
+  it("keeps a shape's group: a section id, none (null), or unknown (missing)", () => {
+    const groupOf = (group: unknown) => parseShape(JSON.stringify({ kind: "rect", group })).group;
+    expect(groupOf("api")).toBe("api");
+    expect(groupOf(null)).toBeNull();
+    expect(groupOf(undefined)).toBeUndefined();
+    expect(groupOf(7)).toBeUndefined();
   });
 });
 

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import SelectionBox from "@/components/SelectionBox";
 import { useGroupResize } from "@/hooks/useGroupResize";
 import { useGroupDragFrames } from "@/hooks/useGroupDragFrames";
+import { useDragAssist } from "@/hooks/useDragAssist";
+import AlignmentGuides from "@/components/AlignmentGuides";
+import { movingWith } from "@/lib/containment";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
 import FloatingNode from "@/components/FloatingNode";
@@ -37,7 +40,7 @@ import { useStackOrder } from "@/hooks/useStackOrder";
 import { createKeyedThrottle } from "@/lib/throttle";
 import { chunkForRestore, toRestorePayload } from "@/lib/restore";
 import { storedType } from "@/lib/blockTypes";
-import { parseArrow } from "@/lib/shapes";
+import { parseArrow, parseShape, serializeShape } from "@/lib/shapes";
 import { isShapeTool } from "@/hooks/useShapeTool";
 import { useDiagram, type NewBlock } from "@/hooks/useDiagram";
 import ShapeDraftPreview from "@/components/ShapeDraftPreview";
@@ -764,18 +767,18 @@ export default function SharedCanvas() {
   // one is being typed in
   const handleTextEditing = setEditingText;
 
-  // Moves a dragged block, or the whole selection it's part of. (A shape's
-  // text is its label, so only what's selected moves: text a shape sits on
-  // or passes over stays put.)
+  // Moves a dragged block, or the whole selection it's part of, or a group
+  // frame and what's inside it (lib/containment movingWith). (A shape's text
+  // is its label, so text a shape sits on or passes over stays put.)
   const moveSelection = useCallback((id: string, x: number, y: number) => {
-    const sel = selectedIdsRef.current;
-    const moving = sel.length >= 2 && sel.includes(id) ? sel : [id];
+    const moving = movingWith(id, selectedIdsRef.current, history.nodesRef.current);
     // a new drag starts once the last one's position has been saved
     if (!moveSaveTimers.current[id] || groupDrag.current?.id !== id) {
       groupDrag.current = { id, group: Date.now() };
     }
     if (moving.length === 1) {
-      moveNode(id, x, y);
+      // grouped, so a drop into a group's frame undoes with it (regroup)
+      moveNode(id, x, y, true, groupDrag.current.group);
       return;
     }
     const all = history.nodesRef.current;
@@ -792,6 +795,14 @@ export default function SharedCanvas() {
   }, [moveNode, history]);
   // ...and every frame of that drag moves the rest of the selection with it
   const dragFrame = useGroupDragFrames({ nodesRef: history.nodesRef, selectedIdsRef });
+  // a shape dropped into or out of a group's frame (hooks/useDragAssist):
+  // its new group, undone in one step with the move
+  const regroup = useCallback((id: string, x: number, y: number, group: string | null) => {
+    const node = history.nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    reshapeBlock(id, x, y, serializeShape({ ...parseShape(node.content), group }), true, groupDrag.current?.group);
+  }, [history, reshapeBlock]);
+  const dragAssist = useDragAssist({ nodesRef: history.nodesRef, selectedIdsRef, scaleRef, regroup });
   // the box around a multi-selection: dragging a corner scales it all
   const toCanvasPoint = useCallback(
     (cx: number, cy: number) => ({ x: (cx - offsetRef.current.x) / scaleRef.current, y: (cy - offsetRef.current.y) / scaleRef.current }),
@@ -1341,6 +1352,7 @@ export default function SharedCanvas() {
                 content={node.content}
                 onMove={moveSelection}
                 onDragFrame={dragFrame}
+                dragAssist={dragAssist}
                 onMarkErase={handleMarkErase}
                 onReshape={canEdit ? reshapeBlock : undefined}
                 editing={diagram.labelEditId === node.id}
@@ -1416,6 +1428,7 @@ export default function SharedCanvas() {
         </div>
 
         <SnapGhosts ghosts={snapGhosts} isDark={isDark} />
+        <AlignmentGuides />
 
         {stroke.drawing && (
           <svg className="absolute inset-0 pointer-events-none" style={{ overflow: "visible" }}>

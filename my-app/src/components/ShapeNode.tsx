@@ -13,6 +13,7 @@ import { TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
 import { KIND_ICONS } from "../lib/kindIcons";
+import type { StartDragAssist } from "../hooks/useDragAssist";
 
 const MIN_SIZE = 16;
 // a frame's title starts this much further in than a centered label's box
@@ -34,6 +35,9 @@ interface Props {
   // every frame of a drag of this block, and once more (done) when it's let
   // go: lets the rest of a multi-selection move in step with it
   onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
+  // lines a dragged shape up with the others and drops it into groups
+  // (hooks/useDragAssist)
+  dragAssist?: StartDragAssist;
   onMarkErase: (id: string) => void;
   // Resizing (throttled, then once more with done=true) and label edits both
   // hand back the whole new content. Omitted for viewers who can't edit.
@@ -70,6 +74,7 @@ export default React.memo(function ShapeNode({
   content,
   onMove,
   onDragFrame,
+  dragAssist,
   onMarkErase,
   onReshape,
   editing = false,
@@ -162,10 +167,15 @@ export default React.memo(function ShapeNode({
     const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x, y };
+    let moved = false;
+    const assist = dragAssist?.(id);
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = drag(mv);
+      const to = drag(mv);
+      moved = true;
+      // Ctrl or Alt held: no snapping
+      latest = assist ? assist.place(to.x, to.y, mv.ctrlKey || mv.altKey || mv.metaKey) : to;
       onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
@@ -182,6 +192,8 @@ export default React.memo(function ShapeNode({
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
       onDragFrame?.(id, latest.x, latest.y, true);
+      // a click (no drag) changes nothing
+      if (moved) assist?.drop(latest.x, latest.y);
       resumeGlide(containerRef.current);
     }
     const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
