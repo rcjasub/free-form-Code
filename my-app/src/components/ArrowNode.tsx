@@ -244,8 +244,8 @@ export default React.memo(function ArrowNode({
     }
   }
 
-  // Like a shape's: the stroke color, sized from the panel, in the font that
-  // goes with the line style. Behind it, the canvas color hides the line.
+  // A small rounded tag on the line: the canvas color hides the line behind
+  // it, and a faint edge keeps it one readable unit where lines cross.
   // Its own width (up to the max), not what's left of the arrow's box: a
   // short arrow would otherwise squeeze it to a letter per line.
   const labelStyle: React.CSSProperties = {
@@ -255,12 +255,14 @@ export default React.memo(function ArrowNode({
     maxWidth: LABEL_MAX_WIDTH,
     color: themeColor(arrow.stroke, isDark),
     background: isDark ? "#121212" : "#ffffff",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)"}`,
+    borderRadius: 6,
     fontSize: shapeLabelSize(arrow),
     lineHeight: 1.25,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
     textAlign: "center",
-    padding: "1px 4px",
+    padding: "1px 6px",
   };
   const labelFont = arrow.roughness > 0 ? "font-canvas" : "font-mono";
 

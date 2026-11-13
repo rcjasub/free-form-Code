@@ -111,7 +111,7 @@ What a section is:
 
 What an edge is:
 - from depends on or calls to: the frontend calls the API, the API queries the database, the worker reads from the queue.
-- label says how, in a few words: "REST", "WebSocket", "SQL", "enqueues jobs".
+- label says how, in 1 to 3 words: "REST", "WebSocket", "SQL", "enqueues jobs". It sits on the arrow, so keep it short; the details belong in summaries.
 - Every from and to must be the id of a section you listed. No edge from a section to itself, and no repeated pairs.
 
 Use the level of detail the request asks for. Prefer what the code shows over what the README claims; include what both show. Don't invent parts the snapshot gives no evidence of. Tests, docs and build tooling are not sections unless they are part of how the system runs (a CI pipeline that deploys it can be an infra section).

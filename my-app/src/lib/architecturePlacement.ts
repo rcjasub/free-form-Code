@@ -40,6 +40,10 @@ export const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill
   external: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "dashed" },
 };
 
+// How a diagram's arrows are drawn: quieter than its boxes.
+const ARROW_OPACITY = 65;
+const ARROW_LABEL_SIZE = 12;
+
 // What every new block needs besides its content (see RestorePayload).
 const BLOCK_DEFAULTS = { language: "javascript", link: null, wrapWidth: null, fontSize: null, color: null };
 
@@ -126,6 +130,11 @@ export function diagramBlocks(
       const arrow: ArrowData = {
         ...DEFAULT_ARROW,
         stroke: AUTO,
+        // Connections recede behind the boxes: softer lines and smaller
+        // labels, brought to full strength when they're part of the selected
+        // box's flow (index.css [data-flow]).
+        opacity: ARROW_OPACITY,
+        fontSize: ARROW_LABEL_SIZE,
         points,
         fromId,
         toId,
@@ -182,14 +191,17 @@ function overlapArea(a: Rect, b: Rect) {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-// A label's size as the canvas draws it (ArrowNode): monospace, padded,
-// wrapping at 240px; with a few px of room around it.
+// A label's size as the canvas draws it (ArrowNode): monospace, in a tag
+// with 6px padding and a 1px edge, wrapping at 240px; with a few px of room
+// around it.
 const LABEL_MAX_WIDTH = 240;
+const LABEL_CHROME_W = 2 * 6 + 2;
+const LABEL_CHROME_H = 2 * 1 + 2;
 export function labelSize(label: string, fontSize: number) {
   const charW = fontSize * 0.6;
-  const inner = LABEL_MAX_WIDTH - 8;
+  const inner = LABEL_MAX_WIDTH - LABEL_CHROME_W;
   const lines = Math.max(1, Math.ceil((label.length * charW) / inner));
-  return { w: Math.min(inner, label.length * charW) + 8 + 6, h: lines * fontSize * 1.25 + 2 + 6 };
+  return { w: Math.min(inner, label.length * charW) + LABEL_CHROME_W + 6, h: lines * fontSize * 1.25 + LABEL_CHROME_H + 6 };
 }
 
 // The zoom and pan that show the whole diagram, with a margin: no closer

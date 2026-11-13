@@ -161,7 +161,7 @@ describe("arrow labels", () => {
       expect(arrow.labelAt).toBeGreaterThanOrEqual(0.1);
       const c = pointAlong(arrow.points.map((p) => ({ x: p.x + block.x, y: p.y + block.y })), arrow.labelAt!);
       // the label as drawn, without the room around it
-      const { w, h } = labelSize(arrow.label, 14);
+      const { w, h } = labelSize(arrow.label, arrow.fontSize ?? 14);
       return [{ x: c.x - (w - 6) / 2, y: c.y - (h - 6) / 2, w: w - 6, h: h - 6, name: arrow.label }];
     });
     const solid: R[] = layout.boxes.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.isGroup ? 44 : b.h, name: b.id }));
