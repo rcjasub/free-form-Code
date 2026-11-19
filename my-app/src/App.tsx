@@ -62,7 +62,9 @@ import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./l
 import { requestRun } from "./lib/runCode";
 import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
 import { getMe, type Me } from "./API/auth";
-import type { Architecture } from "./API/architecture";
+import { getArchitecture, type Architecture } from "./API/architecture";
+import { FlowList, FlowPlayer, type FlowPosition } from "./components/FlowsPanel";
+import { diagramArrows, playableFlows, sectionBoxes, stepView } from "./lib/flows";
 import { isLocalBlockId, isLocalCanvas, parseCanvasFile, requestPersistentStorage, toCanvasFile } from "./lib/localCanvas";
 import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
 import { announceMoved } from "./hooks/useActiveTab";
@@ -959,9 +961,23 @@ export default function App() {
   });
   const [visualizeOpen, setVisualizeOpen] = useState(false);
   const closeVisualize = useCallback(() => setVisualizeOpen(false), []);
+  // the canvas's latest AI diagram, for its flows (FlowsPanel)
+  const [currentArchitecture, setCurrentArchitecture] = useState<Architecture | null>(null);
+  useEffect(() => {
+    if (!canvasId || isLocal) return;
+    let live = true;
+    getArchitecture(canvasId)
+      .then((found) => live && setCurrentArchitecture(found))
+      // no flows to show, that's all
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [canvasId, isLocal]);
   const placeDiagram = useCallback(async (generated: Architecture) => {
     try {
       await architecture.place(generated.model, { url: generated.repo_url, commitSha: generated.commit_sha });
+      setCurrentArchitecture(generated);
     } catch (err) {
       showError(saveErrorMessage(err, "Couldn't put the diagram on the canvas. Check your connection and try again."));
     }
@@ -1257,7 +1273,78 @@ export default function App() {
   // An AI diagram's box selected on its own: its details card, and what
   // stays lit around it (the rest dims; its arrows flow).
   const focusedSection = mode === "select" ? selectedSection(selectedIds, nodes) : null;
-  const focus = focusedSection ? focusOf(focusedSection.id, nodes) : null;
+
+  // The diagram's flows (lib/flows), and the one playing: its step's boxes
+  // and arrow stay lit (the rest dims), the arrow flows, and the box it
+  // reaches pulses. Selecting anything stops it.
+  const flowBoxes = currentArchitecture
+    ? sectionBoxes(nodes, { url: currentArchitecture.repo_url, commitSha: currentArchitecture.commit_sha })
+    : new Map<string, string>();
+  const flows = playableFlows(currentArchitecture?.model.flows ?? [], flowBoxes);
+  const [playingFlow, setPlayingFlow] = useState<FlowPosition | null>(null);
+  const [selectionSeen, setSelectionSeen] = useState(selectedIds);
+  if (selectionSeen !== selectedIds) {
+    setSelectionSeen(selectedIds);
+    if (selectedIds.length && playingFlow) setPlayingFlow(null);
+  }
+  const playingStep = playingFlow ? flows[playingFlow.flow]?.steps[playingFlow.step] : undefined;
+  const stepLit = playingStep ? stepView(playingStep, flowBoxes, nodes) : null;
+  const focus = focusedSection
+    ? focusOf(focusedSection.id, nodes)
+    : stepLit
+      ? new Set([...stepLit.boxes, ...(stepLit.arrow ? [stepLit.arrow] : [])])
+      : null;
+  // only lit arrows' labels show, unless they're all switched on
+  const diagramArrowIds = diagramArrows(nodes);
+  const [allArrowLabels, setAllArrowLabels] = useState(() => {
+    try {
+      return localStorage.getItem("free-form:arrow-labels") === "all";
+    } catch {
+      return false;
+    }
+  });
+  function toggleArrowLabels() {
+    const next = !allArrowLabels;
+    setAllArrowLabels(next);
+    try {
+      localStorage.setItem("free-form:arrow-labels", next ? "all" : "hover");
+    } catch {
+      // not remembered, that's all
+    }
+  }
+  const sectionTitle = (sectionId: string) => {
+    const node = nodes.find((n) => n.id === flowBoxes.get(sectionId));
+    return (node && parseShape(node.content).label) || sectionId;
+  };
+  // Plays a flow's step (or stops, given null), bringing its boxes into
+  // view if they're off screen.
+  function playFlow(position: FlowPosition | null) {
+    setPlayingFlow(position);
+    if (!position) return;
+    if (selectedIds.length) select([]);
+    const step = flows[position.flow]?.steps[position.step];
+    const view = step && stepView(step, flowBoxes, nodes);
+    if (!view) return;
+    const rects = view.boxes.flatMap((id) => {
+      const n = nodes.find((b) => b.id === id);
+      if (!n) return [];
+      const { w, h } = parseShape(n.content);
+      return [{ x: n.x, y: n.y, w, h }];
+    });
+    const left = Math.min(...rects.map((r) => r.x));
+    const top = Math.min(...rects.map((r) => r.y));
+    const right = Math.max(...rects.map((r) => r.x + r.w));
+    const bottom = Math.max(...rects.map((r) => r.y + r.h));
+    const s = scaleRef.current;
+    const o = offsetRef.current;
+    // the space above the caption card
+    const visible = { w: window.innerWidth, h: window.innerHeight - 200 };
+    const margin = 40;
+    const onScreen =
+      left * s + o.x >= margin && top * s + o.y >= margin && right * s + o.x <= visible.w - margin && bottom * s + o.y <= visible.h - margin;
+    if (onScreen) return;
+    showDiagram(s, { x: visible.w / 2 - ((left + right) / 2) * s, y: visible.h / 2 - ((top + bottom) / 2) * s });
+  }
 
   const eraserSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${isDark ? '#f5f5f5' : '#374151'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16l13-13 4 4-6.5 6.5"/><path d="M6.5 17.5l4-4"/></svg>`;
   const eraserCursor = `url('data:image/svg+xml;base64,${btoa(eraserSvg)}') 4 20, auto`;
@@ -1404,15 +1491,31 @@ export default function App() {
           the boxes' colors. */}
       {(() => {
         const section = focusedSection;
+        const lit = [...(focus ?? [])].map((id) => `[data-node-id="${CSS.escape(id)}"]`).join(",");
+        // a filter, so it sits on top of each block's own opacity
+        const dim = lit && <style>{`[data-node-id]:not(${lit}) { filter: opacity(0.25); transition: filter 0.15s; }`}</style>;
         if (!section) {
           const kinds = kindsOnCanvas(nodes);
-          return kinds.length > 0 && <DiagramLegend kinds={kinds} isDark={isDark} />;
+          if (playingFlow && stepLit) {
+            return (
+              <>
+                {dim}
+                <FlowPlayer flows={flows} titleOf={sectionTitle} playing={playingFlow} onPlay={playFlow} />
+              </>
+            );
+          }
+          return (
+            kinds.length > 0 && (
+              <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
+                {flows.length > 0 && <FlowList flows={flows} onPlay={playFlow} />}
+                <DiagramLegend kinds={kinds} isDark={isDark} allLabels={allArrowLabels} onToggleLabels={toggleArrowLabels} />
+              </div>
+            )
+          );
         }
-        const lit = [...(focus ?? [])].map((id) => `[data-node-id="${CSS.escape(id)}"]`).join(",");
         return (
           <>
-            {/* a filter, so it sits on top of each block's own opacity */}
-            <style>{`[data-node-id]:not(${lit}) { filter: opacity(0.25); transition: filter 0.15s; }`}</style>
+            {dim}
             <SectionCard
               key={section.id}
               section={section}
@@ -1553,6 +1656,7 @@ export default function App() {
             ) : node.type === "shape" ? (
               <ShapeNode
                 key={node.id}
+                flowTarget={stepLit?.target === node.id}
                 drawIn={drawingIn.get(node.id)}
                 introDelay={introDelays.get(node.id)}
                 id={node.id}
@@ -1583,6 +1687,7 @@ export default function App() {
                 key={node.id}
                 introDelay={introDelays.get(node.id)}
                 flowing={focus?.has(node.id)}
+                quietLabel={!allArrowLabels && !!diagramArrowIds.has(node.id) && !focus?.has(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}

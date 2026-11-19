@@ -207,15 +207,18 @@ export function labelSize(label: string, fontSize: number) {
 
 // The zoom and pan that show the whole diagram, with a margin: no closer
 // than 100%, no further than the canvas allows, in the zoom buttons' steps.
+// `right`: screen pixels on the right kept clear (for the panels there).
 export function viewToFit(
   bounds: { x: number; y: number; w: number; h: number },
   screen: { width: number; height: number },
   margin = 80,
+  right = 0,
 ): { scale: number; offset: Point } {
-  const fit = Math.min((screen.width - 2 * margin) / bounds.w, (screen.height - 2 * margin) / bounds.h, 1);
+  const width = screen.width - right;
+  const fit = Math.min((width - 2 * margin) / bounds.w, (screen.height - 2 * margin) / bounds.h, 1);
   const scale = Math.max(0.2, Math.floor(fit * 10) / 10);
   const center = { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
-  return { scale, offset: { x: screen.width / 2 - center.x * scale, y: screen.height / 2 - center.y * scale } };
+  return { scale, offset: { x: width / 2 - center.x * scale, y: screen.height / 2 - center.y * scale } };
 }
 
 export interface IntroSchedule {

@@ -52,6 +52,9 @@ interface Props {
   introDelay?: number;
   // runs with moving dashes in its direction (an AI diagram's selected box)
   flowing?: boolean;
+  // an AI diagram's arrow with nothing lit: its label shows only on hover,
+  // so a busy diagram isn't covered in text
+  quietLabel?: boolean;
 }
 
 // The arrow redrawn from where its shapes are right now, while one of them is
@@ -118,6 +121,7 @@ export default React.memo(function ArrowNode({
   zIndex,
   introDelay,
   flowing,
+  quietLabel,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
@@ -271,7 +275,7 @@ export default React.memo(function ArrowNode({
       ref={containerRef}
       data-node-id={id}
       data-flow={flowing || undefined}
-      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}`}
+      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}${quietLabel ? " arrow-quiet" : ""}`}
       style={{
         ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: x + minX,
@@ -314,7 +318,7 @@ export default React.memo(function ArrowNode({
         arrow.label && (
           // clicking or dragging the label is clicking or dragging the arrow
           <div
-            className={`absolute -translate-x-1/2 -translate-y-1/2 select-none ${labelFont}`}
+            className={`arrow-label absolute -translate-x-1/2 -translate-y-1/2 select-none ${labelFont}`}
             style={{
               ...labelStyle,
               pointerEvents: mode === "draw" ? "none" : "auto",

@@ -26,6 +26,15 @@ const model = {
     // a group to its own child: not drawn
     { from: "api", to: "orders", label: "" },
   ],
+  flows: [
+    {
+      title: "Placing an order",
+      steps: [
+        { from: "web", to: "api", text: "The storefront sends the cart to the API." },
+        { from: "orders", to: "db", text: "Orders saves the order in Postgres." },
+      ],
+    },
+  ],
 };
 // 4 shapes and 2 arrows
 const DIAGRAM_BLOCKS = 6;
@@ -255,6 +264,51 @@ test.describe("signed in", () => {
     await page.keyboard.up("Alt");
     await expect.poll(async () => (await where("Shop API")).x).toBe(frame.x - 100);
     expect((await where("Postgres")).x).toBe(db.x);
+  });
+
+  test("a flow plays step by step, lighting each step's boxes and arrow", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    await expect(page.locator(".intro-in")).toHaveCount(0);
+
+    // with nothing lit, the diagram's arrow labels wait for a hover
+    const label = page.getByText("SQL", { exact: true });
+    await expect(label).toHaveCSS("opacity", "0");
+    await page.getByRole("radio", { name: "All" }).click();
+    await expect(label).toHaveCSS("opacity", "1");
+    await page.getByRole("radio", { name: "On hover" }).click();
+    await expect(label).toHaveCSS("opacity", "0");
+
+    await page.getByRole("navigation", { name: "Flows" }).getByRole("button", { name: /Placing an order/ }).click();
+    const player = page.getByRole("region", { name: "Flow: Placing an order" });
+    await expect(player).toContainText("The storefront sends the cart to the API.");
+    await expect(player).toContainText(/Storefront.*Shop API/);
+
+    const filterOf = (title: string) =>
+      page.locator("[data-node-id]", { hasText: new RegExp(`^${title}$`) }).evaluate((el) => getComputedStyle(el).filter);
+    await expect.poll(() => filterOf("Postgres")).toBe("opacity(0.25)");
+    expect(await filterOf("Storefront")).toBe("none");
+    await expect(page.locator("[data-flow-target]")).toHaveText("Shop API");
+    await expect(page.locator("[data-flow]")).toHaveCount(1);
+
+    // → for the next step: Orders to Postgres, its arrow lit and labelled
+    await page.keyboard.press("ArrowRight");
+    await expect(player).toContainText("Orders saves the order in Postgres.");
+    await expect.poll(() => filterOf("Storefront")).toBe("opacity(0.25)");
+    expect(await filterOf("Postgres")).toBe("none");
+    await expect(page.locator("[data-flow-target]")).toHaveText("Postgres");
+    await expect(label).toHaveCSS("opacity", "1");
+
+    // Esc stops it, and everything's back
+    await page.keyboard.press("Escape");
+    await expect(player).toHaveCount(0);
+    expect(await filterOf("Storefront")).toBe("none");
+    await expect(page.locator("[data-flow-target]")).toHaveCount(0);
   });
 
   test("shows what went wrong and adds nothing", async ({ page, request }) => {

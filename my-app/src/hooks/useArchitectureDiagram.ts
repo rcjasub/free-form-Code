@@ -6,6 +6,10 @@ import { diagramBlocks, introSchedule, viewToFit } from "../lib/architecturePlac
 import { boxesOf, clearOffset, type Box } from "../lib/placement";
 import { toRestorePayload, type RestorePayload } from "../lib/restore";
 
+// The panels down the right (flows and the diagram key: 256px wide, 16px
+// from the edge) and a little air beside them.
+const PANEL_COLUMN = 290;
+
 // Puts an AI-described architecture on the canvas (Phase 2, step 7): lays it
 // out, places it where you're looking (or beside what's already there, so
 // nothing is covered), saves the shapes and then the arrows that attach to
@@ -73,7 +77,9 @@ export function useArchitectureDiagram({ nodesRef, offsetRef, scaleRef, saveBloc
       } finally {
         recordCreated([...shapeIds, ...arrowIds].filter(Boolean));
       }
-      const view = viewToFit(blocks.bounds, { width: window.innerWidth, height: window.innerHeight });
+      // clear of the flows and key panels on the right, on a wide enough screen
+      const panels = window.innerWidth >= 900 ? PANEL_COLUMN : 0;
+      const view = viewToFit(blocks.bounds, { width: window.innerWidth, height: window.innerHeight }, undefined, panels);
       setView(view.scale, view.offset);
       return { shapeIds, arrowIds };
     },

@@ -60,7 +60,8 @@ describe("a valid model", () => {
   test("only summary, sections and their known fields are kept", () => {
     const raw = { ...valid(), x: 10, sections: [section("api", { x: 400, color: "red" })], edges: [] };
     const { model } = modelOf(raw);
-    expect(Object.keys(model)).toEqual(["summary", "sections", "edges"]);
+    expect(Object.keys(model)).toEqual(["summary", "sections", "edges", "flows"]);
+    expect(model.flows).toEqual([]);
     expect(Object.keys(model.sections[0]).sort()).toEqual(["files", "id", "kind", "summary", "title"]);
   });
 });
@@ -123,6 +124,37 @@ describe("cross-references", () => {
 });
 
 describe("cleanups, with a warning instead of a failure", () => {
+  test("a flow step naming a missing section is dropped, and so is a flow left empty", () => {
+    const raw = {
+      ...valid(),
+      flows: [
+        {
+          title: "Sign in",
+          steps: [
+            { from: "web", to: "api", text: "The browser sends the password." },
+            { from: "api", to: "redis", text: "The API stores a session." },
+            { from: "auth", to: "auth", text: "Auth checks the hash." },
+          ],
+        },
+        { title: "Ghost", steps: [{ from: "nowhere", to: "api", text: "Nothing." }] },
+      ],
+    };
+    const { model, warnings } = modelOf(raw);
+    expect(model.flows).toEqual([
+      {
+        title: "Sign in",
+        steps: [
+          { from: "web", to: "api", text: "The browser sends the password." },
+          { from: "auth", to: "auth", text: "Auth checks the hash." },
+        ],
+      },
+    ]);
+    expect(warnings).toEqual([
+      `flows "Sign in": dropped 1 step(s) naming a section that isn't there`,
+      `flows "Ghost": dropped 1 step(s) naming a section that isn't there`,
+    ]);
+  });
+
   test("an edge to itself is dropped", () => {
     const raw = valid();
     raw.edges.push({ from: "api", to: "api", label: "retries" });

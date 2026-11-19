@@ -13,7 +13,8 @@ import { z } from "zod";
 //   messages that can be sent back to the AI for a retry.
 // Slips that don't change the picture are cleaned up with a warning
 // instead of failing the whole diagram: a file path that isn't in the
-// repo, an edge repeated or pointing to itself.
+// repo, an edge repeated or pointing to itself, a flow step naming a
+// section that isn't there.
 
 export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
 
@@ -24,6 +25,9 @@ export const MAX_EDGES = 80;
 export const MAX_FILES_PER_SECTION = 50;
 // How many levels sections can nest: 3 is a group in a group in a group.
 export const MAX_DEPTH = 3;
+// Guided flows: a few key journeys through the system, step by step.
+export const MAX_FLOWS = 6;
+export const MAX_FLOW_STEPS = 8;
 
 // Short, readable ids ("api", "web-app", "postgres"), since they end up in
 // shapes' meta and in later chats' context.
@@ -46,15 +50,32 @@ export const edgeSchema = z.object({
   label: z.string().trim().max(60).default(""),
 });
 
+// One step of a flow: something going from one section to another (or
+// happening inside one, when from and to are the same), in a sentence.
+export const flowStepSchema = z.object({
+  from: idSchema,
+  to: idSchema,
+  text: z.string().trim().min(1).max(240),
+});
+
+// A key journey through the system ("A user signs in"), told as steps, so
+// a reader can follow how the parts work together.
+export const flowSchema = z.object({
+  title: z.string().trim().min(1).max(60),
+  steps: z.array(flowStepSchema).min(1).max(MAX_FLOW_STEPS),
+});
+
 export const architectureModelSchema = z.object({
   // One or two sentences on what the whole project is.
   summary: z.string().trim().max(1000).default(""),
   sections: z.array(sectionSchema).min(1).max(MAX_SECTIONS),
   edges: z.array(edgeSchema).max(MAX_EDGES).default([]),
+  flows: z.array(flowSchema).max(MAX_FLOWS).default([]),
 });
 
 export type Section = z.infer<typeof sectionSchema>;
 export type Edge = z.infer<typeof edgeSchema>;
+export type Flow = z.infer<typeof flowSchema>;
 export type ArchitectureModel = z.infer<typeof architectureModelSchema>;
 
 export type ParseResult =
@@ -158,6 +179,16 @@ export function parseArchitecture(raw: unknown, options: ParseOptions = {}): Par
     seenEdges.set(key, { ...edge });
   }
   model.edges = [...seenEdges.values()];
+
+  // A flow is extra: a step naming a section that isn't there is dropped,
+  // and a flow left with no steps goes too.
+  model.flows = model.flows.flatMap((flow) => {
+    const steps = flow.steps.filter((step) => byId.has(step.from) && byId.has(step.to));
+    if (steps.length < flow.steps.length) {
+      warnings.push(`flows "${flow.title}": dropped ${flow.steps.length - steps.length} step(s) naming a section that isn't there`);
+    }
+    return steps.length ? [{ ...flow, steps }] : [];
+  });
 
   if (options.knownFiles) {
     const files = new Set(options.knownFiles);

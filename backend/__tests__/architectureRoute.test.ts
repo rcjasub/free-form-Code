@@ -38,7 +38,7 @@ const mockGenerate = generateArchitecture as jest.MockedFunction<typeof generate
 
 const API_KEY = `sk-ant-api03-${randomBytes(30).toString("base64url")}`;
 const SHA = "c".repeat(40);
-const model = { summary: "An app.", sections: [{ id: "api", title: "API", kind: "backend" as const, summary: "", files: [] }], edges: [] };
+const model = { summary: "An app.", sections: [{ id: "api", title: "API", kind: "backend" as const, summary: "", files: [] }], edges: [], flows: [] };
 
 let server: Server;
 let base: string;

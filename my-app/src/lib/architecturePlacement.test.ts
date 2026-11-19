@@ -121,6 +121,13 @@ describe("fitting the view", () => {
     expect(view.offset.y + (500 + 270) * view.scale).toBeCloseTo(450);
   });
 
+  it("keeps clear of the panels on the right", () => {
+    // 1600 - 300 = 1300 wide: 0.5 fits where 0.6 did on the full width
+    const view = viewToFit({ x: 1000, y: 500, w: 2200, h: 540 }, { width: 1600, height: 900 }, 80, 300);
+    expect(view.scale).toBe(0.5);
+    expect(view.offset.x + (1000 + 1100) * view.scale).toBeCloseTo(650);
+  });
+
   it("never zooms in past 100%, or out past 20%", () => {
     expect(viewToFit({ x: 0, y: 0, w: 200, h: 100 }, { width: 1600, height: 900 }).scale).toBe(1);
     expect(viewToFit({ x: 0, y: 0, w: 50_000, h: 100 }, { width: 1600, height: 900 }).scale).toBe(0.2);

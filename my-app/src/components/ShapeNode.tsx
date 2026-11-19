@@ -62,6 +62,8 @@ interface Props {
   drawIn?: DrawIn;
   // a new AI diagram building itself in: when this box's turn comes, in ms
   introDelay?: number;
+  // the box a playing flow's step reaches: it pulses (FlowsPanel)
+  flowTarget?: boolean;
 }
 
 // A rectangle, ellipse or diamond with a centered label — the box of an
@@ -90,6 +92,7 @@ export default React.memo(function ShapeNode({
   zIndex,
   drawIn,
   introDelay,
+  flowTarget,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shape = useMemo(() => parseShape(content), [content]);
@@ -227,6 +230,7 @@ export default React.memo(function ShapeNode({
     <div
       ref={containerRef}
       data-node-id={id}
+      data-flow-target={flowTarget || undefined}
       className={`absolute group outline-none${introDelay !== undefined ? " intro-in" : ""}`}
       style={{
         ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),

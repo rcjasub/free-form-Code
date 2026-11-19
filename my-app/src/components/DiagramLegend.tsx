@@ -10,6 +10,9 @@ interface Props {
   // the kinds of AI-diagram boxes on the canvas
   kinds: SectionKind[];
   isDark: boolean;
+  // arrow labels: all shown, or only on hover and for what's lit
+  allLabels: boolean;
+  onToggleLabels: () => void;
 }
 
 const OPEN_STORAGE = "free-form:legend-open";
@@ -25,7 +28,7 @@ function storedOpen(): boolean {
 // What an AI diagram's colors mean, for the kinds on this canvas: a swatch
 // drawn the way those boxes are (same line, fill and dash), and a group's
 // dashed frame. It can fold down to its title, and stays folded.
-export default function DiagramLegend({ kinds, isDark }: Props) {
+export default function DiagramLegend({ kinds, isDark, allLabels, onToggleLabels }: Props) {
   const [open, setOpen] = useState(storedOpen);
 
   function toggle() {
@@ -40,7 +43,7 @@ export default function DiagramLegend({ kinds, isDark }: Props) {
 
   return (
     <div
-      className="absolute bottom-4 right-4 z-10 rounded-lg bg-white px-3 py-2 text-xs text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:bg-[#232329] dark:text-gray-300 dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]"
+      className="w-64 rounded-lg bg-white px-3 py-2 text-xs text-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.12)] dark:bg-[#232329] dark:text-gray-300 dark:shadow-[0_2px_10px_rgba(0,0,0,0.6)]"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
@@ -79,6 +82,26 @@ export default function DiagramLegend({ kinds, isDark }: Props) {
             {/* where the others have their icon, so the names line up */}
             <span aria-hidden className="size-3.5 shrink-0" />
             Group
+          </li>
+          <li className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-[#2e2e3a]">
+            <span className="text-gray-500 dark:text-gray-400">Arrow labels</span>
+            <span className="flex rounded-md bg-gray-100 p-0.5 dark:bg-[#2e2e3a]" role="radiogroup" aria-label="Arrow labels">
+              {[
+                { all: false, name: "On hover" },
+                { all: true, name: "All" },
+              ].map((o) => (
+                <button
+                  key={o.name}
+                  type="button"
+                  role="radio"
+                  aria-checked={allLabels === o.all}
+                  onClick={() => allLabels !== o.all && onToggleLabels()}
+                  className={`rounded px-1.5 py-0.5 ${allLabels === o.all ? "bg-white text-gray-900 shadow-sm dark:bg-[#3a3a48] dark:text-white" : "text-gray-500 dark:text-gray-400"}`}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </span>
           </li>
         </ul>
       )}

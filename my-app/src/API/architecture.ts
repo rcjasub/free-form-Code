@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { SectionKind } from "../lib/shapes";
+import type { Flow } from "../lib/flows";
 
 const api = axios.create({ baseURL: "/api", withCredentials: true });
 
@@ -26,6 +27,9 @@ export interface ArchitectureModel {
   summary: string;
   sections: ArchitectureSection[];
   edges: ArchitectureEdge[];
+  // key journeys through it, step by step (lib/flows); missing on
+  // architectures read before flows were asked for
+  flows?: Flow[];
 }
 
 export interface Architecture {
