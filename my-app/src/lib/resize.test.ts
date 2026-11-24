@@ -15,6 +15,21 @@ describe("resizeFrom", () => {
     expect(r.x + r.wrap!).toBe(START.x + START.width);
   });
 
+  test("a side dragged out to the text's one-line width or past it ends the wrap: the box fits the text", () => {
+    const wrapped: ResizeStart = { ...START, wrap: 200, natural: 320 };
+    // still narrower than the text: wraps there
+    expect(resizeFrom("right", wrapped, 100, LIMITS).wrap).toBe(300);
+    // out to it or past it: no wrap, no empty space
+    expect(resizeFrom("right", wrapped, 120, LIMITS)).toEqual({ wrap: null, font: null, x: 100, y: 50 });
+    expect(resizeFrom("right", wrapped, 600, LIMITS)).toEqual({ wrap: null, font: null, x: 100, y: 50 });
+    // from the left: the right side stays put, the box as wide as the text
+    const r = resizeFrom("left", wrapped, -600, LIMITS);
+    expect(r.wrap).toBeNull();
+    expect(r.x + 320).toBe(START.x + START.width);
+    // one-line text dragged wider stays as it is
+    expect(resizeFrom("right", { ...START, natural: 200 }, 150, LIMITS).wrap).toBeNull();
+  });
+
   test("an edge can't go below the minimum width", () => {
     expect(resizeFrom("right", START, -500, LIMITS).wrap).toBe(LIMITS.minWidth);
   });

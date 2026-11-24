@@ -347,22 +347,46 @@ export default React.memo(function FloatingNode({
     view.focus();
   }
 
+  // How wide the block is with its text on one line: wrapping turned off for
+  // a moment and the width read, all before the browser paints, so nothing
+  // shows. (A side handle dragged out to it ends the wrap; lib/resize.)
+  function naturalWidth(el: HTMLElement): number {
+    const content = el.querySelector(".cm-content");
+    const wrapped = content?.classList.contains("cm-lineWrapping") ?? false;
+    const width = el.style.width;
+    if (wrapped) content!.classList.remove("cm-lineWrapping");
+    el.style.width = "max-content";
+    const natural = el.offsetWidth;
+    el.style.width = width;
+    if (wrapped) content!.classList.add("cm-lineWrapping");
+    return natural;
+  }
+
   // Dragging a resize handle (see lib/resize).
   function handleResizePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
     const el = containerRef.current;
     if (!el || !onResize || e.button !== 0) return;
+    const side = handle === "left" || handle === "right";
     startResizeDrag(
       e,
       el,
       handle,
-      { x: xRef.current, y: yRef.current, font: fontSize ?? null, defaultFont: DEFAULT_FONT_SIZE, wrap: wrapWidth ?? null },
+      {
+        x: xRef.current,
+        y: yRef.current,
+        font: fontSize ?? null,
+        defaultFont: DEFAULT_FONT_SIZE,
+        wrap: wrapWidth ?? null,
+        ...(side && { natural: naturalWidth(el) }),
+      },
       TEXT_LIMITS,
       (r, done) => onResize?.(id, r.wrap, r.font, r.x, r.y, done),
       {
         preview: (r) => {
           el.style.left = `${r.x}px`;
           el.style.top = `${r.y}px`;
-          if (r.wrap !== null) el.style.width = `${r.wrap}px`;
+          // no wrap (dragged out past the text): the box fits the text
+          el.style.width = r.wrap !== null ? `${r.wrap}px` : "max-content";
           el.style.setProperty("--block-font-size", `${r.font ?? DEFAULT_FONT_SIZE}px`);
         },
       },

@@ -26,6 +26,10 @@ export interface ResizeStart {
   font: number | null; // null: the default font size
   defaultFont: number;
   wrap: number | null; // null: lines don't wrap
+  // the width the text takes on one line (unwrapped), if known: a side
+  // dragged out to it or past it ends the wrap, so the box fits the text
+  // instead of growing empty space
+  natural?: number;
 }
 
 export interface ResizeResult {
@@ -46,6 +50,10 @@ export function resizeFrom(handle: ResizeHandle, start: ResizeStart, dx: number,
 
   if (handle === "left" || handle === "right") {
     const wrap = Math.round(clamp(start.width + out, limits.minWidth, limits.maxWidth));
+    // as wide as the text on one line, or wider: no wrap, the box fits the text
+    if (start.natural !== undefined && wrap >= start.natural) {
+      return { wrap: null, font: start.font, x: fromLeft ? start.x + (start.width - start.natural) : start.x, y: start.y };
+    }
     return { wrap, font: start.font, x: fromLeft ? start.x + (start.width - wrap) : start.x, y: start.y };
   }
 
