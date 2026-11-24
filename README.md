@@ -2,21 +2,22 @@
 
 **An AI architecture visualizer that turns a GitHub repo into a diagram you can edit.** Paste a repo URL and Claude maps the codebase into sections and connections, drawn as boxes and arrows on a real-time collaborative canvas.
 
-> **Status:** the collaborative canvas and its diagramming tools work today. The AI generation is in active development; see the [Roadmap](#roadmap).
+> **Status:** the collaborative canvas and the AI diagrams both work locally. The AI generation isn't deployed yet; see the [Roadmap](#roadmap).
 
 ## Why
 
 Getting to know an unfamiliar codebase means reading dozens of files before the big picture appears, and a generated diagram is usually a static image: when it gets something wrong, you can't fix it. Here the diagram is the workspace. A team can move, relabel and correct what the AI drew, together and live.
 
-## How it will work
+## How it works
 
-1. Paste a GitHub repo URL. The backend reads its file tree and key files (manifests, README, routes, schema, Docker config).
-2. Claude returns a structured model of the architecture: its sections and the connections between them.
-3. Zod validates that model against a schema, so a malformed response becomes a clean error.
-4. A layout engine positions everything. The AI never picks coordinates.
-5. The sections and connections appear on the canvas as ordinary shapes and arrows, editable and synced to everyone in the room.
+1. Paste a GitHub repo URL in **Visualize repo** and pick a model (Sonnet by default, Opus for a more careful diagram) and a level of detail (**Overview**, 5–9 parts, or **Detailed**, 15–40). While it works, the dialog shows each step as it runs.
+2. The backend reads the repo's file tree and key files (manifests, README, routes, schema, Docker config) at one commit.
+3. Claude returns a structured model of the architecture: its sections (each with a kind, a shape for its job, a summary and its files), the connections between them, and a few guided flows through them.
+4. Zod validates that model against a schema. Mistakes the AI can make are cleaned up (file paths that don't exist are dropped) or sent back to it once to fix; a response that still breaks the rules becomes a clean error.
+5. A layout engine (ELK) positions everything, left to right, with right-angled arrows routed around the boxes. The AI never picks coordinates.
+6. The sections and connections appear on the canvas as ordinary shapes and arrows, editable and synced to everyone in the room.
 
-Each user supplies their own Claude API key. It's sent per request and is never stored or logged.
+The Anthropic API key is the server's own: `ANTHROPIC_API_KEY` in `backend/.env` (see [Environment Variables](#environment-variables)). It's read per request and never sent to the browser or logged.
 
 ## Roadmap
 
@@ -24,12 +25,18 @@ Each user supplies their own Claude API key. It's sent per request and is never 
 |---|---|
 | Shapes, arrows and colors | Done |
 | Canvas polish: group resize, smooth drags, multi-block copy | Done |
-| AI generates the architecture diagram from a repo | In progress |
+| AI generates the architecture diagram from a repo | Done (not deployed yet) |
 | A chat attached to each section, grounded in that section's code | Planned |
 | Feature proposals, showing new and changed parts as an animated diff | Planned |
 
 ## Features available today
 
+- **AI architecture diagrams** — paste a GitHub repo and get an editable diagram of it:
+  - each part is a hand-drawn tile with an icon for its kind (frontend, backend, service, database, infrastructure, outside service, people) and its name underneath; its shape says its job: a circle where things start, a diamond for what passes traffic on, a rounded square for what does the work
+  - parts nested in another (an auth module in the API) sit in a group frame that carries them when dragged; arrows inside a group stay hidden until one of its parts is clicked
+  - click a part for its summary, its files (linked to GitHub at the commit that was read) and what it connects to; the rest of the diagram dims and its arrows show data flowing
+  - **How it works** plays guided flows ("A user signs in") step by step across the diagram
+  - a key explains the colors and shapes, and arrow labels show on hover (or always)
 - **Diagramming** — rectangles, diamonds, ellipses and arrows that stay attached as shapes move, with a properties panel for color, fill, line style and opacity
 - **Infinite canvas** — drag and arrange blocks anywhere; draw and erase freehand
 - **Group editing** — select many blocks, then move, resize, copy, cut, paste or duplicate them together
@@ -50,7 +57,8 @@ Each user supplies their own Claude API key. It's sent per request and is never 
 | Backend        | Node.js, Express, TypeScript, Socket.IO, Zod         |
 | Database       | PostgreSQL                                           |
 | Queue / Cache  | Redis, BullMQ                                        |
-| AI             | Claude API (in development)                          |
+| AI             | Claude API (Sonnet 5.5 by default, Opus 5.5)         |
+| Diagram layout | ELK (elkjs)                                          |
 | Code sandbox   | Piston (self-hosted, local development)              |
 | Infrastructure | Docker, Docker Compose, nginx, GitHub Actions        |
 
@@ -63,8 +71,9 @@ Defined in [`backend/db/schema.sql`](backend/db/schema.sql), which the backend r
 | `users`    | `id`, `username`, `email` (null for guests), `password_hash` (null for guests), `is_guest` |
 | `canvases` | `id`, `user_id` → users, `name`, `share_id`, `is_public`                    |
 | `blocks`   | `id`, `canvas_id` → canvases, `type` (text/code/draw/image/shape/arrow), `language`, `content`, `x`, `y`, `width` |
+| `architectures` | `id`, `canvas_id` → canvases, `repo_url`, `commit_sha`, `model` (the AI's validated model, as JSON), `created_at` |
 
-Deleting a user deletes their canvases, and deleting a canvas deletes its blocks (`ON DELETE CASCADE`). Shapes and arrows keep their geometry and style as JSON in `content`.
+Deleting a user deletes their canvases, and deleting a canvas deletes its blocks and architectures (`ON DELETE CASCADE`). Shapes and arrows keep their geometry and style as JSON in `content`. A canvas keeps its 5 latest architectures (the models behind its diagrams); the newest is the current one, used for the guided flows, and older ones are pruned.
 
 ## Prerequisites
 
@@ -156,7 +165,13 @@ CLIENT_URL=http://localhost:5173
 
 # Code sandbox — leave unset to disable code running
 PISTON_URL=http://localhost:2000
+
+# AI diagrams ("Visualize repo") — the server's Anthropic API key.
+# Leave unset to disable them: the dialog then says the key is missing.
+ANTHROPIC_API_KEY=
 ```
+
+> `backend/.env` is git-ignored, so the API key stays on the machine. Restart the backend after changing it.
 
 > When running with Docker, `DB_HOST` and `REDIS_URL` are overridden automatically by `docker-compose.yml` to use the container service names.
 
@@ -176,7 +191,7 @@ Code runs in [Piston](https://github.com/engineer-man/piston), a self-hosted exe
 |---|---|---|---|
 | Frontend unit | Vitest + React Testing Library | Canvas math, shapes, undo history, snapping | `cd my-app && npm test` |
 | Backend unit | Jest | Controllers, validation, access checks, sockets | `cd backend && npm test` |
-| End-to-end | Playwright | The real app in a real browser: guest canvases, shapes and labels, arrows, undo, two tabs collaborating live, persistence, signing up and deleting an account | `cd e2e && npm test` |
+| End-to-end | Playwright | The real app in a real browser: guest canvases, shapes and labels, arrows, undo, two tabs collaborating live, persistence, signing up and deleting an account, and AI diagrams (with the AI's answer faked in the browser, so no key is needed and nothing is billed) | `cd e2e && npm test` |
 
 The end-to-end tests run against a live stack. Locally, start Postgres and Redis (`docker compose up -d postgres redis`), then `npm test` in `e2e/`: it reuses `npm run dev` if it's already running, or starts the backend and frontend itself. The first time, install the browser with `npx playwright install chromium`. Each run signs up throwaway `e2e_…` accounts and deletes them again at the end. Sign-up, sign-in and account deletion share a limit of 10 per 2 minutes per IP and a run uses 6, so running the suite twice within 2 minutes can fail with "Too many attempts".
 
@@ -193,18 +208,21 @@ docker compose up -d --build  # the backend applies backend/db/schema.sql on sta
 
 On the VM, `PISTON_URL` is left unset, so code running is disabled there until an ARM-compatible sandbox is in place. `CLIENT_URL` must be set to the exact origin users open (IP or domain), or the browser will block API requests via CORS.
 
+AI diagrams use the server's `ANTHROPIC_API_KEY`, so on a public server every visitor's diagrams are billed to that key. Generating one can take over a minute, so [`my-app/nginx.conf`](my-app/nginx.conf) gives that one route (`/api/canvases/:id/architecture`) up to 3 minutes; every other `/api` route keeps nginx's default 60 seconds.
+
 ## Project Structure
 
 ```
 free-form-Code/
 ├── backend/
-│   ├── controllers/        # Route handlers (auth, canvas, blocks, run)
+│   ├── controllers/        # Route handlers (auth, canvas, blocks, run, architecture)
 │   ├── routes/             # Express route definitions
 │   ├── models/             # Database queries
 │   ├── middleware/         # Auth, canvas access checks, request validation
-│   ├── schemas/            # Zod request/socket schemas
+│   ├── schemas/            # Zod request/socket schemas, and the AI's architecture contract
+│   ├── services/           # GitHub repo reader, repo facts, the Claude call
 │   ├── db/schema.sql       # Tables + idempotent migrations
-│   ├── scripts/            # install-piston-languages.sh
+│   ├── scripts/            # install-piston-languages.sh, generateArchitecture.ts (CLI)
 │   ├── queue.ts            # BullMQ job queue setup
 │   ├── worker.ts           # Queue worker (hands code to the sandbox)
 │   ├── sandbox.ts          # Piston client; code running is off without PISTON_URL
@@ -216,10 +234,10 @@ free-form-Code/
 │   ├── src/
 │   │   ├── pages/          # Dashboard, Home (login / guest), SharedCanvas
 │   │   ├── components/     # UI components (FloatingNode, DrawingNode, etc.)
-│   │   ├── lib/            # languages, runCode, sockets, shape detection
+│   │   ├── lib/            # languages, runCode, sockets, shape detection, diagram layout + placement
 │   │   ├── API/            # Axios API calls
 │   │   └── hooks/          # Custom React hooks
-│   ├── nginx.conf          # Serves SPA + proxies /api and /socket.io to backend
+│   ├── nginx.conf          # Serves SPA + proxies /api and /socket.io to backend (longer wait for AI diagrams)
 │   └── Dockerfile
 ├── docs/
 │   ├── docker.md               # Docker concepts and setup explained
@@ -246,9 +264,11 @@ The canvas uses two fonts from the [Excalidraw](https://excalidraw.com) project,
 
 | Font | Used for | Author | License |
 |---|---|---|---|
-| [Excalifont](https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw/fonts/Excalifont) (Latin subset) | Code blocks, run output | Excalidraw — Your Own Font Foundry (Virgil), Ján Filípek / DizajnDesign | [SIL Open Font License 1.1](my-app/src/assets/fonts/Excalifont-LICENSE.txt) |
+| [Excalifont](https://github.com/excalidraw/excalidraw/tree/master/packages/excalidraw/fonts/Excalifont) (Latin subset) | Code blocks, run output, hand-drawn shapes' labels | Excalidraw — Your Own Font Foundry (Virgil), Ján Filípek / DizajnDesign | [SIL Open Font License 1.1](my-app/src/assets/fonts/Excalifont-LICENSE.txt) |
 | [Comic Shanns](https://github.com/shannpersand/comic-shanns) v2 | Fallback for characters outside Excalifont's subset | Shannon Miwa | [MIT](my-app/src/assets/fonts/ComicShanns-LICENSE.txt) |
 
 Code block syntax colors come from the [Beautiful Dracula](https://github.com/lamhoang1256/beautiful-dracula) VS Code theme (MIT): its exact colors in dark mode, and the same hues darkened for readability in light mode (`my-app/src/lib/codeTheme.ts`).
 
 The code sandbox is [Piston](https://github.com/engineer-man/piston) by Engineer Man.
+
+AI diagrams are laid out with [ELK](https://eclipse.dev/elk/) via [elkjs](https://github.com/kieler/elkjs) (EPL-2.0).
