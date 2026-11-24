@@ -432,7 +432,12 @@ export default React.memo(function FloatingNode({
           editors: grab the left/right edge of the box to change where lines
           wrap, or a corner dot to scale the text */}
       {onResize && selected && (mode === "select" || mode === "text") && (
-        <ResizeHandles isDark={isDark} onPointerDown={handleResizePointerDown} />
+        <ResizeHandles
+          isDark={isDark}
+          onPointerDown={handleResizePointerDown}
+          // wrapping at a set width: the fit line ends it, keeping the size
+          onFit={wraps ? () => onResize?.(id, null, fontSize ?? null, xRef.current, yRef.current, true) : undefined}
+        />
       )}
 
       {/* hand mode overlay */}
