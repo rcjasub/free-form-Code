@@ -1,5 +1,5 @@
 import type { ElkExtendedEdge, ElkNode, LayoutOptions } from "elkjs/lib/elk-api";
-import { elbowAnchor, type ShapeBox } from "./shapes";
+import { elbowAnchor, type ShapeBox, type ShapeKind } from "./shapes";
 
 // Where each part of an AI-drawn architecture goes on the canvas (Phase 2,
 // step 6). The AI only says what the sections are and how they connect;
@@ -25,6 +25,7 @@ export interface LayoutSection {
   id: string;
   title: string;
   parentId?: string | null;
+  shape?: "rect" | "circle" | "diamond";
 }
 
 export interface LayoutEdge {
@@ -50,6 +51,8 @@ export interface SectionBox {
   depth: number;
   // holds other sections: drawn as a frame with its title at the top
   isGroup: boolean;
+  // the tile's outline (a group's is a rect)
+  kind: ShapeKind;
   // a tile's name, under it (not for a group)
   label?: { x: number; y: number; w: number; h: number };
 }
@@ -173,12 +176,26 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
       // the name as an outside label, so ELK keeps other tiles and arrows
       // clear of it
       const name = tileLabelSize(s.title);
+      const round = kindOf(s) !== "rect";
       return {
         id: s.id,
         width: TILE,
         height: TILE,
         labels: [{ text: s.title, width: name.w, height: name.h }],
-        layoutOptions: { "elk.nodeLabels.placement": "[H_CENTER, V_BOTTOM, OUTSIDE]", "elk.spacing.labelNode": `${TILE_LABEL_GAP}` },
+        // A circle or diamond is met in the middle of a side: its arrows
+        // attach at one point on its left and one on its right, where its
+        // outline is furthest out.
+        ...(round && {
+          ports: [
+            { id: `${s.id}:in`, x: 0, y: TILE / 2, width: 0, height: 0, layoutOptions: { "elk.port.side": "WEST" } },
+            { id: `${s.id}:out`, x: TILE, y: TILE / 2, width: 0, height: 0, layoutOptions: { "elk.port.side": "EAST" } },
+          ],
+        }),
+        layoutOptions: {
+          "elk.nodeLabels.placement": "[H_CENTER, V_BOTTOM, OUTSIDE]",
+          "elk.spacing.labelNode": `${TILE_LABEL_GAP}`,
+          ...(round && { "elk.portConstraints": "FIXED_POS" }),
+        },
       };
     }
     // A group: ELK sizes it to fit its children, at least as wide as its
@@ -198,10 +215,12 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
   const edges = model.edges.filter(
     (e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to && !ancestors(e.from).has(e.to) && !ancestors(e.to).has(e.from),
   );
+  // an edge leaves a circle or diamond from its right and arrives on its left
+  const leafRound = (id: string) => !childrenOf.get(id)?.length && kindOf(byId.get(id)!) !== "rect";
   const elkEdges: ElkExtendedEdge[] = edges.map((e, i) => ({
     id: `e${i}`,
-    sources: [e.from],
-    targets: [e.to],
+    sources: [leafRound(e.from) ? `${e.from}:out` : e.from],
+    targets: [leafRound(e.to) ? `${e.to}:in` : e.to],
     // Given to ELK so it leaves room for the label between the layers.
     labels: e.label ? [{ text: e.label, width: textWidth(e.label, 12) + 8, height: 16 }] : [],
   }));
@@ -229,6 +248,7 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
       const w = Math.round(node.width ?? 0);
       const h = Math.round(node.height ?? 0);
       const name = isGroup ? null : tileLabelSize(byId.get(node.id)?.title ?? "");
+      const section = byId.get(node.id);
       boxes.push({
         id: node.id,
         x: Math.round(x),
@@ -237,6 +257,7 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
         h,
         depth,
         isGroup,
+        kind: isGroup || !section ? "rect" : kindOf(section),
         ...(name && { label: { x: Math.round(x + w / 2 - name.w / 2), y: Math.round(y + h + TILE_LABEL_GAP), w: name.w, h: name.h } }),
       });
       walk(node.children, x, y, depth + 1);
@@ -260,6 +281,11 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
   return { boxes, edges: routed, width: Math.round(result.width ?? 0), height: Math.round(result.height ?? 0) };
 }
 
+// The outline a section's tile is drawn with, from its shape.
+export function kindOf(section: LayoutSection): ShapeKind {
+  return section.shape === "circle" ? "ellipse" : section.shape === "diamond" ? "diamond" : "rect";
+}
+
 // For each section, itself and every section it's nested in: an arrow may
 // pass through those (it starts or ends inside them).
 function lineageOf(model: LayoutModel): (id: string) => Set<string> {
@@ -278,7 +304,7 @@ export function pathOf(edge: RoutedEdge, boxById: ReadonlyMap<string, SectionBox
   const a = boxById.get(edge.from);
   const b = boxById.get(edge.to);
   if (!a || !b || edge.bends.length === 0) return null;
-  const toBox = (box: SectionBox): ShapeBox => ({ ...box, kind: "rect" });
+  const toBox = (box: SectionBox): ShapeBox => ({ ...box });
   return [elbowAnchor(toBox(a), edge.bends[0]), ...edge.bends, elbowAnchor(toBox(b), edge.bends[edge.bends.length - 1])];
 }
 

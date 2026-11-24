@@ -55,7 +55,7 @@ import { chunkForRestore, toRestorePayload, type RestorePayload } from "./lib/re
 import { useArchitectureDiagram } from "./hooks/useArchitectureDiagram";
 import VisualizeRepoDialog from "./components/VisualizeRepoDialog";
 import SectionCard from "./components/SectionCard";
-import { connectionsOf, focusOf, kindsOnCanvas, selectedSection } from "./lib/sectionDetails";
+import { connectionsOf, focusOf, kindsOnCanvas, selectedSection, shapesOnCanvas } from "./lib/sectionDetails";
 import { movingWith } from "./lib/containment";
 import DiagramLegend from "./components/DiagramLegend";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
@@ -1529,6 +1529,7 @@ export default function App() {
                 {flows.length > 0 && <FlowList flows={flows} onPlay={playFlow} />}
                 <DiagramLegend
                   kinds={kinds}
+                  shapes={shapesOnCanvas(nodes)}
                   isDark={isDark}
                   allLabels={allArrowLabels}
                   onToggleLabels={toggleArrowLabels}

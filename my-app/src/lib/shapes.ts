@@ -19,7 +19,7 @@ export interface SectionMeta {
   repo?: { url: string; commitSha: string };
 }
 
-export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
+export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra", "user"] as const;
 export type SectionKind = (typeof SECTION_KINDS)[number];
 
 // Only plain GitHub repo URLs and full commit hashes: the card turns these
@@ -353,17 +353,28 @@ export function anchorPoint(shape: ShapeBox, toward: Point): Point {
   return { x: c.x + dx / reach, y: c.y + dy / reach };
 }
 
-// Where a right-angled arrow meets a rect: straight across from the point
-// it comes from, when that point is level with the box (beside it) or in
-// line with it (above or below); otherwise, and for other shapes, as
-// anchorPoint does.
+// Where a right-angled arrow meets a shape: straight across from the point
+// it comes from, when that point is level with the shape (beside it) or in
+// line with it (above or below), on the shape's own outline (a rect's side,
+// an ellipse's curve, a diamond's slope); otherwise, and for a drawing's
+// outline, as anchorPoint does.
 export function elbowAnchor(shape: ShapeBox, toward: Point): Point {
-  if (shape.kind !== "rect" || shape.outline) return anchorPoint(shape, toward);
-  const { x, y, w, h } = shape;
+  if (shape.outline) return anchorPoint(shape, toward);
+  const { x, y, w, h, kind } = shape;
+  const c = { x: x + w / 2, y: y + h / 2 };
+  // how far the outline reaches from the center, as a share of the half
+  // width (or height), at offset t (0 center, 1 edge) along the other axis
+  const reach = (t: number) => (kind === "rect" ? 1 : kind === "ellipse" ? Math.sqrt(Math.max(0, 1 - t * t)) : Math.max(0, 1 - t));
   const inX = toward.x >= x && toward.x <= x + w;
   const inY = toward.y >= y && toward.y <= y + h;
-  if (inX && !inY) return { x: toward.x, y: toward.y < y ? y : y + h };
-  if (inY && !inX) return { x: toward.x < x ? x : x + w, y: toward.y };
+  if (inX && !inY) {
+    const r = reach(Math.abs(toward.x - c.x) / (w / 2)) * (h / 2);
+    return { x: toward.x, y: toward.y < c.y ? c.y - r : c.y + r };
+  }
+  if (inY && !inX) {
+    const r = reach(Math.abs(toward.y - c.y) / (h / 2)) * (w / 2);
+    return { x: toward.x < c.x ? c.x - r : c.x + r, y: toward.y };
+  }
   return anchorPoint(shape, toward);
 }
 

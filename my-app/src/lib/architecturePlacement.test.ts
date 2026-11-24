@@ -69,6 +69,8 @@ describe("shapes", () => {
     expect(shape("stripe")).toMatchObject({ stroke: "auto", fill: "transparent", strokeStyle: "dashed" });
     // a tile: its name under it
     expect(shape("auth")).toMatchObject({ labelAlign: "below", w: TILE, h: TILE });
+    // a plain section is a rounded square
+    expect(shape("web").kind).toBe("rect");
     // drawn by hand: sloppy lines, fills in pen strokes
     expect(shape("web")).toMatchObject({ roughness: 2, fillStyle: "stripes" });
     expect(shape("api")).toMatchObject({ stroke: "green", fill: "transparent", strokeStyle: "solid", labelAlign: "top" });
@@ -212,5 +214,37 @@ describe("building in", () => {
     expect(totalMs).toBeLessThan(3000);
     expect(arrowDelays.every((d) => d > 0)).toBe(true);
     expect(introSchedule([{ x: 0, y: 0 }], [])).toEqual({ shapeDelays: [0], arrowDelays: [], totalMs: 600 });
+  });
+});
+
+describe("shapes by job", () => {
+  it("a circle or diamond section is that shape, and its arrows stay put when the canvas draws them", async () => {
+    const shaped: ArchitectureModel = {
+      summary: "",
+      sections: [
+        { id: "user", title: "User", kind: "user", summary: "", files: [], shape: "circle" },
+        { id: "proxy", title: "nginx", kind: "infra", summary: "", files: [], shape: "diamond" },
+        { id: "api", title: "API", kind: "backend", summary: "", files: [] },
+      ],
+      edges: [{ from: "user", to: "proxy", label: "" }, { from: "proxy", to: "api", label: "" }],
+    };
+    const blocks = diagramBlocks(shaped, await layoutArchitecture(shaped), { x: 0, y: 0 }, { seed: fixedSeed });
+    const kindOf = (id: string) => parseShape(blocks.shapes.find((s) => s.sectionId === id)!.block.content).kind;
+    expect([kindOf("user"), kindOf("proxy"), kindOf("api")]).toEqual(["ellipse", "diamond", "rect"]);
+
+    const boxes = new Map<string, ShapeBox>(
+      blocks.shapes.map(({ sectionId, block }) => {
+        const s = parseShape(block.content);
+        return [`b-${sectionId}`, { x: block.x, y: block.y, w: s.w, h: s.h, kind: s.kind }];
+      }),
+    );
+    for (const block of blocks.arrows(new Map(blocks.shapes.map((s) => [s.sectionId, `b-${s.sectionId}`])))) {
+      const arrow = parseArrow(block.content);
+      const resolved = resolveArrow(arrow, block.x, block.y, boxes);
+      resolved.points.forEach((p, i) => {
+        expect(Math.abs(p.x - arrow.points[i].x)).toBeLessThanOrEqual(1);
+        expect(Math.abs(p.y - arrow.points[i].y)).toBeLessThanOrEqual(1);
+      });
+    }
   });
 });

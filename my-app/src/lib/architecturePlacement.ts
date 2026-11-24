@@ -39,6 +39,8 @@ export const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill
   infra: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "solid" },
   // something the code calls but doesn't own: dashed and unfilled
   external: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "dashed" },
+  // the people who use it: plain, in the text color
+  user: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "solid" },
 };
 
 // A diagram's tiles are drawn by hand, the way the canvas's Sloppy line
@@ -97,7 +99,7 @@ export function diagramBlocks(
     const section = sections.get(box.id);
     if (!section) continue;
     const { x, y } = at(box);
-    boxes.set(box.id, { x, y, w: box.w, h: box.h, kind: "rect" });
+    boxes.set(box.id, { x, y, w: box.w, h: box.h, kind: box.kind });
     obstacles.push({ x, y, w: box.w, h: box.isGroup ? GROUP_HEADER : box.h });
     if (box.label) obstacles.push({ ...at(box.label), w: box.label.w, h: box.label.h });
     const look = KIND_STYLE[section.kind] ?? KIND_STYLE.infra;
@@ -109,7 +111,7 @@ export function diagramBlocks(
       // is a frame around its sections: its color's outline, with nothing
       // over the tiles inside and its title at the top.
       ...(box.isGroup ? { fill: TRANSPARENT, labelAlign: "top" as const } : { labelAlign: "below" as const }),
-      kind: "rect",
+      kind: box.kind,
       w: box.w,
       h: box.h,
       label: section.title,

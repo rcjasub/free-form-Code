@@ -65,6 +65,7 @@ export function fileLink(repo: { url: string; commitSha: string }, path: string)
 }
 
 export const KIND_NAMES: Record<NonNullable<SectionMeta["kind"]>, string> = {
+  user: "People",
   frontend: "Frontend",
   backend: "Backend",
   service: "Service",
@@ -106,6 +107,19 @@ export function focusOf(shapeId: string, nodes: readonly (BlockLike & { x: numbe
     }
   }
   return ids;
+}
+
+// The tile shapes with a meaning of their own (a circle, a diamond) among the
+// AI-diagram boxes on the canvas, for the legend. A group's frame doesn't
+// count, and a rect is the plain tile, so it needs no line.
+export function shapesOnCanvas(nodes: readonly BlockLike[]): ("ellipse" | "diamond")[] {
+  const present = new Set<string>();
+  for (const node of nodes) {
+    if (node.type !== "shape") continue;
+    const shape = parseShape(node.content);
+    if (shape.meta && shape.labelAlign === "below") present.add(shape.kind);
+  }
+  return (["ellipse", "diamond"] as const).filter((k) => present.has(k));
 }
 
 // The kinds of AI-diagram boxes on the canvas, in the legend's order.

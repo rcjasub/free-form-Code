@@ -103,7 +103,9 @@ You get a snapshot of one repository: facts pulled from its files (packages and 
 
 What a section is:
 - A part of the system a developer would draw as one box: an app, a service, an API, a worker, a database, a cache, a queue, or an outside service the code calls.
-- kind is one of: frontend (what runs in the browser or on a device), backend (servers and APIs), service (workers, background jobs, separate processes), db (databases and other storage), external (third-party APIs and services the code calls), infra (proxies, queues, caches and other infrastructure).
+- kind is one of: frontend (what runs in the browser or on a device), backend (servers and APIs), service (workers, background jobs, separate processes), db (databases and other storage), external (third-party APIs and services the code calls), infra (proxies, queues, caches and other infrastructure), user (the people who use the system).
+- shape says the section's job, so the diagram reads at a glance: circle for where things start (the people who use it, an outside system or schedule that triggers it), diamond for what routes or passes traffic on without doing the work itself (a reverse proxy, load balancer, API gateway, message queue), rect for everything else (apps, services, workers, databases, caches). Most sections are rect.
+- When people use the system, start the diagram with them: one section of kind user and shape circle (titled for who they are, like "User" or "Developer"), no files, with edges to what they use. It counts toward the number of sections.
 - id is short and readable, like "api", "web-app" or "postgres": letters, digits, "-", "_" or ".".
 - title is a few words. summary is one or two plain sentences on what it does and why it matters, written for a developer new to the project.
 - files lists the paths that belong to the section, from the file list. Use a folder path ending in "/" when a whole folder belongs to it. Only use paths that appear in the snapshot.

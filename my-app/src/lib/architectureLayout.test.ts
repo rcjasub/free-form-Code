@@ -243,6 +243,30 @@ describe("layout", () => {
     }
   });
 
+  test("a circle or diamond is met in the middle of its side", async () => {
+    const model: LayoutModel = {
+      sections: [
+        { id: "user", title: "User", shape: "circle" },
+        { id: "proxy", title: "Proxy", shape: "diamond" },
+        { id: "a", title: "A" },
+        { id: "b", title: "B" },
+      ],
+      edges: [{ from: "user", to: "proxy", label: "" }, { from: "proxy", to: "a", label: "" }, { from: "proxy", to: "b", label: "" }],
+    };
+    const layout = await layoutArchitecture(model);
+    const boxes = byId(layout.boxes);
+    expect(boxes.get("user")!.kind).toBe("ellipse");
+    expect(boxes.get("proxy")!.kind).toBe("diamond");
+    expect(boxes.get("a")!.kind).toBe("rect");
+    expect(slanted(layout)).toEqual([]);
+    const middle = (id: string) => boxes.get(id)!.y + TILE / 2;
+    for (const e of layout.edges) {
+      const path = pathOf(e, boxes)!;
+      if (e.from !== "a" && e.from !== "b") expect(path[0].y).toBe(middle(e.from));
+      if (e.to === "proxy") expect(path[path.length - 1].y).toBe(middle("proxy"));
+    }
+  });
+
   test("an arrow leaves one box and reaches the next straight on", async () => {
     const layout = await layoutArchitecture({ sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }], edges: [{ from: "a", to: "b", label: "" }] });
     const b = byId(layout.boxes);

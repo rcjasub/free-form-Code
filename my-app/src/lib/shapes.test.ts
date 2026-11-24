@@ -7,6 +7,7 @@ import {
   pointAlong,
   parseShape,
   resolveArrow,
+  elbowAnchor,
   serializeArrow,
   serializeShape,
   type ShapeBox,
@@ -185,6 +186,18 @@ describe("resolveArrow", () => {
     // without the flag, aimed at the centers as before
     const plain = resolveArrow({ ...arrow({ fromId: "a", toId: "b" }), points }, 50, 25, below);
     expect(plain.points[0].x).not.toBeCloseTo(20);
+  });
+
+  it("an elbow arrow meets a circle's or diamond's outline straight on, level with its bend", () => {
+    const round = { x: 0, y: 0, w: 100, h: 100 }; // center (50, 50)
+    // level with the middle: the tip of the side
+    expect(elbowAnchor({ ...round, kind: "ellipse" }, { x: 200, y: 50 })).toEqual({ x: 100, y: 50 });
+    expect(elbowAnchor({ ...round, kind: "diamond" }, { x: -80, y: 50 })).toEqual({ x: 0, y: 50 });
+    // higher up the side, further in: where the curve or the slope is
+    const e = elbowAnchor({ ...round, kind: "ellipse" }, { x: 200, y: 20 });
+    expect(e.y).toBe(20);
+    expect(e.x).toBeCloseTo(50 + 50 * Math.sqrt(1 - 0.6 * 0.6));
+    expect(elbowAnchor({ ...round, kind: "diamond" }, { x: 200, y: 20 })).toEqual({ x: 70, y: 20 }); // on the slope from (50, 0) to (100, 50)
   });
 
   it("keeps the drawn end when its shape is gone", () => {

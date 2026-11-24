@@ -1,4 +1,4 @@
-import { Cog, Database, Globe, Layers, Monitor, Server, type LucideIcon } from "lucide-react";
+import { Cog, Database, Globe, Layers, Monitor, Server, User, type LucideIcon } from "lucide-react";
 import type { SectionKind } from "./shapes";
 
 // The icon for each kind of part in an AI diagram, on its boxes and in the
@@ -10,4 +10,5 @@ export const KIND_ICONS: Record<SectionKind, LucideIcon> = {
   service: Cog,
   external: Globe,
   infra: Layers,
+  user: User,
 };

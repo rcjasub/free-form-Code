@@ -16,7 +16,12 @@ import { z } from "zod";
 // repo, an edge repeated or pointing to itself, a flow step naming a
 // section that isn't there.
 
-export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra"] as const;
+export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra", "user"] as const;
+// How a section's box is drawn, by its job: a circle where requests start
+// (people, outside triggers), a diamond for what routes or passes traffic on
+// (proxies, gateways, queues), a rounded square for what does the work or
+// holds the data. Architectures saved before shapes were asked for have none.
+export const SECTION_SHAPES = ["rect", "circle", "diamond"] as const;
 
 // Enough for a readable diagram, and well inside the 200 blocks one
 // placement request can create (a box per section, an arrow per edge).
@@ -42,6 +47,7 @@ export const sectionSchema = z.object({
   summary: z.string().trim().max(600),
   files: z.array(z.string().trim().min(1).max(300)).max(MAX_FILES_PER_SECTION).default([]),
   parentId: idSchema.nullish(),
+  shape: z.enum(SECTION_SHAPES).default("rect"),
 });
 
 export const edgeSchema = z.object({

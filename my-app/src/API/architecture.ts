@@ -8,10 +8,16 @@ const api = axios.create({ baseURL: "/api", withCredentials: true });
 // (backend/schemas/architecture.schema.ts), already checked there.
 export type { SectionKind };
 
+// How a section's box is drawn, by its job: where things start (circle),
+// what routes traffic on (diamond), or what does the work (rect). Missing
+// on architectures read before shapes were asked for.
+export type SectionShape = "rect" | "circle" | "diamond";
+
 export interface ArchitectureSection {
   id: string;
   title: string;
   kind: SectionKind;
+  shape?: SectionShape;
   summary: string;
   files: string[];
   parentId?: string | null;

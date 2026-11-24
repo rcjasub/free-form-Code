@@ -27,6 +27,8 @@ const TITLE_ICON_ROOM = ICON_SIZE + 6;
 // A tile (labelAlign "below"): its icon fills this share of it, and its name
 // sits this far under it, free to be wider than the tile by this much a side.
 const TILE_ICON_SHARE = 0.45;
+// a diamond's middle is narrower, so its icon is smaller
+const DIAMOND_ICON_SHARE = 0.36;
 const TILE_LABEL_GAP = 8;
 // A frame (labelAlign "top") is grabbed by its title band and its edges;
 // clicks anywhere else inside it reach what's in it, or the canvas. And it
@@ -299,7 +301,7 @@ export default React.memo(function ShapeNode({
       {KindIcon && asTile && (
         <KindIcon
           aria-hidden
-          size={Math.round(Math.min(w, h) * TILE_ICON_SHARE)}
+          size={Math.round(Math.min(w, h) * (shape.kind === "diamond" ? DIAMOND_ICON_SHARE : TILE_ICON_SHARE))}
           strokeWidth={1.75}
           className="absolute"
           // in the theme's text color (white on the dark canvas), like the

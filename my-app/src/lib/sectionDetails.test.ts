@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectionsOf, fileLink, focusOf, kindsOnCanvas, selectedSection } from "./sectionDetails";
+import { connectionsOf, fileLink, focusOf, kindsOnCanvas, selectedSection, shapesOnCanvas } from "./sectionDetails";
 import { DEFAULT_ARROW, DEFAULT_SHAPE, parseShape, serializeArrow, serializeShape } from "./shapes";
 
 // A diagram box's details card: which box it's about, its links and its
@@ -117,5 +117,19 @@ describe("kindsOnCanvas", () => {
   it("lists the kinds present, in the legend's order", () => {
     expect(kindsOnCanvas(nodes)).toEqual(["frontend", "backend", "db"]);
     expect(kindsOnCanvas([])).toEqual([]);
+  });
+});
+
+describe("shapesOnCanvas", () => {
+  it("lists the tile shapes with a meaning of their own, not plain tiles or frames", () => {
+    const tile = (id: string, kind: "rect" | "ellipse" | "diamond", labelAlign: "below" | "top" = "below") => ({
+      id,
+      type: "shape",
+      content: serializeShape({ ...DEFAULT_SHAPE, kind, labelAlign, meta: { sectionId: id, summary: "", files: [] } }),
+    });
+    expect(shapesOnCanvas([tile("a", "rect"), tile("b", "diamond"), tile("c", "ellipse")])).toEqual(["ellipse", "diamond"]);
+    expect(shapesOnCanvas([tile("a", "rect"), tile("g", "diamond", "top")])).toEqual([]);
+    // a hand-drawn circle isn't part of a diagram
+    expect(shapesOnCanvas([{ id: "x", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, kind: "ellipse" }) }])).toEqual([]);
   });
 });

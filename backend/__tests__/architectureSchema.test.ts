@@ -2,7 +2,7 @@
 // output has to be caught here, before anything is saved or drawn, with
 // messages clear enough to send back to the AI for a retry.
 
-import { architectureJsonSchema, MAX_EDGES, MAX_SECTIONS, parseArchitecture } from "../schemas/architecture.schema";
+import { architectureJsonSchema, MAX_EDGES, MAX_SECTIONS, parseArchitecture, sectionSchema } from "../schemas/architecture.schema";
 
 const section = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
@@ -62,7 +62,7 @@ describe("a valid model", () => {
     const { model } = modelOf(raw);
     expect(Object.keys(model)).toEqual(["summary", "sections", "edges", "flows"]);
     expect(model.flows).toEqual([]);
-    expect(Object.keys(model.sections[0]).sort()).toEqual(["files", "id", "kind", "summary", "title"]);
+    expect(Object.keys(model.sections[0]).sort()).toEqual(["files", "id", "kind", "shape", "summary", "title"]);
   });
 });
 
@@ -193,11 +193,19 @@ test("the JSON Schema for the AI describes the same contract", () => {
   const schema = architectureJsonSchema() as {
     type: string;
     required: string[];
-    properties: { sections: { maxItems: number; items: { required: string[]; properties: { kind: { enum: string[] } } } } };
+    properties: { sections: { maxItems: number; items: { required: string[]; properties: { kind: { enum: string[] }; shape: { enum: string[] } } } } };
   };
   expect(schema.type).toBe("object");
   expect(schema.required).toEqual(["sections"]);
   expect(schema.properties.sections.maxItems).toBe(MAX_SECTIONS);
   expect(schema.properties.sections.items.required).toEqual(expect.arrayContaining(["id", "title", "kind", "summary"]));
-  expect(schema.properties.sections.items.properties.kind.enum).toEqual(["frontend", "backend", "db", "service", "external", "infra"]);
+  expect(schema.properties.sections.items.properties.kind.enum).toEqual(["frontend", "backend", "db", "service", "external", "infra", "user"]);
+  expect(schema.properties.sections.items.properties.shape.enum).toEqual(["rect", "circle", "diamond"]);
+});
+
+test("a section without a shape (saved before shapes were asked for) is a rect", () => {
+  const parsed = sectionSchema.parse({ id: "api", title: "API", kind: "backend", summary: "", files: [] });
+  expect(parsed.shape).toBe("rect");
+  expect(() => sectionSchema.parse({ id: "u", title: "User", kind: "user", summary: "", shape: "star" })).toThrow();
+  expect(sectionSchema.parse({ id: "u", title: "User", kind: "user", summary: "", shape: "circle" }).shape).toBe("circle");
 });
