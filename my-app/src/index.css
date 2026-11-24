@@ -452,11 +452,14 @@ body.canvas-panning * {
 
 /* Pipeline (components/Pipeline): steps as cards, links that fill in as
    each step finishes, the running step's border spinning. Colors follow
-   the dialogs': white cards on light, #232329 on dark. */
+   the dialogs' fields: gray-100 on light, #232329 on dark, filled rather
+   than outlined. */
 .pipeline {
-  --node: #ffffff;
+  --node: #f3f4f6;
   --text: #18181b;
   --line: color-mix(in srgb, var(--text) 14%, transparent);
+  /* a step waiting or done has no outline, like the dialog it sits in */
+  --edge: transparent;
   --chip: color-mix(in srgb, var(--text) 6%, var(--node));
   --sub: color-mix(in srgb, var(--text) 55%, transparent);
 }
@@ -493,7 +496,7 @@ body.canvas-panning * {
   gap: 10px;
   padding: 0 12px;
   border-radius: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   background: var(--node);
   color: var(--text);
   transition: border-color 0.35s, box-shadow 0.35s;

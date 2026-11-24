@@ -55,10 +55,15 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
-afterAll(() => new Promise((resolve) => server.close(resolve)));
+afterAll(() => {
+  delete process.env.ANTHROPIC_API_KEY;
+  return new Promise((resolve) => server.close(resolve));
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // the server's own key, as backend/.env would set it
+  process.env.ANTHROPIC_API_KEY = API_KEY;
   userId = `user-${randomBytes(4).toString("hex")}`;
   mockCanvas.getById.mockResolvedValue({
     id: "canvas-1", user_id: userId, name: "Mine", share_id: "abc", is_public: false, created_at: new Date(), updated_at: new Date(),
@@ -81,7 +86,7 @@ function cookie(id = userId) {
 function post(body: unknown, headers: Record<string, string> = {}, canvas = "canvas-1") {
   return fetch(`${base}/api/canvases/${canvas}/architecture`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie(), "X-Anthropic-Key": API_KEY, ...headers },
+    headers: { "Content-Type": "application/json", Cookie: cookie(), ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -142,12 +147,22 @@ describe("checks before anything is spent", () => {
     expect((await post(valid)).status).toBe(404);
   });
 
-  test("no repo URL, or no API key", async () => {
+  test("no repo URL, or no API key on the server", async () => {
     expect((await post({})).status).toBe(400);
-    const res = await post(valid, { "X-Anthropic-Key": "" });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ code: "missing_key" });
+    delete process.env.ANTHROPIC_API_KEY;
+    const res = await post(valid);
+    // the server isn't set up for it, rather than anything wrong with the request
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toMatchObject({ code: "missing_key" });
+    expect(body.error).toContain("backend/.env");
     expect(mockReadRepo).not.toHaveBeenCalled();
+  });
+
+  test("a key sent by a browser is ignored: the server's own is used", async () => {
+    const res = await post(valid, { "X-Anthropic-Key": "sk-ant-from-the-browser" });
+    expect(res.status).toBe(201);
+    expect(mockGenerate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiKey: API_KEY }));
   });
 
   test("5 diagrams per 10 minutes per account", async () => {
@@ -189,7 +204,7 @@ describe("checks before anything is spent", () => {
     // hold the lock other tests need.
     const request = fetch(`${base}/api/canvases/canvas-cancel/architecture`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie(), "X-Anthropic-Key": API_KEY },
+      headers: { "Content-Type": "application/json", Cookie: cookie() },
       body: JSON.stringify(valid),
       signal: controller.signal,
     }).catch(() => "closed");

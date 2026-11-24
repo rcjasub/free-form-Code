@@ -52,9 +52,14 @@ function header(req: AuthRequest, name: string): string | undefined {
 export async function generate(req: AuthRequest, res: Response): Promise<void> {
   const canvasId = req.params.id;
   const { repoUrl, model, detail } = req.body as { repoUrl: string; model?: string; detail?: DetailLevel };
-  const apiKey = header(req, "x-anthropic-key");
+  // The server's own key, from backend/.env (git-ignored): read per request,
+  // never sent back or logged.
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) {
-    res.status(400).json({ error: "Add your Anthropic API key to generate a diagram.", code: "missing_key" });
+    res.status(503).json({
+      error: "The server has no Anthropic API key. Add ANTHROPIC_API_KEY to backend/.env and restart the backend.",
+      code: "missing_key",
+    });
     return;
   }
 

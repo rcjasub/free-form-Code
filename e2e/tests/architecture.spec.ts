@@ -1,4 +1,3 @@
-import { randomBytes } from "crypto";
 import { expect, test, type Page, type Request } from "@playwright/test";
 import { USER_STATE } from "../global-setup";
 import { EMPTY, blockIds, mouseOnCanvas, openNewServerCanvas, startAsGuest } from "./helpers";
@@ -8,8 +7,6 @@ import { EMPTY, blockIds, mouseOnCanvas, openNewServerCanvas, startAsGuest } fro
 // fixed answer, so these never reach GitHub or Anthropic and cost nothing;
 // the backend side is covered by its own tests.
 
-// Made up per run: no key-shaped literal lives in the repo.
-const API_KEY = `sk-ant-api03-${randomBytes(30).toString("base64url")}`;
 const REPO = "https://github.com/acme/shop";
 
 const model = {
@@ -75,7 +72,6 @@ test.describe("signed in", () => {
     await page.getByLabel("GitHub repo").fill(REPO);
     await page.getByRole("radio", { name: /Opus/ }).click();
     await page.getByRole("radio", { name: /Detailed/ }).click();
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
 
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -84,9 +80,9 @@ test.describe("signed in", () => {
       await expect(page.getByText(title, { exact: true })).toBeVisible();
     }
 
-    // The key travels in a header, never in the body.
+    // No key leaves the browser: the server uses its own (backend/.env).
     expect(sent).toHaveLength(1);
-    expect(sent[0].headers()["x-anthropic-key"]).toBe(API_KEY);
+    expect(sent[0].headers()["x-anthropic-key"]).toBeUndefined();
     expect(sent[0].postDataJSON()).toEqual({ repoUrl: REPO, model: "claude-opus-5-5", detail: "detailed" });
 
     // Saved on the server: still there after a reload.
@@ -118,7 +114,6 @@ test.describe("signed in", () => {
 
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
 
     const progress = page.getByRole("list", { name: "Progress" });
@@ -145,7 +140,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, ok(canvasId));
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -196,7 +190,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, ok(canvasId));
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -236,7 +229,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, ok(canvasId));
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -307,7 +299,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, ok(canvasId));
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.locator(".intro-in")).toHaveCount(0);
@@ -352,7 +343,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, { ...reply, body: { ...reply.body, architecture: { ...reply.body.architecture, model: grouped } } });
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(6);
     await expect(page.locator(".intro-in")).toHaveCount(0);
@@ -379,7 +369,6 @@ test.describe("signed in", () => {
     await fakeGenerate(page, ok(canvasId));
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
     await expect(page.locator(".intro-in")).toHaveCount(0);
@@ -427,7 +416,6 @@ test.describe("signed in", () => {
 
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
     await page.getByRole("button", { name: "Generate diagram" }).click();
 
     await expect(page.getByRole("alert")).toHaveText(message);
@@ -435,25 +423,14 @@ test.describe("signed in", () => {
     expect(await blockIds(page)).toEqual([]);
   });
 
-  test("remembers the key in this browser until it's forgotten", async ({ page, request }) => {
+  test("asks for no key, and clears one an earlier version kept in this browser", async ({ page, request }) => {
     await openNewServerCanvas(page, request);
-    await fakeGenerate(page, { status: 422, body: { error: "Nope.", code: "bad_key" } });
-
+    await page.evaluate(() => localStorage.setItem("free-form:anthropic-key", "sk-ant-left-over"));
     await openDialog(page);
+    await expect(page.getByLabel("Anthropic API key")).toHaveCount(0);
     await page.getByLabel("GitHub repo").fill(REPO);
-    await page.getByLabel("Anthropic API key").fill(API_KEY);
-    await page.getByRole("button", { name: "Generate diagram" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
-    await page.getByRole("button", { name: "Cancel" }).click();
-
-    await openDialog(page);
-    await expect(page.getByLabel("Anthropic API key")).toHaveValue(API_KEY);
-    await expect(page.getByLabel("GitHub repo")).toHaveValue(REPO);
-    await page.getByRole("button", { name: "Forget it" }).click();
-    await expect(page.getByLabel("Anthropic API key")).toHaveValue("");
-    await page.getByRole("button", { name: "Cancel" }).click();
-    await openDialog(page);
-    await expect(page.getByLabel("Anthropic API key")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Generate diagram" })).toBeEnabled();
+    expect(await page.evaluate(() => localStorage.getItem("free-form:anthropic-key"))).toBeNull();
   });
 });
 

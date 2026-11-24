@@ -63,17 +63,17 @@ export type AiModel = "claude-sonnet-5-5" | "claude-opus-5-5";
 export type DetailLevel = "overview" | "detailed";
 
 // Reads the repo and has the AI describe it, saving the result as the
-// canvas's current architecture. The API key (and a GitHub token, for
-// private repos) go in headers and are used for this one request.
+// canvas's current architecture. The server uses its own Anthropic key
+// (backend/.env); a GitHub token, for private repos, goes in a header and is
+// used for this one request.
 export async function generateArchitecture(
   canvasId: string,
   request: { repoUrl: string; model?: AiModel; detail?: DetailLevel },
-  secrets: { apiKey: string; githubToken?: string },
+  secrets: { githubToken?: string } = {},
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
   const { data } = await api.post<GenerateResult>(`/canvases/${canvasId}/architecture`, request, {
     headers: {
-      "X-Anthropic-Key": secrets.apiKey,
       ...(secrets.githubToken && { "X-GitHub-Token": secrets.githubToken }),
     },
     signal,

@@ -14,10 +14,11 @@ interface Props {
   onDiagram: (architecture: Architecture) => Promise<void>;
 }
 
-// Kept in this browser between visits, so the key is typed once. The key
-// is sent with each request and used for that request only; the server
-// never stores it. A GitHub token isn't kept at all.
-const KEY_STORAGE = "free-form:anthropic-key";
+// The last choices, kept in this browser between visits. The Anthropic key
+// is the server's own (backend/.env), so there's none to type or keep; a
+// GitHub token isn't kept at all. Earlier versions kept a typed key here:
+// it's cleared.
+const OLD_KEY_STORAGE = "free-form:anthropic-key";
 const URL_STORAGE = "free-form:last-repo-url";
 const MODEL_STORAGE = "free-form:ai-model";
 const DETAIL_STORAGE = "free-form:ai-detail";
@@ -124,7 +125,6 @@ function progressSteps(phase: Phase, seconds: number, model: AiModel, result: Ge
 
 function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">) {
   const [repoUrl, setRepoUrl] = useState(() => load(URL_STORAGE));
-  const [apiKey, setApiKey] = useState(() => load(KEY_STORAGE));
   const [model, setModel] = useState<AiModel>(() => (load(MODEL_STORAGE) === "claude-opus-5-5" ? "claude-opus-5-5" : "claude-sonnet-5-5"));
   const [detail, setDetail] = useState<DetailLevel>(() => (load(DETAIL_STORAGE) === "detailed" ? "detailed" : "overview"));
   const [githubToken, setGithubToken] = useState("");
@@ -135,6 +135,9 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
   const [result, setResult] = useState<GenerateResult | null>(null);
   const request = useRef<AbortController | null>(null);
   const busy = phase !== "idle";
+
+  // a key an earlier version kept in this browser isn't needed anymore
+  useEffect(() => save(OLD_KEY_STORAGE, ""), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -155,11 +158,10 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || !repoUrl.trim() || !apiKey.trim()) return;
+    if (busy || !repoUrl.trim()) return;
     setError("");
     setSeconds(0);
     setPhase("generating");
-    save(KEY_STORAGE, apiKey.trim());
     save(URL_STORAGE, repoUrl.trim());
     save(MODEL_STORAGE, model);
     save(DETAIL_STORAGE, detail);
@@ -169,7 +171,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
       const result = await generateArchitecture(
         canvasId,
         { repoUrl: repoUrl.trim(), model, detail },
-        { apiKey: apiKey.trim(), githubToken: githubToken.trim() || undefined },
+        { githubToken: githubToken.trim() || undefined },
         controller.signal,
       );
       setResult(result);
@@ -183,13 +185,8 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
     }
   }
 
-  function forgetKey() {
-    save(KEY_STORAGE, "");
-    setApiKey("");
-  }
-
   const input =
-    "mt-1.5 w-full rounded-lg border-0 bg-gray-100 px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-[#4f8cff]/50 disabled:opacity-60 dark:bg-[#232329] dark:text-white";
+    "mt-1.5 w-full rounded-lg border-0 bg-gray-100 px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 disabled:opacity-60 dark:bg-[#232329] dark:text-white";
   const label = "mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300";
 
   return (
@@ -198,7 +195,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
       aria-modal="true"
       aria-labelledby="visualize-repo-title"
       onSubmit={submit}
-      className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-[#2e2e3a] dark:bg-[#1a1a22]"
+      className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-[#1a1a22]"
       initial={{ opacity: 0, y: 12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
@@ -247,10 +244,10 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
                 aria-checked={model === m.id}
                 disabled={busy}
                 onClick={() => setModel(m.id)}
-                className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+                className={`rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${
                   model === m.id
-                    ? "border-[#4f8cff] bg-[#4f8cff]/10"
-                    : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
+                    ? "bg-[#4f8cff]/15 dark:bg-[#4f8cff]/20"
+                    : "bg-gray-100 hover:bg-gray-200 dark:bg-[#232329] dark:hover:bg-[#2a2a33]"
                 }`}
               >
                 <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
@@ -269,10 +266,10 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
                 aria-checked={detail === d.id}
                 disabled={busy}
                 onClick={() => setDetail(d.id)}
-                className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+                className={`rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${
                   detail === d.id
-                    ? "border-[#4f8cff] bg-[#4f8cff]/10"
-                    : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
+                    ? "bg-[#4f8cff]/15 dark:bg-[#4f8cff]/20"
+                    : "bg-gray-100 hover:bg-gray-200 dark:bg-[#232329] dark:hover:bg-[#2a2a33]"
                 }`}
               >
                 <span className="block text-sm font-medium text-gray-900 dark:text-white">{d.name}</span>
@@ -280,32 +277,6 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
               </button>
             ))}
           </div>
-
-          <label className={label} htmlFor="visualize-api-key">
-            Anthropic API key
-          </label>
-          <input
-            id="visualize-api-key"
-            type="password"
-            autoComplete="off"
-            value={apiKey}
-            disabled={busy}
-            onChange={(e) => setApiKey(e.target.value)}
-            className={input}
-            placeholder="sk-ant-…"
-            spellCheck={false}
-          />
-          <p className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-            Kept in this browser only, and sent with each request; the server never stores it.
-            {apiKey && !busy && (
-              <>
-                {" "}
-                <button type="button" onClick={forgetKey} className="underline hover:text-gray-700 dark:hover:text-gray-200">
-                  Forget it
-                </button>
-              </>
-            )}
-          </p>
 
           {showToken ? (
             <>
@@ -347,13 +318,13 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-[#2e2e3a]"
+          className="px-3 py-2 text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
         >
           Cancel
         </button>
         <button
           type="submit"
-          disabled={busy || !repoUrl.trim() || !apiKey.trim()}
+          disabled={busy || !repoUrl.trim()}
           className="rounded-lg bg-[#4f8cff] px-3.5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? "Generating…" : "Generate diagram"}
