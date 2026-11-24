@@ -1,0 +1,272 @@
+import type { ArchitectureModel, SectionKind } from "../API/architecture";
+import { GROUP_HEADER, type ArchitectureLayout, type Point } from "./architectureLayout";
+import { AUTO, TRANSPARENT } from "./colors";
+import type { RestorePayload } from "./restore";
+import {
+  anchorPoint,
+  DEFAULT_ARROW,
+  DEFAULT_STYLE,
+  elbowAnchor,
+  newSeed,
+  pointAlong,
+  serializeArrow,
+  shapeLabelSize,
+  serializeShape,
+  shapeCenter,
+  type ArrowData,
+  type DiagramStyle,
+  type ShapeBox,
+  type ShapeData,
+} from "./shapes";
+
+// Turns an AI-described architecture, once laid out (architectureLayout),
+// into canvas blocks (Phase 2, step 7): a shape per section and an arrow per
+// edge. They're ordinary shapes and arrows, so people can move, restyle and
+// relabel them like anything they drew; each shape also carries its
+// section's summary and files in `meta`, for the section's chat later.
+//
+// Arrows attach to shapes by block id, which the server only assigns when
+// the shapes are saved, so the arrows are built afterwards from those ids.
+
+// How each kind of section looks: a color from the canvas palette (a deep
+// line and a pale fill of the same hue), so a diagram reads at a glance and
+// stays editable from the properties panel.
+export const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill" | "strokeStyle">> = {
+  frontend: { stroke: "blue", fill: "blue", strokeStyle: "solid" },
+  backend: { stroke: "green", fill: "green", strokeStyle: "solid" },
+  service: { stroke: "yellow", fill: "yellow", strokeStyle: "solid" },
+  db: { stroke: "red", fill: "red", strokeStyle: "solid" },
+  infra: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "solid" },
+  // something the code calls but doesn't own: dashed and unfilled
+  external: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "dashed" },
+  // the people who use it: plain, in the text color
+  user: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "solid" },
+};
+
+// A diagram's tiles are drawn by hand, the way the canvas's Sloppy line
+// draws: loose, wobbly lines, fills in pen strokes (Stripes) and handwritten
+// names. Its arrows stay precise, so the connections read cleanly.
+const SKETCH = { roughness: 2, fillStyle: "stripes" as const };
+
+// How a diagram's arrows are drawn: quieter than its boxes.
+const ARROW_OPACITY = 65;
+const ARROW_LABEL_SIZE = 12;
+
+// What every new block needs besides its content (see RestorePayload).
+const BLOCK_DEFAULTS = { language: "javascript", link: null, wrapWidth: null, fontSize: null, color: null };
+
+export interface PlacedShape {
+  sectionId: string;
+  block: RestorePayload;
+}
+
+export interface DiagramBlocks {
+  // parents before children, so frames end up behind what's in them
+  shapes: PlacedShape[];
+  // The arrows, given each section's saved block id. An edge whose shapes
+  // didn't both save is left out.
+  arrows(blockIdOf: ReadonlyMap<string, string>): RestorePayload[];
+  // where the whole diagram sits on the canvas
+  bounds: { x: number; y: number; w: number; h: number };
+}
+
+export interface DiagramOptions {
+  // the repo and commit the model was read from: each box keeps it, so its
+  // details card can link its files to GitHub
+  repo?: { url: string; commitSha: string };
+  // the hand-drawn wobble's seed for each shape and arrow (fixed in tests)
+  seed?: () => number;
+}
+
+// The blocks for a laid-out architecture, with the diagram's top-left corner
+// at `origin` (canvas coordinates).
+export function diagramBlocks(
+  model: ArchitectureModel,
+  layout: ArchitectureLayout,
+  origin: Point,
+  { repo, seed = newSeed }: DiagramOptions = {},
+): DiagramBlocks {
+  const sections = new Map(model.sections.map((s) => [s.id, s]));
+  const at = (p: Point): Point => ({ x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) });
+
+  // where each section's box is on the canvas, as arrows attach to it
+  const boxes = new Map<string, ShapeBox>();
+  const shapes: PlacedShape[] = [];
+  // what an arrow's label shouldn't sit on: every box, and each group's
+  // title band (the rest of a group is open space between its shapes)
+  const obstacles: Rect[] = [];
+  for (const box of layout.boxes) {
+    const section = sections.get(box.id);
+    if (!section) continue;
+    const { x, y } = at(box);
+    boxes.set(box.id, { x, y, w: box.w, h: box.h, kind: box.kind });
+    obstacles.push({ x, y, w: box.w, h: box.isGroup ? GROUP_HEADER : box.h });
+    if (box.label) obstacles.push({ ...at(box.label), w: box.label.w, h: box.label.h });
+    const look = KIND_STYLE[section.kind] ?? KIND_STYLE.infra;
+    const shape: ShapeData = {
+      ...DEFAULT_STYLE,
+      ...SKETCH,
+      ...look,
+      // A section is a tile: its kind's icon, its name underneath. A group
+      // is a frame around its sections: its color's outline, with nothing
+      // over the tiles inside and its title at the top.
+      ...(box.isGroup ? { fill: TRANSPARENT, labelAlign: "top" as const } : { labelAlign: "below" as const }),
+      kind: box.kind,
+      w: box.w,
+      h: box.h,
+      label: section.title,
+      seed: seed(),
+      meta: { sectionId: section.id, summary: section.summary, files: section.files, kind: section.kind, ...(repo && { repo }) },
+      group: section.parentId ?? null,
+    };
+    shapes.push({ sectionId: section.id, block: { type: "shape", content: serializeShape(shape), x, y, width: box.w, ...BLOCK_DEFAULTS } });
+  }
+
+  function arrows(blockIdOf: ReadonlyMap<string, string>): RestorePayload[] {
+    const out: RestorePayload[] = [];
+    const labels: Rect[] = [];
+    for (const edge of layout.edges) {
+      const from = boxes.get(edge.from);
+      const to = boxes.get(edge.to);
+      const fromId = blockIdOf.get(edge.from);
+      const toId = blockIdOf.get(edge.to);
+      if (!from || !to || !fromId || !toId) continue;
+      const bends = edge.bends.map(at);
+      // Ends on the boxes' borders, the way the canvas puts them
+      // (resolveArrow): an elbow arrow's straight across from its bends, so
+      // the arrow is drawn the same before and after anything moves.
+      const elbow = bends.length > 0;
+      const start = elbow ? elbowAnchor(from, bends[0]) : anchorPoint(from, shapeCenter(to));
+      const end = elbow ? elbowAnchor(to, bends[bends.length - 1]) : anchorPoint(to, shapeCenter(from));
+      const path = [start, ...bends, end];
+      const points = path.map((p) => ({ x: Math.round(p.x - start.x), y: Math.round(p.y - start.y) }));
+      const arrow: ArrowData = {
+        ...DEFAULT_ARROW,
+        stroke: AUTO,
+        // Connections recede behind the boxes: softer lines and smaller
+        // labels, brought to full strength when they're part of the selected
+        // box's flow (index.css [data-flow]).
+        opacity: ARROW_OPACITY,
+        fontSize: ARROW_LABEL_SIZE,
+        points,
+        fromId,
+        toId,
+        ...(elbow && { elbow: true }),
+        seed: seed(),
+      };
+      if (edge.label) {
+        arrow.label = edge.label;
+        arrow.labelAt = placeLabel(path, labelSize(edge.label, shapeLabelSize(arrow)), [...obstacles, ...labels], labels);
+      }
+      const xs = points.map((p) => p.x);
+      out.push({
+        type: "arrow",
+        content: serializeArrow(arrow),
+        x: Math.round(start.x),
+        y: Math.round(start.y),
+        width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+        ...BLOCK_DEFAULTS,
+      });
+    }
+    return out;
+  }
+
+  return { shapes, arrows, bounds: { ...at({ x: 0, y: 0 }), w: layout.width, h: layout.height } };
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// Where along its arrow a label goes: the middle if that's clear, else the
+// nearest clear spot stepping out toward the ends, else the spot that
+// overlaps least. The label's box is added to `placed`.
+const LABEL_SPOTS = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8];
+
+function placeLabel(path: Point[], size: { w: number; h: number }, avoid: Rect[], placed: Rect[]): number {
+  let best = { at: 0.5, overlap: Infinity, box: undefined as Rect | undefined };
+  for (const at of LABEL_SPOTS) {
+    const c = pointAlong(path, at);
+    const box = { x: c.x - size.w / 2, y: c.y - size.h / 2, w: size.w, h: size.h };
+    const overlap = avoid.reduce((sum, r) => sum + overlapArea(box, r), 0);
+    if (overlap < best.overlap) best = { at, overlap, box };
+    if (overlap === 0) break;
+  }
+  if (best.box) placed.push(best.box);
+  return best.at;
+}
+
+function overlapArea(a: Rect, b: Rect) {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+// A label's size as the canvas draws it (ArrowNode): monospace, in a tag
+// with 6px padding and a 1px edge, wrapping at 240px; with a few px of room
+// around it.
+const LABEL_MAX_WIDTH = 240;
+const LABEL_CHROME_W = 2 * 6 + 2;
+const LABEL_CHROME_H = 2 * 1 + 2;
+export function labelSize(label: string, fontSize: number) {
+  const charW = fontSize * 0.6;
+  const inner = LABEL_MAX_WIDTH - LABEL_CHROME_W;
+  const lines = Math.max(1, Math.ceil((label.length * charW) / inner));
+  return { w: Math.min(inner, label.length * charW) + LABEL_CHROME_W + 6, h: lines * fontSize * 1.25 + LABEL_CHROME_H + 6 };
+}
+
+// The zoom and pan that show the whole diagram, with a margin: no closer
+// than 100%, no further than the canvas allows, in the zoom buttons' steps.
+// `right`: screen pixels on the right kept clear (for the panels there).
+export function viewToFit(
+  bounds: { x: number; y: number; w: number; h: number },
+  screen: { width: number; height: number },
+  margin = 80,
+  right = 0,
+): { scale: number; offset: Point } {
+  const width = screen.width - right;
+  const fit = Math.min((width - 2 * margin) / bounds.w, (screen.height - 2 * margin) / bounds.h, 1);
+  const scale = Math.max(0.2, Math.floor(fit * 10) / 10);
+  const center = { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
+  return { scale, offset: { x: width / 2 - center.x * scale, y: screen.height / 2 - center.y * scale } };
+}
+
+export interface IntroSchedule {
+  // ms after the shapes appear, in the order given
+  shapeDelays: number[];
+  arrowDelays: number[];
+  // when the last one has finished
+  totalMs: number;
+}
+
+// How long a block's build-in takes (the intro-in / intro-trace animations
+// in index.css), and how long the whole diagram may spread over: a large
+// diagram builds faster per block, a small one at an easy pace.
+const INTRO_BLOCK_MS = 600;
+const SHAPES_SPREAD_MS = 1400;
+const ARROWS_SPREAD_MS = 700;
+
+// The order a new diagram builds itself in: boxes left to right (top to
+// bottom within a column, a frame before what's inside it), then the
+// arrows, also left to right, once the boxes are there.
+export function introSchedule(
+  shapes: readonly { x: number; y: number }[],
+  arrows: readonly { x: number; y: number }[],
+): IntroSchedule {
+  const order = (blocks: readonly { x: number; y: number }[]) =>
+    blocks.map((b, i) => ({ b, i })).sort((p, q) => p.b.x - q.b.x || p.b.y - q.b.y || p.i - q.i);
+  const spread = (blocks: readonly { x: number; y: number }[], total: number, start: number) => {
+    const step = blocks.length > 1 ? Math.min(90, total / (blocks.length - 1)) : 0;
+    const delays: number[] = new Array(blocks.length);
+    order(blocks).forEach(({ i }, rank) => (delays[i] = Math.round(start + rank * step)));
+    return delays;
+  };
+  const shapeDelays = spread(shapes, SHAPES_SPREAD_MS, 0);
+  const arrowsStart = (shapes.length ? Math.max(...shapeDelays) : 0) + 250;
+  const arrowDelays = spread(arrows, ARROWS_SPREAD_MS, arrowsStart);
+  const last = Math.max(0, ...shapeDelays, ...arrowDelays);
+  return { shapeDelays, arrowDelays, totalMs: last + INTRO_BLOCK_MS };
+}

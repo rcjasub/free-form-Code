@@ -75,3 +75,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_client_id ON blocks(canvas_id, clie
 -- a text block's color (right-click > properties panel); NULL means the
 -- theme's default text color. Safe to re-run.
 ALTER TABLE blocks ADD COLUMN IF NOT EXISTS color VARCHAR(32);
+
+-- AI architecture diagrams: the model the AI drew a canvas's diagram from
+-- (sections, edges; the shape is architecture.schema.ts), and the repo and
+-- commit it was read from. Later steps use it as context: a section's chat
+-- needs the whole model and which files belong to the section, which the
+-- diagram's shapes alone don't hold. Each generation is a new row, so the
+-- latest is the current one; older ones are pruned (models/architectures.ts).
+-- created_by is who asked for it; it outlives them, since the canvas may be
+-- someone else's. Safe to re-run.
+CREATE TABLE IF NOT EXISTS architectures (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  canvas_id  UUID NOT NULL REFERENCES canvases(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  repo_url   TEXT NOT NULL CHECK (length(repo_url) <= 500),
+  commit_sha CHAR(40) NOT NULL CHECK (commit_sha ~ '^[0-9a-f]{40}$'),
+  model      JSONB NOT NULL CHECK (jsonb_typeof(model) = 'object'),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_architectures_canvas ON architectures(canvas_id, created_at DESC);

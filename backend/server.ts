@@ -17,6 +17,7 @@ import canvasRoutes from "./routes/canvas";
 import blockRoutes from "./routes/blocks";
 import runRoutes from "./routes/run";
 import authRoutes from "./routes/auth";
+import architectureRoutes from "./routes/architecture";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,6 +44,7 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/canvases", canvasRoutes);
 app.use("/api/canvases/:id/blocks", blockRoutes);
+app.use("/api/canvases/:id/architecture", architectureRoutes);
 app.use("/api/run", runRoutes);
 
 // create the http server manually so socket.io and express can share the same port

@@ -7,7 +7,7 @@ import LinkBadge from "./LinkBadge";
 import LabelEditor from "./LabelEditor";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { DRAG_SYNC_INTERVAL_MS } from "../lib/boxHandles";
-import { MAX_LABEL_LENGTH, resolveArrow, serializeArrow, shapeLabelSize, type ArrowData, type ShapeBox } from "../lib/shapes";
+import { MAX_LABEL_LENGTH, pointAlong, resolveArrow, serializeArrow, shapeLabelSize, type ArrowData, type ShapeBox } from "../lib/shapes";
 import { liveBox, useLiveKey } from "../lib/liveShapes";
 import { themeColor } from "../lib/colors";
 import { arrowPaint } from "../lib/roughPaths";
@@ -48,6 +48,16 @@ interface Props {
   isMouseDown: React.RefObject<boolean>;
   isDark: boolean;
   zIndex: number;
+  // a new AI diagram building itself in: when this arrow's turn comes, in ms
+  introDelay?: number;
+  // runs with moving dashes in its direction (an AI diagram's selected box)
+  flowing?: boolean;
+  // an AI diagram's arrow with nothing lit: its label shows only on hover,
+  // so a busy diagram isn't covered in text
+  quietLabel?: boolean;
+  // an AI diagram's arrow between two boxes in the same group, with neither
+  // lit: hidden, so a group reads as its parts rather than their wiring
+  tucked?: boolean;
 }
 
 // The arrow redrawn from where its shapes are right now, while one of them is
@@ -112,6 +122,10 @@ export default React.memo(function ArrowNode({
   isMouseDown,
   isDark,
   zIndex,
+  introDelay,
+  flowing,
+  quietLabel,
+  tucked,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
@@ -134,10 +148,14 @@ export default React.memo(function ArrowNode({
   const canInteract = mode === "select" || mode === "text";
   const last = pts.length - 1;
 
+  // where its own position says (a generated diagram's arrows), or else
+  // the middle: of the line, or a bent arrow's middle point
   const labelAt =
-    pts.length === 2
-      ? { x: (local[0].x + local[1].x) / 2, y: (local[0].y + local[1].y) / 2 }
-      : local[Math.floor(last / 2)];
+    arrow.labelAt !== undefined
+      ? pointAlong(local, arrow.labelAt)
+      : pts.length === 2
+        ? { x: (local[0].x + local[1].x) / 2, y: (local[0].y + local[1].y) / 2 }
+        : local[Math.floor(last / 2)];
 
   function handleDragMouseDown(e: React.MouseEvent) {
     const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
@@ -234,20 +252,25 @@ export default React.memo(function ArrowNode({
     }
   }
 
-  // Like a shape's: the stroke color, sized from the panel, in the font that
-  // goes with the line style. Behind it, the canvas color hides the line.
+  // A small rounded tag on the line: the canvas color hides the line behind
+  // it, and a faint edge keeps it one readable unit where lines cross.
+  // Its own width (up to the max), not what's left of the arrow's box: a
+  // short arrow would otherwise squeeze it to a letter per line.
   const labelStyle: React.CSSProperties = {
     left: labelAt.x,
     top: labelAt.y,
+    width: "max-content",
     maxWidth: LABEL_MAX_WIDTH,
     color: themeColor(arrow.stroke, isDark),
     background: isDark ? "#121212" : "#ffffff",
+    border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)"}`,
+    borderRadius: 6,
     fontSize: shapeLabelSize(arrow),
     lineHeight: 1.25,
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
     textAlign: "center",
-    padding: "1px 4px",
+    padding: "1px 6px",
   };
   const labelFont = arrow.roughness > 0 ? "font-canvas" : "font-mono";
 
@@ -255,8 +278,10 @@ export default React.memo(function ArrowNode({
     <div
       ref={containerRef}
       data-node-id={id}
-      className="absolute outline-none"
+      data-flow={flowing || undefined}
+      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}${quietLabel ? " arrow-quiet" : ""}${tucked ? " arrow-tucked" : ""}`}
       style={{
+        ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: x + minX,
         top: y + minY,
         width,
@@ -283,7 +308,7 @@ export default React.memo(function ArrowNode({
             onDoubleClick={startEditing}
           />
         )}
-        <PaintPaths paint={paint} />
+        <PaintPaths paint={paint} intro={introDelay !== undefined} />
       </svg>
 
       {editing ? (
@@ -297,7 +322,7 @@ export default React.memo(function ArrowNode({
         arrow.label && (
           // clicking or dragging the label is clicking or dragging the arrow
           <div
-            className={`absolute -translate-x-1/2 -translate-y-1/2 select-none ${labelFont}`}
+            className={`arrow-label absolute -translate-x-1/2 -translate-y-1/2 select-none ${labelFont}`}
             style={{
               ...labelStyle,
               pointerEvents: mode === "draw" ? "none" : "auto",

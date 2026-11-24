@@ -6,11 +6,13 @@ import type { DrawIn } from "../hooks/useSnapGhosts";
 // `drawIn`: a pen stroke just snapped into this shape, so it appears the way
 // a snapped drawing does (useSnapGhosts): its outline traces itself in and
 // its fill fades in.
-export default function PaintPaths({ paint, clipId, drawIn }: { paint: Paint[]; clipId?: string; drawIn?: DrawIn }) {
+// `intro`: an AI diagram building itself in (the .intro-in around it sets
+// the timing): the outline traces itself in.
+export default function PaintPaths({ paint, clipId, drawIn, intro }: { paint: Paint[]; clipId?: string; drawIn?: DrawIn; intro?: boolean }) {
   return (
     <>
       {paint.map((p, i) => {
-        const trace = drawIn === "trace" && !p.isFill;
+        const trace = (drawIn === "trace" || intro) && !p.isFill;
         return (
           <path
             key={i}
@@ -23,7 +25,8 @@ export default function PaintPaths({ paint, clipId, drawIn }: { paint: Paint[]; 
             clipPath={clipId && p.isFill ? `url(#${clipId})` : undefined}
             // pathLength=1 lets the trace animation draw it as 0 → 1
             pathLength={trace ? 1 : undefined}
-            className={trace ? "snap-draw" : drawIn ? "snap-brighten" : undefined}
+            className={intro ? (trace ? "intro-trace" : undefined) : trace ? "snap-draw" : drawIn ? "snap-brighten" : undefined}
+            data-arrow-head={p.isHead || undefined}
             strokeLinecap="round"
             strokeLinejoin="round"
             style={{ pointerEvents: "none" }}

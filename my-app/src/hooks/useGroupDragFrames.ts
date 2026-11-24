@@ -2,8 +2,10 @@ import { useCallback, useRef, type RefObject } from "react";
 import { pauseGlide, resumeGlide } from "../lib/glide";
 import { clearLive, setLiveMany, type LiveBox } from "../lib/liveShapes";
 import { parseArrow } from "../lib/shapes";
+import { movingWith } from "../lib/containment";
 
-// Keeps a multi-selection together while one of its blocks is dragged.
+// Keeps a multi-selection (or a group frame and what's inside it) together
+// while one of its blocks is dragged.
 //
 // The dragged block moves its own element every frame, but the rest only
 // moved when the page's state caught up (every 40ms), and then glided there
@@ -46,10 +48,9 @@ export function useGroupDragFrames({
     (id: string, x: number, y: number, done = false) => {
       let s = session.current;
       if (!s || s.id !== id) {
-        const sel = selectedIdsRef.current ?? [];
-        const moving = new Set(sel.length >= 2 && sel.includes(id) ? sel : [id]);
-        moving.delete(id);
         const nodes = nodesRef.current ?? [];
+        const moving = new Set(movingWith(id, selectedIdsRef.current ?? [], nodes));
+        moving.delete(id);
         const dragged = nodes.find((n) => n.id === id);
         if (!dragged) return;
         const followers: Follower[] = [];

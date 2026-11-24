@@ -9,11 +9,35 @@ import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
 import { MAX_LABEL_LENGTH, heightForLabel, labelBox, parseShape, serializeShape, shapeLabelSize, type ShapeData } from "../lib/shapes";
-import { TRANSPARENT, themeColor } from "../lib/colors";
+import { AUTO, TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
+import { KIND_ICONS } from "../lib/kindIcons";
+import type { StartDragAssist } from "../hooks/useDragAssist";
 
 const MIN_SIZE = 16;
+// a frame's title starts this much further in than a centered label's box
+const TITLE_INDENT = 6;
+
+// An AI diagram's box shows what kind of part it is (lib/kindIcons): a small
+// icon in its corner, or before a frame's title, in the box's own color.
+const ICON_SIZE = 15;
+// room the icon takes before a frame's title
+const TITLE_ICON_ROOM = ICON_SIZE + 6;
+// A tile (labelAlign "below"): its icon fills this share of it, and its name
+// sits this far under it, free to be wider than the tile by this much a side.
+const TILE_ICON_SHARE = 0.45;
+// a diamond's middle is narrower, so its icon is smaller
+const DIAMOND_ICON_SHARE = 0.36;
+const TILE_LABEL_GAP = 8;
+// A frame (labelAlign "top") is grabbed by its title band and its edges;
+// clicks anywhere else inside it reach what's in it, or the canvas. And it
+// stays behind every other shape, even when selected (which brings a block
+// to the front), so it never covers what it holds.
+const FRAME_GRIP_TOP = 36;
+const FRAME_GRIP_EDGE = 8;
+const FRAME_BELOW = 100_000;
+const TILE_LABEL_SPILL = 48;
 const round = (n: number) => Math.round(n * 100) / 100;
 
 interface Props {
@@ -25,6 +49,9 @@ interface Props {
   // every frame of a drag of this block, and once more (done) when it's let
   // go: lets the rest of a multi-selection move in step with it
   onDragFrame?: (id: string, x: number, y: number, done?: boolean) => void;
+  // lines a dragged shape up with the others and drops it into groups
+  // (hooks/useDragAssist)
+  dragAssist?: StartDragAssist;
   onMarkErase: (id: string) => void;
   // Resizing (throttled, then once more with done=true) and label edits both
   // hand back the whole new content. Omitted for viewers who can't edit.
@@ -47,6 +74,10 @@ interface Props {
   // a pen stroke that just snapped into this shape: it draws itself in
   // (useSnapGhosts), the way a snapped drawing does
   drawIn?: DrawIn;
+  // a new AI diagram building itself in: when this box's turn comes, in ms
+  introDelay?: number;
+  // the box a playing flow's step reaches: it pulses (FlowsPanel)
+  flowTarget?: boolean;
 }
 
 // A rectangle, ellipse or diamond with a centered label — the box of an
@@ -59,6 +90,7 @@ export default React.memo(function ShapeNode({
   content,
   onMove,
   onDragFrame,
+  dragAssist,
   onMarkErase,
   onReshape,
   editing = false,
@@ -73,6 +105,8 @@ export default React.memo(function ShapeNode({
   isDark,
   zIndex,
   drawIn,
+  introDelay,
+  flowTarget,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shape = useMemo(() => parseShape(content), [content]);
@@ -91,7 +125,8 @@ export default React.memo(function ShapeNode({
   function commitLabel(typed: string, height: number) {
     onLabelDone?.(id);
     const label = typed.trim().slice(0, MAX_LABEL_LENGTH);
-    const fits = heightForLabel(shape.kind, height);
+    // a tile's name is under it, so the tile keeps its size
+    const fits = shape.labelAlign === "below" ? 0 : heightForLabel(shape.kind, height);
     const h = label && fits > shape.h ? fits : shape.h;
     if (label !== shape.label || h !== shape.h) reshape({ ...shape, label, h }, x, y, true);
   }
@@ -150,10 +185,15 @@ export default React.memo(function ShapeNode({
     const drag = dragFrom({ x, y }, { x: e.clientX, y: e.clientY }, zoomOf(containerRef.current));
     let lastSync = 0;
     let latest = { x, y };
+    let moved = false;
+    const assist = dragAssist?.(id);
     pauseGlide(containerRef.current);
 
     function onMouseMove(mv: MouseEvent) {
-      latest = drag(mv);
+      const to = drag(mv);
+      moved = true;
+      // Ctrl or Alt held: no snapping
+      latest = assist ? assist.place(to.x, to.y, mv.ctrlKey || mv.altKey || mv.metaKey) : to;
       onDragFrame?.(id, latest.x, latest.y);
       if (containerRef.current) {
         containerRef.current.style.left = `${latest.x}px`;
@@ -170,6 +210,8 @@ export default React.memo(function ShapeNode({
       window.removeEventListener("mouseup", onMouseUp);
       onMove(id, latest.x, latest.y);
       onDragFrame?.(id, latest.x, latest.y, true);
+      // a click (no drag) changes nothing
+      if (moved) assist?.drop(latest.x, latest.y);
       resumeGlide(containerRef.current);
     }
     const stopDrag = trackDrag(e.nativeEvent, onMouseMove);
@@ -196,18 +238,25 @@ export default React.memo(function ShapeNode({
   const labelColor = themeColor(shape.stroke, isDark);
   const labelFont = shape.roughness > 0 ? "font-canvas" : "font-mono";
   const area = labelBox(shape.kind, w, h);
+  const asTitle = shape.labelAlign === "top";
+  const asTile = shape.labelAlign === "below";
+  const halo = `0 0 3px ${isDark ? "#121212" : "#ffffff"}, 0 0 2px ${isDark ? "#121212" : "#ffffff"}`;
+  const KindIcon = shape.meta?.kind ? KIND_ICONS[shape.meta.kind] : null;
 
   return (
     <div
       ref={containerRef}
       data-node-id={id}
-      className="absolute group outline-none"
+      data-flow-target={flowTarget || undefined}
+      className={`absolute group outline-none${introDelay !== undefined ? " intro-in" : ""}`}
       style={{
+        ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: shown.x,
         top: shown.y,
         width: w,
         height: h,
-        zIndex,
+        zIndex: asTitle ? zIndex - FRAME_BELOW : zIndex,
+        pointerEvents: asTitle ? "none" : undefined,
         opacity: (pendingErase ? 0.3 : 1) * (shape.opacity / 100),
         outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: BOX_PAD,
@@ -224,6 +273,15 @@ export default React.memo(function ShapeNode({
     >
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
 
+      {asTitle && (
+        <>
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, right: 0, top: 0, height: FRAME_GRIP_TOP }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, top: 0, bottom: 0, width: FRAME_GRIP_EDGE }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ right: 0, top: 0, bottom: 0, width: FRAME_GRIP_EDGE }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, right: 0, bottom: 0, height: FRAME_GRIP_EDGE }} />
+        </>
+      )}
+
       {bindHighlight && (
         <div
           className="absolute rounded-lg pointer-events-none"
@@ -237,28 +295,65 @@ export default React.memo(function ShapeNode({
             <path d={shapeClipPath(shape.kind, w, h, shape.edges)} />
           </clipPath>
         </defs>
-        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} />
+        <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} intro={introDelay !== undefined} />
       </svg>
 
+      {KindIcon && asTile && (
+        <KindIcon
+          aria-hidden
+          size={Math.round(Math.min(w, h) * (shape.kind === "diamond" ? DIAMOND_ICON_SHARE : TILE_ICON_SHARE))}
+          strokeWidth={1.75}
+          className="absolute"
+          // in the theme's text color (white on the dark canvas), like the
+          // app's own icons; the tile's color is in its outline and fill
+          style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: themeColor(AUTO, isDark), pointerEvents: "none" }}
+        />
+      )}
+      {KindIcon && !asTile && (
+        <KindIcon
+          aria-hidden
+          size={ICON_SIZE}
+          strokeWidth={2}
+          className="absolute"
+          style={{
+            // a frame's goes before its title; a box's in its corner
+            left: asTitle ? area.left + TITLE_INDENT : 7,
+            top: asTitle ? area.top + 3 : 7,
+            color: labelColor,
+            opacity: 0.9,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
       {/* The label: centered in the shape, wrapping at its width. While it's
-          typed in it can run past the bottom; saving grows the shape to fit. */}
+          typed in it can run past the bottom; saving grows the shape to fit.
+          A frame's label (labelAlign "top") is a bold title at its top left
+          instead, clear of the shapes inside it. */}
       <div
-        className={`absolute flex items-center justify-center text-center ${labelFont} ${editing ? "" : "select-none"}`}
+        className={`absolute flex ${asTitle ? "items-start justify-start text-left font-bold" : asTile ? "items-start justify-center text-center font-medium" : "items-center justify-center text-center"} ${asTile && shape.roughness === 0 ? "font-sans" : labelFont} ${editing ? "" : "select-none"}`}
         style={{
-          left: area.left,
-          right: area.left,
-          top: area.top,
-          bottom: area.top,
-          color: labelColor,
+          // a tile's name: under it, in the text color, and a little wider
+          ...(asTile
+            ? { left: -TILE_LABEL_SPILL, right: -TILE_LABEL_SPILL, top: h + TILE_LABEL_GAP, color: themeColor(AUTO, isDark), textShadow: halo }
+            : {
+                left: asTitle ? area.left + TITLE_INDENT + (KindIcon ? TITLE_ICON_ROOM : 0) : area.left,
+                right: area.left,
+                top: area.top,
+                bottom: area.top,
+                color: labelColor,
+                // a halo in the canvas color, so hatch lines don't run through the text
+                textShadow: !patterned ? undefined : halo,
+              }),
           fontSize: shapeLabelSize(shape),
           lineHeight: 1.25,
-          // a halo in the canvas color, so hatch lines don't run through the text
-          textShadow: !patterned ? undefined : `0 0 3px ${isDark ? "#121212" : "#ffffff"}, 0 0 2px ${isDark ? "#121212" : "#ffffff"}`,
           whiteSpace: "pre-wrap",
           overflowWrap: "anywhere",
           overflow: editing ? "visible" : "hidden",
-          // clicks go through to the shape: the label moves and selects with it
-          pointerEvents: editing ? "auto" : "none",
+          // clicks go through to the shape: the label moves and selects with
+          // it. A tile's name, outside the tile, takes clicks itself, which
+          // reach the tile all the same.
+          pointerEvents: editing || asTile ? "auto" : "none",
         }}
       >
         {editing ? <LabelEditor initial={shape.label} onDone={commitLabel} /> : shape.label}
@@ -275,7 +370,7 @@ export default React.memo(function ShapeNode({
             <div
               key={handle}
               onMouseDown={(e) => handleResizeMouseDown(e, handle)}
-              className={corner ? "node-handle absolute rounded-sm border z-10" : "node-handle absolute"}
+              className={corner ? "node-handle absolute pointer-events-auto rounded-sm border z-10" : "node-handle absolute pointer-events-auto"}
               style={{
                 // centered on the outline, the same size on screen at any zoom
                 left: handleEdge(-BOX_PAD + (fx === 0.5 ? 0 : fx * boxW), HANDLE_SIZE),

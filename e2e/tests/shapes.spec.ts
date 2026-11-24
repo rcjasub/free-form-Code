@@ -34,6 +34,27 @@ test("typing in a shape gives it a label that moves with it", async ({ page }) =
   await expect(block(page, shape)).toContainText("API server");
 });
 
+test("a dragged shape lines up with one nearby, with no line drawn to show it", async ({ page }) => {
+  const first = await drawRectangle(page, CANVAS, { x: CANVAS.x + 150, y: CANVAS.y + 80 });
+  const second = await drawRectangle(page, { x: CANVAS.x + 300, y: CANVAS.y + 200 }, { x: CANVAS.x + 420, y: CANVAS.y + 260 });
+  await page.keyboard.press("v");
+  await page.mouse.click(EMPTY.x, EMPTY.y);
+  const target = await savedPosition(page, first);
+  const start = await savedPosition(page, second);
+
+  // drag the second so its left edge ends 4px off the first's
+  const box = await boxOf(page, second);
+  const dx = target.left + 4 - start.left;
+  await page.mouse.move(box.cx, box.cy);
+  await page.mouse.down();
+  await page.mouse.move(box.cx + dx, box.cy, { steps: 8 });
+  await expect(page.locator("[data-guide]")).toHaveCount(0);
+  await page.mouse.up();
+
+  // it snapped onto the line
+  await expect.poll(() => savedPosition(page, second)).toEqual({ left: target.left, top: start.top });
+});
+
 test("undo takes back the last shape drawn", async ({ page }) => {
   const first = await drawRectangle(page, CANVAS, { x: CANVAS.x + 150, y: CANVAS.y + 80 });
   const second = await drawRectangle(page, { x: CANVAS.x + 300, y: CANVAS.y }, { x: CANVAS.x + 450, y: CANVAS.y + 80 });
@@ -54,4 +75,14 @@ test("the pen draws on top of a shape", async ({ page }) => {
   // drawing over it didn't move the shape
   const box = await boxOf(page, shape);
   expect(Math.round(box.x)).toBe(CANVAS.x);
+});
+
+test("a pattern can be picked for a shape with no fill yet, and fills it", async ({ page }) => {
+  await drawRectangle(page, CANVAS, { x: CANVAS.x + 200, y: CANVAS.y + 100 });
+  const pattern = page.getByRole("radiogroup", { name: "Pattern" });
+  // offered straight away, with nothing picked while the shape is empty
+  await expect(pattern).toBeVisible();
+  await expect(pattern.getByRole("radio", { checked: true })).toHaveCount(0);
+  await pattern.getByRole("radio", { name: "Stripes" }).click();
+  await expect(pattern.getByRole("radio", { name: "Stripes" })).toBeChecked();
 });

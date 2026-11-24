@@ -13,7 +13,19 @@ export interface SectionMeta {
   sectionId: string;
   summary: string;
   files: string[];
+  // what kind of part it is (frontend, backend, …), for its details card
+  kind?: SectionKind;
+  // the repo and commit it was read from, so its files link to GitHub
+  repo?: { url: string; commitSha: string };
 }
+
+export const SECTION_KINDS = ["frontend", "backend", "db", "service", "external", "infra", "user"] as const;
+export type SectionKind = (typeof SECTION_KINDS)[number];
+
+// Only plain GitHub repo URLs and full commit hashes: the card turns these
+// into links, so nothing else may get into an href.
+const GITHUB_REPO = /^https:\/\/github\.com\/[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 export type StrokeStyle = "solid" | "dashed" | "dotted";
 // a rectangle's or diamond's corners
@@ -52,9 +64,18 @@ export interface ShapeData extends DiagramStyle {
   label: string;
   // the label's size in px; unset means the default (shapeLabelSize)
   fontSize?: number;
+  // "top": the label sits at the top left instead of the middle, as a
+  // title, for a frame that holds other shapes (an AI diagram's group)
+  labelAlign?: "top" | "below";
   // keeps the hand-drawn wobble the same every time it's drawn (rough.js)
   seed: number;
   meta?: SectionMeta;
+  // The group (a frame's section id) this shape belongs to; null: none. A
+  // frame carries its members, not whatever it's dragged over, and a shape
+  // joins or leaves one by being dropped in or out (lib/containment).
+  // Missing on shapes from before groups were kept: a frame from then goes
+  // by what's inside it.
+  group?: string | null;
 }
 
 export interface ArrowData extends ElementStyle {
@@ -67,6 +88,14 @@ export interface ArrowData extends ElementStyle {
   label?: string;
   // the label's size in px; unset means the default (shapeLabelSize)
   fontSize?: number;
+  // where the label sits, as a share of the arrow's length from its start;
+  // unset means the middle (of a bent arrow: its middle point). Set when a
+  // diagram is generated, so labels don't land on each other.
+  labelAt?: number;
+  // a right-angled arrow (a generated diagram's): each attached end meets
+  // its box straight on, on the side facing its bend, rather than aimed at
+  // the box's center, so the first and last segments stay square
+  elbow?: boolean;
   seed: number;
 }
 
@@ -157,7 +186,16 @@ function sectionMeta(v: unknown): SectionMeta | undefined {
   const sectionId = text(m.sectionId, MAX_ID);
   if (!sectionId) return undefined;
   const files = Array.isArray(m.files) ? m.files.filter((f): f is string => typeof f === "string").slice(0, 200) : [];
-  return { sectionId, summary: text(m.summary, 4000) ?? "", files };
+  const kind = oneOf<SectionKind | "">(m.kind, SECTION_KINDS, "");
+  const repo = m.repo && typeof m.repo === "object" ? (m.repo as Json) : null;
+  const repoOk = repo && typeof repo.url === "string" && GITHUB_REPO.test(repo.url) && typeof repo.commitSha === "string" && COMMIT_SHA.test(repo.commitSha);
+  return {
+    sectionId,
+    summary: text(m.summary, 4000) ?? "",
+    files,
+    ...(kind && { kind }),
+    ...(repoOk && { repo: { url: repo.url as string, commitSha: repo.commitSha as string } }),
+  };
 }
 
 function oneOf<T extends string>(v: unknown, allowed: readonly string[], fallback: T): T {
@@ -189,6 +227,7 @@ function seed(v: unknown) {
 export function parseShape(content: string): ShapeData {
   const o = asObject(content);
   const meta = sectionMeta(o.meta);
+  const group = o.group === null ? null : text(o.group, MAX_ID);
   return {
     ...elementStyle(o),
     kind: oneOf(o.kind, SHAPE_KINDS, DEFAULT_SHAPE.kind),
@@ -200,8 +239,10 @@ export function parseShape(content: string): ShapeData {
     edges: oneOf(o.edges, EDGE_STYLES, DEFAULT_SHAPE.edges),
     label: text(o.label, MAX_LABEL) ?? "",
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
+    ...((o.labelAlign === "top" || o.labelAlign === "below") && { labelAlign: o.labelAlign }),
     seed: seed(o.seed),
     ...(meta && { meta }),
+    ...(group !== undefined && { group }),
   };
 }
 
@@ -252,7 +293,28 @@ export function parseArrow(content: string): ArrowData {
     ...(toId && { toId }),
     ...(label && { label }),
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
+    ...(isNum(o.labelAt) && { labelAt: between(o.labelAt, MIN_LABEL_AT, 1 - MIN_LABEL_AT, 0.5) }),
+    ...(o.elbow === true && { elbow: true }),
   };
+}
+
+// how close to either end a label may sit, as a share of the arrow
+const MIN_LABEL_AT = 0.1;
+
+// The point a share `t` of the way along a line through `points`.
+export function pointAlong(points: Point[], t: number): Point {
+  const lengths = points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y));
+  const total = lengths.reduce((a, b) => a + b, 0);
+  if (total === 0) return points[0];
+  let left = Math.min(Math.max(t, 0), 1) * total;
+  for (let i = 0; i < lengths.length; i++) {
+    if (left <= lengths[i] || i === lengths.length - 1) {
+      const f = lengths[i] === 0 ? 0 : Math.min(left / lengths[i], 1);
+      return { x: points[i].x + (points[i + 1].x - points[i].x) * f, y: points[i].y + (points[i + 1].y - points[i].y) * f };
+    }
+    left -= lengths[i];
+  }
+  return points[points.length - 1];
 }
 
 export function serializeArrow(arrow: ArrowData): string {
@@ -291,6 +353,31 @@ export function anchorPoint(shape: ShapeBox, toward: Point): Point {
   return { x: c.x + dx / reach, y: c.y + dy / reach };
 }
 
+// Where a right-angled arrow meets a shape: straight across from the point
+// it comes from, when that point is level with the shape (beside it) or in
+// line with it (above or below), on the shape's own outline (a rect's side,
+// an ellipse's curve, a diamond's slope); otherwise, and for a drawing's
+// outline, as anchorPoint does.
+export function elbowAnchor(shape: ShapeBox, toward: Point): Point {
+  if (shape.outline) return anchorPoint(shape, toward);
+  const { x, y, w, h, kind } = shape;
+  const c = { x: x + w / 2, y: y + h / 2 };
+  // how far the outline reaches from the center, as a share of the half
+  // width (or height), at offset t (0 center, 1 edge) along the other axis
+  const reach = (t: number) => (kind === "rect" ? 1 : kind === "ellipse" ? Math.sqrt(Math.max(0, 1 - t * t)) : Math.max(0, 1 - t));
+  const inX = toward.x >= x && toward.x <= x + w;
+  const inY = toward.y >= y && toward.y <= y + h;
+  if (inX && !inY) {
+    const r = reach(Math.abs(toward.x - c.x) / (w / 2)) * (h / 2);
+    return { x: toward.x, y: toward.y < c.y ? c.y - r : c.y + r };
+  }
+  if (inY && !inX) {
+    const r = reach(Math.abs(toward.y - c.y) / (h / 2)) * (w / 2);
+    return { x: toward.x < c.x ? c.x - r : c.x + r, y: toward.y };
+  }
+  return anchorPoint(shape, toward);
+}
+
 // Where the ray from `c` along `d` first crosses a closed outline: for each
 // edge p→q, solve c + t·d = p + u·(q − p) and keep the smallest t > 0 with
 // u in [0, 1]. Null if the ray misses (c outside an odd outline).
@@ -325,7 +412,8 @@ export function resolveArrow(arrow: ArrowData, x: number, y: number, shapes: Rea
   // what each end aims at: its neighbor point, or a bent arrow's middle
   const aimStart = abs.length > 2 ? abs[1] : to ? shapeCenter(to) : abs[last];
   const aimEnd = abs.length > 2 ? abs[last - 1] : from ? shapeCenter(from) : abs[0];
-  if (from) abs[0] = anchorPoint(from, aimStart);
-  if (to) abs[last] = anchorPoint(to, aimEnd);
+  const anchor = arrow.elbow && abs.length > 2 ? elbowAnchor : anchorPoint;
+  if (from) abs[0] = anchor(from, aimStart);
+  if (to) abs[last] = anchor(to, aimEnd);
   return { ...arrow, points: abs.map((p) => ({ x: p.x - x, y: p.y - y })) };
 }

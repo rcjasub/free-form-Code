@@ -378,8 +378,200 @@ body.canvas-panning * {
   .snap-brighten { animation: none; }
 }
 
+/* An AI diagram building itself in (useArchitectureDiagram): each block
+   fades in after its own delay (--intro-delay) while its outline traces
+   itself, frames and boxes left to right, then the arrows. "backwards"
+   holds the hidden start during the delay without pinning the end, so a
+   block's own opacity applies after. The page removes these classes once
+   it's done (the trace replaces a dashed outline's dash while it runs). */
+.intro-in {
+  animation: intro-fade 450ms ease-out var(--intro-delay, 0ms) backwards;
+}
+@keyframes intro-fade {
+  from { opacity: 0; transform: translateY(6px); }
+}
+.intro-in .intro-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: snap-draw 600ms cubic-bezier(0.4, 0, 0.2, 1) var(--intro-delay, 0ms) forwards;
+}
+
+/* The arrows of a selected AI-diagram box come to full strength (they're
+   drawn softer than the boxes) and run with moving dashes, in the
+   direction they point (the head stays solid). */
+[data-flow] {
+  opacity: 1 !important;
+}
+[data-flow] path:not([data-arrow-head]) {
+  stroke-dasharray: 8 6;
+  animation: arrow-flow 0.7s linear infinite;
+}
+@keyframes arrow-flow {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* An AI diagram's arrows, with nothing lit: their labels show on hover
+   only, so a busy diagram reads as boxes and lines first. */
+.arrow-quiet .arrow-label {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.arrow-quiet:hover .arrow-label {
+  opacity: 1;
+}
+
+/* An AI diagram's arrow inside a group, with nothing lit: out of the way
+   until one of its boxes is clicked or a flow reaches it. */
+.arrow-tucked {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* A flow step's box being reached (FlowsPanel): a soft ring that pulses. */
+[data-flow-target] {
+  border-radius: 10px;
+  animation: flow-pulse 1.4s ease-out infinite;
+}
+@keyframes flow-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(79, 180, 242, 0.55); }
+  100% { box-shadow: 0 0 0 12px rgba(79, 180, 242, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-in, .intro-in .intro-trace { animation: none; stroke-dashoffset: 0; }
+  [data-flow] path:not([data-arrow-head]) { animation: none; }
+  [data-flow-target] { animation: none; box-shadow: 0 0 0 3px rgba(79, 180, 242, 0.55); }
+}
+
 /* With several blocks selected, the box around them (SelectionBox) does the
    resizing; each block's own handles would only crowd it. */
 [data-multi-select] .node-handle {
   display: none;
+}
+
+/* Pipeline (components/Pipeline): steps as cards, links that fill in as
+   each step finishes, the running step's border spinning. Colors follow
+   the dialogs' fields: gray-100 on light, #232329 on dark, filled rather
+   than outlined. */
+.pipeline {
+  --node: #f3f4f6;
+  --text: #18181b;
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
+  /* a step waiting or done has no outline, like the dialog it sits in */
+  --edge: transparent;
+  --chip: color-mix(in srgb, var(--text) 6%, var(--node));
+  --sub: color-mix(in srgb, var(--text) 55%, transparent);
+}
+.dark .pipeline {
+  --node: #232329;
+  --text: #e7e7ea;
+}
+.pipeline-links {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.pipeline-links path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.pipeline-links .base { stroke: var(--line); }
+.pipeline-links .flow {
+  stroke: var(--accent);
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.52s cubic-bezier(0.5, 0, 0.3, 1);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+.pipeline-links .flow[data-lit] { stroke-dashoffset: 0; }
+
+.pipeline-step {
+  position: absolute;
+  width: var(--w);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: var(--node);
+  color: var(--text);
+  transition: border-color 0.35s, box-shadow 0.35s;
+}
+.pipeline-step::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--pipeline-angle), transparent 0 62%, var(--accent) 86%, #fff 92%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+@property --pipeline-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes pipeline-spin {
+  to { --pipeline-angle: 360deg; }
+}
+.pipeline-step[data-s="run"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.pipeline-step[data-s="run"]::before {
+  opacity: 1;
+  animation: pipeline-spin 1.4s linear infinite;
+}
+.pipeline-step[data-s="error"] { border-color: color-mix(in srgb, #ff3b6b 60%, transparent); }
+.pipeline-icon {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--chip);
+  color: var(--sub);
+  transition: color 0.3s, background 0.3s;
+}
+.pipeline-icon > svg { width: 14px; height: 14px; }
+.pipeline-step[data-s="run"] .pipeline-icon {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--node));
+}
+.pipeline-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid var(--node);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  transform: scale(0);
+  transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.pipeline-badge svg { width: 7px; height: 7px; }
+.pipeline-step[data-s="done"] .pipeline-badge { transform: scale(1); }
+.pipeline-step[data-s="error"] .pipeline-badge { transform: scale(1); background: #ff3b6b; }
+.pipeline-sub { color: var(--sub); transition: color 0.3s; }
+.pipeline-step[data-s="done"] .pipeline-sub { color: color-mix(in srgb, var(--text) 85%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-step[data-s="run"]::before { animation: none; opacity: 0; }
+  .pipeline-links .flow { transition: none; }
 }

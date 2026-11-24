@@ -4,8 +4,10 @@ import {
   DEFAULT_ARROW,
   DEFAULT_SHAPE,
   parseArrow,
+  pointAlong,
   parseShape,
   resolveArrow,
+  elbowAnchor,
   serializeArrow,
   serializeShape,
   type ShapeBox,
@@ -23,6 +25,33 @@ describe("parseShape", () => {
     const shape = { ...DEFAULT_SHAPE, kind: "ellipse" as const, w: 120, h: 60, fill: "#a5d8ff", label: "API", seed: 42,
       meta: { sectionId: "api", summary: "Express routes", files: ["backend/server.ts"] } };
     expect(parseShape(serializeShape(shape))).toEqual(shape);
+  });
+
+  it("finds the point a share of the way along a line, bends included", () => {
+    expect(pointAlong([{ x: 0, y: 0 }, { x: 100, y: 0 }], 0.25)).toEqual({ x: 25, y: 0 });
+    // 100 across then 100 down: halfway is the corner, three quarters is 50 down
+    const bent = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    expect(pointAlong(bent, 0.5)).toEqual({ x: 100, y: 0 });
+    expect(pointAlong(bent, 0.75)).toEqual({ x: 100, y: 50 });
+    expect(pointAlong(bent, 2)).toEqual({ x: 100, y: 100 });
+    expect(pointAlong([{ x: 5, y: 5 }, { x: 5, y: 5 }], 0.5)).toEqual({ x: 5, y: 5 });
+  });
+
+  it("keeps an arrow's label position, kept off its very ends", () => {
+    const arrow = { ...DEFAULT_ARROW, label: "SQL", labelAt: 0.3 };
+    expect(parseArrow(serializeArrow(arrow)).labelAt).toBe(0.3);
+    expect(parseArrow(JSON.stringify({ ...arrow, labelAt: 5 })).labelAt).toBe(0.9);
+    expect(parseArrow(JSON.stringify({ ...arrow, labelAt: "middle" })).labelAt).toBeUndefined();
+    expect(parseArrow(JSON.stringify(DEFAULT_ARROW)).labelAt).toBeUndefined();
+  });
+
+  it("keeps a frame's top-aligned label or a tile's label below, and drops any other alignment", () => {
+    const frame = { ...DEFAULT_SHAPE, label: "Express API", labelAlign: "top" as const };
+    expect(parseShape(serializeShape(frame))).toEqual(frame);
+    const tile = { ...DEFAULT_SHAPE, label: "Postgres", labelAlign: "below" as const };
+    expect(parseShape(serializeShape(tile))).toEqual(tile);
+    expect(parseShape(JSON.stringify({ ...DEFAULT_SHAPE, labelAlign: "<script>" })).labelAlign).toBeUndefined();
+    expect(parseShape(JSON.stringify(DEFAULT_SHAPE)).labelAlign).toBeUndefined();
   });
 
   it("falls back to the default on bad JSON or a non-object", () => {
@@ -55,6 +84,14 @@ describe("parseShape", () => {
 
   it("drops meta without a section id", () => {
     expect(parseShape(JSON.stringify({ meta: { summary: "x" } })).meta).toBeUndefined();
+  });
+
+  it("keeps a shape's group: a section id, none (null), or unknown (missing)", () => {
+    const groupOf = (group: unknown) => parseShape(JSON.stringify({ kind: "rect", group })).group;
+    expect(groupOf("api")).toBe("api");
+    expect(groupOf(null)).toBeNull();
+    expect(groupOf(undefined)).toBeUndefined();
+    expect(groupOf(7)).toBeUndefined();
   });
 });
 
@@ -137,6 +174,30 @@ describe("resolveArrow", () => {
     const r = resolveArrow(arrow({ fromId: "a" }), 50, 25, shapes);
     close(r.points[0], 50, 0);
     close(r.points[1], 300, 0); // free end untouched
+  });
+
+  it("meets the boxes straight on when it's an elbow arrow", () => {
+    // a's bottom, down to y 100, across to b's middle, down to b's top
+    const below = new Map(shapes).set("b", { x: 300, y: 200, w: 100, h: 50, kind: "rect" });
+    const points = [{ x: 0, y: 0 }, { x: 20, y: 75 }, { x: 300, y: 75 }, { x: 300, y: 200 }];
+    const r = resolveArrow({ ...arrow({ fromId: "a", toId: "b", elbow: true }), points }, 50, 25, below);
+    close(r.points[0], 20, 25); // (70, 50): a's bottom, right above the bend
+    close(r.points[3], 300, 175); // (350, 200): b's top, right below the last bend
+    // without the flag, aimed at the centers as before
+    const plain = resolveArrow({ ...arrow({ fromId: "a", toId: "b" }), points }, 50, 25, below);
+    expect(plain.points[0].x).not.toBeCloseTo(20);
+  });
+
+  it("an elbow arrow meets a circle's or diamond's outline straight on, level with its bend", () => {
+    const round = { x: 0, y: 0, w: 100, h: 100 }; // center (50, 50)
+    // level with the middle: the tip of the side
+    expect(elbowAnchor({ ...round, kind: "ellipse" }, { x: 200, y: 50 })).toEqual({ x: 100, y: 50 });
+    expect(elbowAnchor({ ...round, kind: "diamond" }, { x: -80, y: 50 })).toEqual({ x: 0, y: 50 });
+    // higher up the side, further in: where the curve or the slope is
+    const e = elbowAnchor({ ...round, kind: "ellipse" }, { x: 200, y: 20 });
+    expect(e.y).toBe(20);
+    expect(e.x).toBeCloseTo(50 + 50 * Math.sqrt(1 - 0.6 * 0.6));
+    expect(elbowAnchor({ ...round, kind: "diamond" }, { x: 200, y: 20 })).toEqual({ x: 70, y: 20 }); // on the slope from (50, 0) to (100, 50)
   });
 
   it("keeps the drawn end when its shape is gone", () => {

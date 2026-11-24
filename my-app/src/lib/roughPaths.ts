@@ -17,6 +17,8 @@ export interface Paint {
   dash?: string; // only on the outline, never on pattern lines
   isFill: boolean; // clipped to the shape (see shapeClipPath)
   opacity?: number;
+  // an arrow's head, which stays solid while its line is animated
+  isHead?: boolean;
 }
 
 const generator = rough.generator();
@@ -140,9 +142,31 @@ export function shapeClipPath(kind: ShapeKind, w: number, h: number, edges: Edge
   return rectPath(0, 0, w, h, edges);
 }
 
+// A line through `points` whose corners are curves of up to CORNER px,
+// less where a side is too short for that.
+const CORNER = 12;
+export function roundedPath(points: Point[]): string {
+  let d = `M${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [a, p, b] = [points[i - 1], points[i], points[i + 1]];
+    const inLen = Math.hypot(p.x - a.x, p.y - a.y);
+    const outLen = Math.hypot(b.x - p.x, b.y - p.y);
+    const r = Math.min(CORNER, inLen / 2, outLen / 2);
+    if (r < 0.5) {
+      d += `L${p.x} ${p.y}`;
+      continue;
+    }
+    const from = { x: p.x + ((a.x - p.x) / inLen) * r, y: p.y + ((a.y - p.y) / inLen) * r };
+    const to = { x: p.x + ((b.x - p.x) / outLen) * r, y: p.y + ((b.y - p.y) / outLen) * r };
+    d += `L${from.x} ${from.y}Q${p.x} ${p.y} ${to.x} ${to.y}`;
+  }
+  const last = points[points.length - 1];
+  return `${d}L${last.x} ${last.y}`;
+}
+
 // An arrow's line and its filled, triangular head. Points are in whatever
 // coordinates the caller draws in.
-export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed">, points: Point[], isDark: boolean): Paint[] {
+export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed" | "elbow">, points: Point[], isDark: boolean): Paint[] {
   const o = options(arrow, arrow.seed, isDark);
   const end = points[points.length - 1];
   const before = points[points.length - 2];
@@ -157,7 +181,13 @@ export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed">, 
   const base = length * Math.cos(spread);
   const stop = { x: end.x - base * Math.cos(angle), y: end.y - base * Math.sin(angle) };
   const linePoints = [...points.slice(0, -1), stop];
-  const line = toPaint(generator.linearPath(linePoints.map((p) => [p.x, p.y]), o), arrow);
+  // an elbow arrow turns its corners in a curve
+  const line = toPaint(
+    arrow.elbow && linePoints.length > 2
+      ? generator.path(roundedPath(linePoints), o)
+      : generator.linearPath(linePoints.map((p) => [p.x, p.y]), o),
+    arrow,
+  );
 
   // the head is solid even on a dashed arrow, so it still reads as a head
   const color = themeColor(arrow.stroke, isDark);
@@ -169,6 +199,6 @@ export function arrowPaint(arrow: Pick<ArrowData, keyof ElementStyle | "seed">, 
       disableMultiStroke: true,
     }),
     { ...arrow, strokeStyle: "solid" },
-  ).map((p) => ({ ...p, isFill: false }));
+  ).map((p) => ({ ...p, isFill: false, isHead: true }));
   return [...line, ...head];
 }
