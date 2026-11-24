@@ -28,6 +28,13 @@ const TITLE_ICON_ROOM = ICON_SIZE + 6;
 // sits this far under it, free to be wider than the tile by this much a side.
 const TILE_ICON_SHARE = 0.45;
 const TILE_LABEL_GAP = 8;
+// A frame (labelAlign "top") is grabbed by its title band and its edges;
+// clicks anywhere else inside it reach what's in it, or the canvas. And it
+// stays behind every other shape, even when selected (which brings a block
+// to the front), so it never covers what it holds.
+const FRAME_GRIP_TOP = 36;
+const FRAME_GRIP_EDGE = 8;
+const FRAME_BELOW = 100_000;
 const TILE_LABEL_SPILL = 48;
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -246,7 +253,8 @@ export default React.memo(function ShapeNode({
         top: shown.y,
         width: w,
         height: h,
-        zIndex,
+        zIndex: asTitle ? zIndex - FRAME_BELOW : zIndex,
+        pointerEvents: asTitle ? "none" : undefined,
         opacity: (pendingErase ? 0.3 : 1) * (shape.opacity / 100),
         outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: BOX_PAD,
@@ -262,6 +270,15 @@ export default React.memo(function ShapeNode({
       }}
     >
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
+
+      {asTitle && (
+        <>
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, right: 0, top: 0, height: FRAME_GRIP_TOP }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, top: 0, bottom: 0, width: FRAME_GRIP_EDGE }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ right: 0, top: 0, bottom: 0, width: FRAME_GRIP_EDGE }} />
+          <div data-frame-grip className="absolute pointer-events-auto" style={{ left: 0, right: 0, bottom: 0, height: FRAME_GRIP_EDGE }} />
+        </>
+      )}
 
       {bindHighlight && (
         <div
@@ -329,8 +346,10 @@ export default React.memo(function ShapeNode({
           whiteSpace: "pre-wrap",
           overflowWrap: "anywhere",
           overflow: editing ? "visible" : "hidden",
-          // clicks go through to the shape: the label moves and selects with it
-          pointerEvents: editing ? "auto" : "none",
+          // clicks go through to the shape: the label moves and selects with
+          // it. A tile's name, outside the tile, takes clicks itself, which
+          // reach the tile all the same.
+          pointerEvents: editing || asTile ? "auto" : "none",
         }}
       >
         {editing ? <LabelEditor initial={shape.label} onDone={commitLabel} /> : shape.label}
@@ -347,7 +366,7 @@ export default React.memo(function ShapeNode({
             <div
               key={handle}
               onMouseDown={(e) => handleResizeMouseDown(e, handle)}
-              className={corner ? "node-handle absolute rounded-sm border z-10" : "node-handle absolute"}
+              className={corner ? "node-handle absolute pointer-events-auto rounded-sm border z-10" : "node-handle absolute pointer-events-auto"}
               style={{
                 // centered on the outline, the same size on screen at any zoom
                 left: handleEdge(-BOX_PAD + (fx === 0.5 ? 0 : fx * boxW), HANDLE_SIZE),

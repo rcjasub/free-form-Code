@@ -302,6 +302,36 @@ test.describe("signed in", () => {
     expect((await where("Postgres")).x).toBe(db.x);
   });
 
+  test("a group is picked by its title; inside it, clicks pick its boxes", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+    await expect(page.locator(".intro-in")).toHaveCount(0);
+
+    const box = async (name: string) => (await page.locator("[data-node-id]", { hasText: new RegExp(`^${name}$`) }).boundingBox())!;
+    const card = (name: string) => page.getByRole("complementary", { name: `About ${name}` });
+    const group = await box("Shop API");
+    const orders = await box("Orders");
+
+    // the group by its title
+    await page.mouse.click(group.x + 40, group.y + 12);
+    await expect(card("Shop API")).toBeVisible();
+    // then a box inside it: the selected frame doesn't cover it
+    await page.mouse.click(orders.x + 10, orders.y + 10);
+    await expect(card("Orders")).toBeVisible();
+    // a tile's name picks the tile
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await page.getByText("Orders", { exact: true }).click();
+    await expect(card("Orders")).toBeVisible();
+    // empty space inside the group is the canvas: nothing picked
+    await page.mouse.click(group.x + group.width - 20, group.y + group.height - 20);
+    await expect(page.getByRole("complementary", { name: /^About / })).toHaveCount(0);
+  });
+
   test("arrows inside a group stay hidden until one of their boxes is clicked", async ({ page, request }) => {
     const canvasId = await openNewServerCanvas(page, request);
     const grouped = {
