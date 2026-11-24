@@ -88,7 +88,23 @@ export function focusOf(shapeId: string, nodes: readonly (BlockLike & { x: numbe
       if (toId) ids.add(toId);
     }
   }
-  for (const id of frameContents(shapeId, nodes)) ids.add(id);
+  // A group's frame: the boxes inside it, and how they connect to the rest
+  // (arrows with one end inside), but not the wiring among them, which a
+  // click on one of them shows.
+  const contents = frameContents(shapeId, nodes);
+  if (contents.length) {
+    const arrows = new Set(nodes.filter((n) => n.type === "arrow").map((n) => n.id));
+    const inside = new Set([shapeId, ...contents.filter((id) => !arrows.has(id))]);
+    for (const id of inside) ids.add(id);
+    for (const node of nodes) {
+      if (node.type !== "arrow") continue;
+      const { fromId, toId } = parseArrow(node.content);
+      if (!!fromId && inside.has(fromId) === (!!toId && inside.has(toId))) continue;
+      ids.add(node.id);
+      if (fromId) ids.add(fromId);
+      if (toId) ids.add(toId);
+    }
+  }
   return ids;
 }
 

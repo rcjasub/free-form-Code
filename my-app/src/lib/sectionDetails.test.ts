@@ -95,6 +95,22 @@ describe("focusOf", () => {
     const plain = at({ id: "p", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 400, h: 300 }) }, 100, 100);
     expect([...focusOf("p", [plain, inside])]).toEqual(["p"]);
   });
+
+  it("a group's frame keeps the arrows in and out of it, not the ones among its boxes", () => {
+    const shape = (id: string, x: number, y: number, w = 100, h = 50) => at({ id, type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w, h }) }, x, y);
+    const frame = at({ id: "g", type: "shape", content: serializeShape({ ...DEFAULT_SHAPE, w: 400, h: 300, labelAlign: "top" }) }, 100, 100);
+    const blocks = [
+      frame,
+      shape("a", 150, 160),
+      shape("b", 300, 160),
+      shape("db", 700, 160),
+      shape("far", 900, 160),
+      at(arrow("among", "a", "b")),
+      at(arrow("out", "b", "db")),
+      at(arrow("beyond", "db", "far")),
+    ];
+    expect([...focusOf("g", blocks)].sort()).toEqual(["a", "b", "db", "g", "out"]);
+  });
 });
 
 describe("kindsOnCanvas", () => {
