@@ -69,6 +69,8 @@ describe("shapes", () => {
     expect(shape("stripe")).toMatchObject({ stroke: "auto", fill: "transparent", strokeStyle: "dashed" });
     // a tile: its name under it
     expect(shape("auth")).toMatchObject({ labelAlign: "below", w: TILE, h: TILE });
+    // drawn by hand: sloppy lines, fills in pen strokes
+    expect(shape("web")).toMatchObject({ roughness: 2, fillStyle: "stripes" });
     expect(shape("api")).toMatchObject({ stroke: "green", fill: "transparent", strokeStyle: "solid", labelAlign: "top" });
   });
 });
@@ -93,8 +95,9 @@ describe("arrows", () => {
       expect(arrow.fromId).toMatch(/^block-/);
       expect(arrow.toId).toMatch(/^block-/);
       expect(arrow.points[0]).toEqual({ x: 0, y: 0 });
-      // right-angled, its ends meeting the boxes straight on
+      // right-angled, its ends meeting the boxes straight on, and precise
       expect(arrow.elbow).toBe(true);
+      expect(arrow.roughness).toBe(0);
       // Re-resolving against the shapes moves the ends by at most rounding:
       // the arrow doesn't jump the first time anything is drawn or moved.
       const resolved = resolveArrow(arrow, block.x, block.y, boxes);

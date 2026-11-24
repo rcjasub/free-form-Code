@@ -79,16 +79,16 @@ export interface Size {
 }
 
 // A section's tile, as the canvas draws it (ShapeNode, labelAlign "below"):
-// a square with its kind's icon, its name in 14px text underneath, wrapping
+// a square with its kind's icon, its name in 16px handwriting underneath, wrapping
 // at the tile's width plus TILE_LABEL_SPILL a side.
 export const TILE = 64;
-export const LABEL_FONT_SIZE = 14;
+export const LABEL_FONT_SIZE = 16;
 const TILE_LABEL_GAP = 8;
 const TILE_LABEL_SPILL = 48;
 const LABEL_LINE = LABEL_FONT_SIZE * 1.25;
-// a character's width as a share of the font size (the sans font, medium),
+// a character's width as a share of the font size (the handwriting font),
 // a little generous so a name never wraps more than planned
-const CHAR_WIDTH = 0.58;
+const CHAR_WIDTH = 0.62;
 // a group's title sits in this band at its top; its children go below
 export const GROUP_HEADER = 44;
 const GROUP_PAD = 24;

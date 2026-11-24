@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { KIND_STYLE } from "../lib/architecturePlacement";
-import { fillColor, themeColor, TRANSPARENT } from "../lib/colors";
+import { AUTO, fillColor, themeColor, TRANSPARENT } from "../lib/colors";
 import { KIND_NAMES } from "../lib/sectionDetails";
 import { KIND_ICONS } from "../lib/kindIcons";
 import type { SectionKind } from "../lib/shapes";
@@ -101,7 +101,7 @@ export default function DiagramLegend({ kinds, isDark, allLabels, onToggleLabels
                     background: look.fill === TRANSPARENT ? "transparent" : fillColor(look.fill, isDark),
                   }}
                 />
-                <Icon aria-hidden className="size-3.5 shrink-0" style={{ color: themeColor(look.stroke, isDark) }} />
+                <Icon aria-hidden className="size-3.5 shrink-0" style={{ color: themeColor(AUTO, isDark) }} />
                 {KIND_NAMES[kind]}
               </li>
             );

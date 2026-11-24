@@ -302,7 +302,9 @@ export default React.memo(function ShapeNode({
           size={Math.round(Math.min(w, h) * TILE_ICON_SHARE)}
           strokeWidth={1.75}
           className="absolute"
-          style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: labelColor, pointerEvents: "none" }}
+          // in the theme's text color (white on the dark canvas), like the
+          // app's own icons; the tile's color is in its outline and fill
+          style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: themeColor(AUTO, isDark), pointerEvents: "none" }}
         />
       )}
       {KindIcon && !asTile && (

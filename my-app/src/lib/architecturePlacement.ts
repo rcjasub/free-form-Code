@@ -41,6 +41,11 @@ export const KIND_STYLE: Record<SectionKind, Pick<DiagramStyle, "stroke" | "fill
   external: { stroke: AUTO, fill: TRANSPARENT, strokeStyle: "dashed" },
 };
 
+// A diagram's tiles are drawn by hand, the way the canvas's Sloppy line
+// draws: loose, wobbly lines, fills in pen strokes (Stripes) and handwritten
+// names. Its arrows stay precise, so the connections read cleanly.
+const SKETCH = { roughness: 2, fillStyle: "stripes" as const };
+
 // How a diagram's arrows are drawn: quieter than its boxes.
 const ARROW_OPACITY = 65;
 const ARROW_LABEL_SIZE = 12;
@@ -98,6 +103,7 @@ export function diagramBlocks(
     const look = KIND_STYLE[section.kind] ?? KIND_STYLE.infra;
     const shape: ShapeData = {
       ...DEFAULT_STYLE,
+      ...SKETCH,
       ...look,
       // A section is a tile: its kind's icon, its name underneath. A group
       // is a frame around its sections: its color's outline, with nothing
