@@ -47,7 +47,8 @@ function Segmented<T extends string | number>({
   onPick,
 }: {
   label: string;
-  value: T;
+  // null: none of the options is picked
+  value: T | null;
   options: { value: T; title: string; text: React.ReactNode }[];
   onPick: (v: T) => void;
 }) {
@@ -333,11 +334,16 @@ export default function PropertiesPanel({
         {sections.fill && (
           <Swatches label="Fill" colors={FILL_COLORS} value={value.fill} onPick={(fill) => onChange({ fill })} isDark={isDark} tint />
         )}
-        {sections.fill && value.fill !== TRANSPARENT && (
+        {/* Always offered: on a shape with no fill, picking a pattern fills
+            it too, in its line's hue (or blue, for the plain black/white
+            line), so the pattern shows straight away. */}
+        {sections.fill && (
           <Segmented
             label="Pattern"
-            value={value.fillStyle}
-            onPick={(fillStyle) => onChange({ fillStyle })}
+            value={value.fill === TRANSPARENT ? null : value.fillStyle}
+            onPick={(fillStyle) =>
+              onChange(value.fill === TRANSPARENT ? { fillStyle, fill: FILL_COLORS.includes(value.stroke) ? value.stroke : "blue" } : { fillStyle })
+            }
             options={[
               { value: "solid", title: "Solid", text: "Solid" },
               { value: "dots", title: "Dots", text: "Dots" },

@@ -76,3 +76,13 @@ test("the pen draws on top of a shape", async ({ page }) => {
   const box = await boxOf(page, shape);
   expect(Math.round(box.x)).toBe(CANVAS.x);
 });
+
+test("a pattern can be picked for a shape with no fill yet, and fills it", async ({ page }) => {
+  await drawRectangle(page, CANVAS, { x: CANVAS.x + 200, y: CANVAS.y + 100 });
+  const pattern = page.getByRole("radiogroup", { name: "Pattern" });
+  // offered straight away, with nothing picked while the shape is empty
+  await expect(pattern).toBeVisible();
+  await expect(pattern.getByRole("radio", { checked: true })).toHaveCount(0);
+  await pattern.getByRole("radio", { name: "Stripes" }).click();
+  await expect(pattern.getByRole("radio", { name: "Stripes" })).toBeChecked();
+});
