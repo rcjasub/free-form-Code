@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { isAxiosError } from "axios";
-import { Network } from "lucide-react";
-import { generateArchitecture, type AiModel, type Architecture, type DetailLevel } from "@/API/architecture";
+import { GitBranch, Network, PenTool, ShieldCheck, Sparkles } from "lucide-react";
+import { generateArchitecture, type AiModel, type Architecture, type DetailLevel, type GenerateResult } from "@/API/architecture";
+import Pipeline, { type PipelineStep } from "./Pipeline";
 
 interface Props {
   open: boolean;
@@ -74,6 +75,53 @@ export default function VisualizeRepoDialog({ open, ...props }: Props) {
 
 type Phase = "idle" | "generating" | "placing";
 
+// The server does it all in one request (read the repo, ask Claude, check
+// and save the answer), so the read is shown as done after the few seconds
+// it usually takes; the rest follow the real request.
+const READ_SECONDS = 4;
+const LINKS = [["read", "ai"], ["ai", "check"], ["check", "draw"]] as const;
+
+function progressSteps(phase: Phase, seconds: number, model: AiModel, result: GenerateResult | null): PipelineStep[] {
+  const placing = phase === "placing";
+  const reading = !placing && seconds < READ_SECONDS;
+  const sections = result?.architecture.model.sections.length ?? 0;
+  const flows = result?.architecture.model.flows?.length ?? 0;
+  const fixes = result?.warnings.length ?? 0;
+  return [
+    {
+      id: "read",
+      title: "Read the repo",
+      icon: <GitBranch />,
+      status: reading ? "run" : "done",
+      running: "Fetching from GitHub…",
+      description: "Files, stack, entry points",
+    },
+    {
+      id: "ai",
+      title: "Claude maps it",
+      icon: <Sparkles />,
+      status: placing ? "done" : reading ? "idle" : "run",
+      running: `Thinking… ${seconds}s`,
+      description: placing ? `${sections} parts, ${flows} flows` : MODELS.find((m) => m.id === model)?.name,
+    },
+    {
+      id: "check",
+      title: "Check the answer",
+      icon: <ShieldCheck />,
+      status: placing ? "done" : "idle",
+      description: placing ? (fixes ? `${fixes} fixed` : "All files real") : "Only files that exist",
+    },
+    {
+      id: "draw",
+      title: "Draw the diagram",
+      icon: <PenTool />,
+      status: placing ? "run" : "idle",
+      running: "Placing boxes…",
+      description: "Boxes and arrows you can edit",
+    },
+  ];
+}
+
 function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">) {
   const [repoUrl, setRepoUrl] = useState(() => load(URL_STORAGE));
   const [apiKey, setApiKey] = useState(() => load(KEY_STORAGE));
@@ -84,6 +132,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
   const [phase, setPhase] = useState<Phase>("idle");
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState("");
+  const [result, setResult] = useState<GenerateResult | null>(null);
   const request = useRef<AbortController | null>(null);
   const busy = phase !== "idle";
 
@@ -123,6 +172,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
         { apiKey: apiKey.trim(), githubToken: githubToken.trim() || undefined },
         controller.signal,
       );
+      setResult(result);
       setPhase("placing");
       await onDiagram(result.architecture);
       onClose();
@@ -164,125 +214,128 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
         Claude reads a GitHub repo and draws its architecture here, as boxes and arrows you can edit.
       </p>
 
-      <label className={label} htmlFor="visualize-repo-url">
-        GitHub repo
-      </label>
-      <input
-        id="visualize-repo-url"
-        autoFocus
-        value={repoUrl}
-        disabled={busy}
-        onChange={(e) => setRepoUrl(e.target.value)}
-        className={input}
-        placeholder="https://github.com/owner/repo"
-        spellCheck={false}
-      />
-
-      <span className={label}>Model</span>
-      <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Model">
-        {MODELS.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            role="radio"
-            aria-checked={model === m.id}
-            disabled={busy}
-            onClick={() => setModel(m.id)}
-            className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
-              model === m.id
-                ? "border-[#4f8cff] bg-[#4f8cff]/10"
-                : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
-            }`}
-          >
-            <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
-            <span className="block text-xs text-gray-500 dark:text-gray-400">{m.note}</span>
-          </button>
-        ))}
-      </div>
-
-      <span className={label}>Detail</span>
-      <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Detail">
-        {DETAILS.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            role="radio"
-            aria-checked={detail === d.id}
-            disabled={busy}
-            onClick={() => setDetail(d.id)}
-            className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
-              detail === d.id
-                ? "border-[#4f8cff] bg-[#4f8cff]/10"
-                : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
-            }`}
-          >
-            <span className="block text-sm font-medium text-gray-900 dark:text-white">{d.name}</span>
-            <span className="block text-xs text-gray-500 dark:text-gray-400">{d.note}</span>
-          </button>
-        ))}
-      </div>
-
-      <label className={label} htmlFor="visualize-api-key">
-        Anthropic API key
-      </label>
-      <input
-        id="visualize-api-key"
-        type="password"
-        autoComplete="off"
-        value={apiKey}
-        disabled={busy}
-        onChange={(e) => setApiKey(e.target.value)}
-        className={input}
-        placeholder="sk-ant-…"
-        spellCheck={false}
-      />
-      <p className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-        Kept in this browser only, and sent with each request; the server never stores it.
-        {apiKey && !busy && (
-          <>
-            {" "}
-            <button type="button" onClick={forgetKey} className="underline hover:text-gray-700 dark:hover:text-gray-200">
-              Forget it
-            </button>
-          </>
-        )}
-      </p>
-
-      {showToken ? (
+      {busy ? (
+        // While it's generating, the form gives way to what's happening.
+        <div role="status" className="mt-5">
+          <p className="mb-3 truncate text-xs text-gray-500 dark:text-gray-400">{repoUrl.trim()}</p>
+          <Pipeline aria-label="Progress" steps={progressSteps(phase, seconds, model, result)} edges={[...LINKS]} stepWidth={260} />
+          {phase === "generating" && <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Usually 10–30s, a bit more for a detailed diagram.</p>}
+        </div>
+      ) : (
         <>
-          <label className={label} htmlFor="visualize-github-token">
-            GitHub token <span className="font-normal text-gray-500">(optional)</span>
+          <label className={label} htmlFor="visualize-repo-url">
+            GitHub repo
           </label>
           <input
-            id="visualize-github-token"
-            type="password"
-            autoComplete="off"
-            value={githubToken}
+            id="visualize-repo-url"
+            autoFocus
+            value={repoUrl}
             disabled={busy}
-            onChange={(e) => setGithubToken(e.target.value)}
+            onChange={(e) => setRepoUrl(e.target.value)}
             className={input}
-            placeholder="ghp_… or github_pat_…"
+            placeholder="https://github.com/owner/repo"
             spellCheck={false}
           />
-          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">For private repos. Used for this request only, not kept.</p>
-        </>
-      ) : (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setShowToken(true)}
-          className="mt-3 text-xs text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-        >
-          Private repo? Add a GitHub token
-        </button>
-      )}
 
-      {busy && (
-        <p role="status" className="mt-5 text-sm text-gray-600 dark:text-gray-400">
-          {phase === "placing"
-            ? "Drawing it on the canvas…"
-            : `Reading the repo and working out its architecture… ${seconds}s (usually 10–30s)`}
-        </p>
+          <span className={label}>Model</span>
+          <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Model">
+            {MODELS.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={model === m.id}
+                disabled={busy}
+                onClick={() => setModel(m.id)}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+                  model === m.id
+                    ? "border-[#4f8cff] bg-[#4f8cff]/10"
+                    : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
+                }`}
+              >
+                <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
+                <span className="block text-xs text-gray-500 dark:text-gray-400">{m.note}</span>
+              </button>
+            ))}
+          </div>
+
+          <span className={label}>Detail</span>
+          <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Detail">
+            {DETAILS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                role="radio"
+                aria-checked={detail === d.id}
+                disabled={busy}
+                onClick={() => setDetail(d.id)}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+                  detail === d.id
+                    ? "border-[#4f8cff] bg-[#4f8cff]/10"
+                    : "border-gray-200 hover:bg-gray-50 dark:border-[#2e2e3a] dark:hover:bg-[#232329]"
+                }`}
+              >
+                <span className="block text-sm font-medium text-gray-900 dark:text-white">{d.name}</span>
+                <span className="block text-xs text-gray-500 dark:text-gray-400">{d.note}</span>
+              </button>
+            ))}
+          </div>
+
+          <label className={label} htmlFor="visualize-api-key">
+            Anthropic API key
+          </label>
+          <input
+            id="visualize-api-key"
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            disabled={busy}
+            onChange={(e) => setApiKey(e.target.value)}
+            className={input}
+            placeholder="sk-ant-…"
+            spellCheck={false}
+          />
+          <p className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+            Kept in this browser only, and sent with each request; the server never stores it.
+            {apiKey && !busy && (
+              <>
+                {" "}
+                <button type="button" onClick={forgetKey} className="underline hover:text-gray-700 dark:hover:text-gray-200">
+                  Forget it
+                </button>
+              </>
+            )}
+          </p>
+
+          {showToken ? (
+            <>
+              <label className={label} htmlFor="visualize-github-token">
+                GitHub token <span className="font-normal text-gray-500">(optional)</span>
+              </label>
+              <input
+                id="visualize-github-token"
+                type="password"
+                autoComplete="off"
+                value={githubToken}
+                disabled={busy}
+                onChange={(e) => setGithubToken(e.target.value)}
+                className={input}
+                placeholder="ghp_… or github_pat_…"
+                spellCheck={false}
+              />
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">For private repos. Used for this request only, not kept.</p>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setShowToken(true)}
+              className="mt-3 text-xs text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              Private repo? Add a GitHub token
+            </button>
+          )}
+        </>
       )}
       {error && (
         <p role="alert" className="mt-4 text-sm text-[#FF3B6B]">

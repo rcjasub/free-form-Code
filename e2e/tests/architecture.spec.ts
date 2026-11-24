@@ -104,6 +104,42 @@ test.describe("signed in", () => {
     await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
   });
 
+  test("while generating, the dialog shows each step as it runs", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    // hold the answer until the test lets it go
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    await page.route("**/api/canvases/*/architecture", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await answered;
+      const { status, body } = ok(canvasId);
+      await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    });
+
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+
+    const progress = page.getByRole("list", { name: "Progress" });
+    const step = (name: string) => progress.getByRole("listitem", { name: new RegExp(`^${name}:`) });
+    // the form gives way to the steps
+    await expect(page.getByLabel("GitHub repo")).toHaveCount(0);
+    await expect(step("Read the repo")).toHaveAccessibleName("Read the repo: running");
+    await expect(step("Claude maps it")).toHaveAccessibleName("Claude maps it: waiting");
+    await page.screenshot({ path: "test-results/pipeline-reading.png" });
+
+    // after the few seconds a read takes, Claude's step runs
+    await expect(step("Claude maps it")).toHaveAccessibleName("Claude maps it: running", { timeout: 8000 });
+    await expect(step("Read the repo")).toHaveAccessibleName("Read the repo: done");
+    await page.waitForTimeout(700); // let the link fill in for the picture
+    await page.screenshot({ path: "test-results/pipeline-thinking.png" });
+
+    answer();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+  });
+
   test("clicking a box shows what it is, its files on GitHub and what it connects to", async ({ page, request }) => {
     const canvasId = await openNewServerCanvas(page, request);
     await fakeGenerate(page, ok(canvasId));
