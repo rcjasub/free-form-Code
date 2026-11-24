@@ -1,13 +1,19 @@
 import { memo } from "react";
+import { AUTO, fillColor, themeColor } from "../lib/colors";
 
 // A sketch of a canvas for its dashboard card: where its blocks sit, drawn
 // as simple shapes (text as gray lines, code as a little editor with
-// colored lines, drawings as their strokes, images as boxes). It's fitted
+// colored lines, drawings as their strokes, images as boxes, shapes as their
+// own outline in their colors). It's fitted
 // to the blocks, so a canvas reads the same at any zoom. The items come
 // from GET /api/canvases/previews.
 
+// A shape's k (outline: rect when missing), s and f (line and fill color
+// names, as the canvas saves them) and d (dashed): see backend
+// utils/canvasPreview.ts.
 export type PreviewItem =
-  | { t: "text" | "code" | "image" | "shape"; x: number; y: number; w: number; h: number }
+  | { t: "text" | "code" | "image"; x: number; y: number; w: number; h: number }
+  | { t: "shape"; x: number; y: number; w: number; h: number; k?: "ellipse" | "diamond"; s?: string; f?: string; d?: 1 }
   | { t: "draw"; x: number; y: number; pts: [number, number][] };
 
 // syntax-like colors, so code reads as code: the code blocks' own on the
@@ -104,10 +110,20 @@ function CanvasPreview({ items, isDark }: { items: PreviewItem[]; isDark: boolea
           return <rect key={i} x={x} y={y} width={w} height={h} rx={Math.min(w, h) * 0.04} fill={imageFill} />;
         }
         if (item.t === "shape") {
-          return (
-            <rect key={i} x={x} y={y} width={w} height={h} rx={Math.min(w, h) * 0.12} fill="none" stroke={ink}
-              strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
-          );
+          // in the shape's own colors, as on the canvas (a striped or dotted
+          // fill shows as its plain tint: too fine to read on a card)
+          const look = {
+            fill: item.f ? fillColor(item.f, isDark) : "none",
+            stroke: themeColor(item.s ?? AUTO, isDark),
+            strokeWidth: 1.25,
+            strokeDasharray: item.d ? "4 3" : undefined,
+            vectorEffect: "non-scaling-stroke" as const,
+          };
+          if (item.k === "ellipse") return <ellipse key={i} cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} {...look} />;
+          if (item.k === "diamond") {
+            return <polygon key={i} points={`${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`} {...look} />;
+          }
+          return <rect key={i} x={x} y={y} width={w} height={h} rx={Math.min(w, h) * 0.12} {...look} />;
         }
         // roughly one line per 23px of text (a 14px font's line height), up to 6
         const count = Math.max(1, Math.min(6, Math.round(h / 23)));
