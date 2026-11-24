@@ -302,6 +302,48 @@ test.describe("signed in", () => {
     expect((await where("Postgres")).x).toBe(db.x);
   });
 
+  test("arrows inside a group stay hidden until one of their boxes is clicked", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    const grouped = {
+      summary: "An API.",
+      sections: [
+        { id: "api", title: "Shop API", kind: "backend", summary: "The server.", files: [], parentId: null },
+        { id: "auth", title: "Auth", kind: "backend", summary: "Sign in.", files: [], parentId: "api" },
+        { id: "orders", title: "Orders", kind: "backend", summary: "Checkout.", files: [], parentId: "api" },
+        { id: "db", title: "Postgres", kind: "db", summary: "Storage.", files: [], parentId: null },
+      ],
+      edges: [
+        { from: "auth", to: "orders", label: "checks the user" },
+        { from: "orders", to: "db", label: "SQL" },
+      ],
+      flows: [],
+    };
+    const reply = ok(canvasId);
+    await fakeGenerate(page, { ...reply, body: { ...reply.body, architecture: { ...reply.body.architecture, model: grouped } } });
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByLabel("Anthropic API key").fill(API_KEY);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(6);
+    await expect(page.locator(".intro-in")).toHaveCount(0);
+
+    const inner = page.locator("[data-node-id]", { hasText: "checks the user" });
+    const outer = page.locator("[data-node-id]", { hasText: /^SQL$/ });
+    await expect(inner).toBeHidden();
+    await expect(outer.locator("svg").first()).toBeVisible();
+
+    // clicking Auth brings its wiring back
+    const auth = (await page.locator("[data-node-id]", { hasText: /^Auth$/ }).boundingBox())!;
+    await page.mouse.click(auth.x + 10, auth.y + auth.height / 2);
+    await expect(inner.locator("svg").first()).toBeVisible();
+    await page.mouse.click(EMPTY.x, EMPTY.y);
+    await expect(inner).toBeHidden();
+
+    // or switch them all on
+    await page.getByRole("radiogroup", { name: "Inside groups" }).getByRole("radio", { name: "All" }).click();
+    await expect(inner.locator("svg").first()).toBeVisible();
+  });
+
   test("a flow plays step by step, lighting each step's boxes and arrow", async ({ page, request }) => {
     const canvasId = await openNewServerCanvas(page, request);
     await fakeGenerate(page, ok(canvasId));
@@ -315,9 +357,10 @@ test.describe("signed in", () => {
     // with nothing lit, the diagram's arrow labels wait for a hover
     const label = page.getByText("SQL", { exact: true });
     await expect(label).toHaveCSS("opacity", "0");
-    await page.getByRole("radio", { name: "All" }).click();
+    const labels = page.getByRole("radiogroup", { name: "Arrow labels" });
+    await labels.getByRole("radio", { name: "All" }).click();
     await expect(label).toHaveCSS("opacity", "1");
-    await page.getByRole("radio", { name: "On hover" }).click();
+    await labels.getByRole("radio", { name: "On hover" }).click();
     await expect(label).toHaveCSS("opacity", "0");
 
     await page.getByRole("navigation", { name: "Flows" }).getByRole("button", { name: /Placing an order/ }).click();

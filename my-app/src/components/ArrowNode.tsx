@@ -55,6 +55,9 @@ interface Props {
   // an AI diagram's arrow with nothing lit: its label shows only on hover,
   // so a busy diagram isn't covered in text
   quietLabel?: boolean;
+  // an AI diagram's arrow between two boxes in the same group, with neither
+  // lit: hidden, so a group reads as its parts rather than their wiring
+  tucked?: boolean;
 }
 
 // The arrow redrawn from where its shapes are right now, while one of them is
@@ -122,6 +125,7 @@ export default React.memo(function ArrowNode({
   introDelay,
   flowing,
   quietLabel,
+  tucked,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   // an end being dragged: drawn from here until it's saved
@@ -275,7 +279,7 @@ export default React.memo(function ArrowNode({
       ref={containerRef}
       data-node-id={id}
       data-flow={flowing || undefined}
-      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}${quietLabel ? " arrow-quiet" : ""}`}
+      className={`absolute outline-none${introDelay !== undefined ? " intro-in" : ""}${quietLabel ? " arrow-quiet" : ""}${tucked ? " arrow-tucked" : ""}`}
       style={{
         ...(introDelay !== undefined && ({ "--intro-delay": `${introDelay}ms` } as React.CSSProperties)),
         left: x + minX,

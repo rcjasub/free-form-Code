@@ -64,7 +64,7 @@ import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runO
 import { getMe, type Me } from "./API/auth";
 import { getArchitecture, type Architecture } from "./API/architecture";
 import { FlowList, FlowPlayer, type FlowPosition } from "./components/FlowsPanel";
-import { diagramArrows, playableFlows, sectionBoxes, stepView } from "./lib/flows";
+import { diagramArrows, innerArrows, playableFlows, sectionBoxes, stepView } from "./lib/flows";
 import { isLocalBlockId, isLocalCanvas, parseCanvasFile, requestPersistentStorage, toCanvasFile } from "./lib/localCanvas";
 import { moveLocalCanvasOnline, uploadKept } from "./lib/moveOnline";
 import { announceMoved } from "./hooks/useActiveTab";
@@ -1312,6 +1312,25 @@ export default function App() {
       // not remembered, that's all
     }
   }
+  // arrows inside a group are hidden until one of their boxes is lit,
+  // unless they're all switched on
+  const innerArrowIds = innerArrows(nodes);
+  const [allInnerArrows, setAllInnerArrows] = useState(() => {
+    try {
+      return localStorage.getItem("free-form:inner-arrows") === "all";
+    } catch {
+      return false;
+    }
+  });
+  function toggleInnerArrows() {
+    const next = !allInnerArrows;
+    setAllInnerArrows(next);
+    try {
+      localStorage.setItem("free-form:inner-arrows", next ? "all" : "click");
+    } catch {
+      // not remembered, that's all
+    }
+  }
   const sectionTitle = (sectionId: string) => {
     const node = nodes.find((n) => n.id === flowBoxes.get(sectionId));
     return (node && parseShape(node.content).label) || sectionId;
@@ -1508,7 +1527,14 @@ export default function App() {
             kinds.length > 0 && (
               <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
                 {flows.length > 0 && <FlowList flows={flows} onPlay={playFlow} />}
-                <DiagramLegend kinds={kinds} isDark={isDark} allLabels={allArrowLabels} onToggleLabels={toggleArrowLabels} />
+                <DiagramLegend
+                  kinds={kinds}
+                  isDark={isDark}
+                  allLabels={allArrowLabels}
+                  onToggleLabels={toggleArrowLabels}
+                  allInner={allInnerArrows}
+                  onToggleInner={toggleInnerArrows}
+                />
               </div>
             )
           );
@@ -1688,6 +1714,7 @@ export default function App() {
                 introDelay={introDelays.get(node.id)}
                 flowing={focus?.has(node.id)}
                 quietLabel={!allArrowLabels && !!diagramArrowIds.has(node.id) && !focus?.has(node.id)}
+                tucked={!allInnerArrows && innerArrowIds.has(node.id) && !focus?.has(node.id) && !selectedIds.includes(node.id)}
                 id={node.id}
                 x={node.x}
                 y={node.y}

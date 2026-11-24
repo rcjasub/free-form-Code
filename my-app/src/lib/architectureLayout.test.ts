@@ -1,9 +1,20 @@
 import { describe, expect, test } from "vitest";
-import { estimateBoxSize, GROUP_HEADER, layoutArchitecture, layoutQuality, type LayoutModel, type SectionBox } from "./architectureLayout";
+import {
+  GROUP_HEADER,
+  TILE,
+  tileLabelSize,
+  layoutArchitecture,
+  layoutQuality,
+  pathOf,
+  type ArchitectureLayout,
+  type LayoutModel,
+  type SectionBox,
+} from "./architectureLayout";
 
 // The layout for AI-drawn diagrams (Phase 2, step 6): every section gets a
 // box, nothing overlaps, nested sections sit inside their parent, and the
-// diagram reads left to right along its edges.
+// diagram reads left to right along its edges, in right-angled arrows,
+// each section a tile with its name underneath.
 
 // The diagram the AI drew for this repo (Sonnet 5.5, 2026-11-12).
 const FREE_FORM: LayoutModel = {
@@ -75,10 +86,40 @@ const FREE_FORM_OPUS: LayoutModel = {
   ],
 };
 
+// crossings allowed in this repo's diagrams: right-angled arrows cross
+// where diagonal ones would have slipped past, so a few
+const CROSSINGS = 4;
+
 const byId = (boxes: SectionBox[]) => new Map(boxes.map((b) => [b.id, b]));
 const inside = (child: SectionBox, parent: SectionBox) =>
   child.x >= parent.x && child.y >= parent.y + GROUP_HEADER - 1 && child.x + child.w <= parent.x + parent.w && child.y + child.h <= parent.y + parent.h;
 const overlap = (a: SectionBox, b: SectionBox) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+// The arrows' segments that are neither horizontal nor vertical, as the
+// canvas draws them.
+function slanted(layout: ArchitectureLayout) {
+  const boxes = byId(layout.boxes);
+  return layout.edges.flatMap((e) => {
+    const path = pathOf(e, boxes) ?? [];
+    return path.slice(1).flatMap((q, i) => (Math.abs(q.x - path[i].x) > 0.5 && Math.abs(q.y - path[i].y) > 0.5 ? [`${e.from}->${e.to}`] : []));
+  });
+}
+
+// Tiles' names that overlap another tile or name.
+function crowdedNames(layout: ArchitectureLayout) {
+  const rects = layout.boxes.flatMap((b) => [
+    ...(b.isGroup ? [] : [{ id: b.id, r: b as { x: number; y: number; w: number; h: number } }]),
+    ...(b.label ? [{ id: `${b.id} name`, r: b.label }] : []),
+  ]);
+  const hits: string[] = [];
+  for (const [i, a] of rects.entries()) {
+    for (const c of rects.slice(i + 1)) {
+      const same = a.id.split(" ")[0] === c.id.split(" ")[0];
+      if (!same && (a.id.endsWith("name") || c.id.endsWith("name")) && overlap(a.r as SectionBox, c.r as SectionBox)) hits.push(`${a.id}/${c.id}`);
+    }
+  }
+  return hits;
+}
 
 // Pairs that may overlap: a group and anything inside it.
 function overlappingPairs(model: LayoutModel, boxes: SectionBox[]) {
@@ -96,12 +137,13 @@ function overlappingPairs(model: LayoutModel, boxes: SectionBox[]) {
   return pairs;
 }
 
-describe("box sizes", () => {
-  test("fit the title, within limits, growing taller as it wraps", () => {
-    expect(estimateBoxSize("API")).toEqual({ w: 140, h: 64 });
-    const long = estimateBoxSize("A very long section title that has to wrap onto lines");
-    expect(long.w).toBe(240);
-    expect(long.h).toBeGreaterThan(64);
+describe("tiles", () => {
+  test("a name takes the room it needs under its tile, wrapping when it's long", () => {
+    const short = tileLabelSize("API");
+    expect(short.w).toBe(TILE);
+    const long = tileLabelSize("A very long section title that has to wrap onto lines");
+    expect(long.w).toBeGreaterThan(TILE);
+    expect(long.h).toBeGreaterThan(short.h);
   });
 });
 
@@ -114,8 +156,11 @@ describe("layout", () => {
     const b = byId(boxes);
     expect(b.get("web")!.x).toBeLessThan(b.get("api")!.x);
     expect(b.get("api")!.x).toBeLessThan(b.get("db")!.x);
-    // with room for the edge labels between them
-    expect(b.get("api")!.x - (b.get("web")!.x + b.get("web")!.w)).toBeGreaterThanOrEqual(60);
+    // with room for the arrows between them
+    expect(b.get("api")!.x - (b.get("web")!.x + b.get("web")!.w)).toBeGreaterThanOrEqual(40);
+    // each a tile, its name underneath
+    expect(b.get("web")).toMatchObject({ w: TILE, h: TILE });
+    expect(b.get("web")!.label!.y).toBeGreaterThan(b.get("web")!.y + TILE);
   });
 
   test("a nested section sits inside its parent, below the title band", async () => {
@@ -135,7 +180,7 @@ describe("layout", () => {
     const order = layout.boxes.map((x) => x.id);
     expect(order.indexOf("api")).toBeLessThan(order.indexOf("auth"));
     // An edge from a group to its own child would only cross the frame.
-    expect(layout.edges).toEqual([{ from: "auth", to: "db", label: "users", bends: [] }]);
+    expect(layout.edges.map((e) => [e.from, e.to])).toEqual([["auth", "db"]]);
   });
 
   test("bad references don't lose sections or break the layout", async () => {
@@ -145,7 +190,7 @@ describe("layout", () => {
     };
     const layout = await layoutArchitecture(model);
     expect(layout.boxes.map((x) => [x.id, x.depth])).toEqual([["a", 0], ["b", 0]]);
-    expect(layout.edges).toEqual([{ from: "a", to: "b", label: "x", bends: [] }]);
+    expect(layout.edges.map((e) => [e.from, e.to, e.label])).toEqual([["a", "b", "x"]]);
   });
 
   test.each([
@@ -157,6 +202,7 @@ describe("layout", () => {
 
     expect(layout.boxes).toHaveLength(model.sections.length);
     expect(overlappingPairs(model, layout.boxes)).toEqual([]);
+    expect(crowdedNames(layout)).toEqual([]);
     for (const s of model.sections) if (s.parentId) expect(inside(b.get(s.id)!, b.get(s.parentId)!)).toBe(true);
     for (const box of layout.boxes) {
       expect(box.x).toBeGreaterThanOrEqual(0);
@@ -174,31 +220,37 @@ describe("layout", () => {
   test.each([
     ["Sonnet", FREE_FORM],
     ["Opus", FREE_FORM_OPUS],
-  ] as const)("this repo's diagram by %s: no arrow through a box, at most one crossing, few bends", async (_name, model) => {
-    const quality = layoutQuality(model, await layoutArchitecture(model));
+  ] as const)("this repo's diagram by %s: square arrows, none through a box, few crossings", async (_name, model) => {
+    const layout = await layoutArchitecture(model);
+    expect(slanted(layout)).toEqual([]);
+    const quality = layoutQuality(model, layout);
     expect(quality.edgesThroughBoxes).toBe(0);
-    expect(quality.edgeCrossings).toBeLessThanOrEqual(1);
-    // a couple routed around boxes, plus pairs of opposite arrows bowed apart
-    expect(quality.bentEdges).toBeLessThanOrEqual(4);
+    expect(quality.edgeCrossings).toBeLessThanOrEqual(CROSSINGS);
   });
 
-  test("an edge stays straight unless a box is in its way", async () => {
-    // a → c skips a layer, so b sits between them.
+  test("an arrow that skips a layer goes around the box in between", async () => {
+    // a -> c skips a layer, so b sits between them.
     const model: LayoutModel = {
       sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }, { id: "c", title: "C" }],
       edges: [{ from: "a", to: "b", label: "" }, { from: "b", to: "c", label: "" }, { from: "a", to: "c", label: "" }],
     };
     const layout = await layoutArchitecture(model);
-    const edge = (from: string, to: string) => layout.edges.find((e) => e.from === from && e.to === to)!;
-    expect(edge("a", "b").bends).toEqual([]);
-    expect(edge("b", "c").bends).toEqual([]);
+    expect(slanted(layout)).toEqual([]);
     expect(layoutQuality(model, layout).edgesThroughBoxes).toBe(0);
-    // Whether a → c bends depends on where b lands; if it does, its bends
-    // stay inside the diagram.
-    for (const p of edge("a", "c").bends) {
+    for (const p of layout.edges.flatMap((e) => e.bends)) {
       expect(p.x).toBeGreaterThanOrEqual(0);
       expect(p.x).toBeLessThanOrEqual(layout.width);
     }
+  });
+
+  test("an arrow leaves one box and reaches the next straight on", async () => {
+    const layout = await layoutArchitecture({ sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }], edges: [{ from: "a", to: "b", label: "" }] });
+    const b = byId(layout.boxes);
+    const path = pathOf(layout.edges[0], b)!;
+    const [start, end] = [path[0], path[path.length - 1]];
+    expect(start.x).toBe(b.get("a")!.x + b.get("a")!.w);
+    expect(end.x).toBe(b.get("b")!.x);
+    expect(start.y).toBe(end.y);
   });
 
   test("the same model always lays out the same way", async () => {
@@ -209,31 +261,16 @@ describe("layout", () => {
 });
 
 describe("arrows both ways", () => {
-  test("bow apart, to opposite sides, so their labels don't sit on each other", async () => {
+  test("run side by side, not on top of each other", async () => {
     const model: LayoutModel = {
       sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }],
       edges: [{ from: "a", to: "b", label: "asks" }, { from: "b", to: "a", label: "answers" }],
     };
     const layout = await layoutArchitecture(model);
-    const [there, back] = layout.edges;
-    expect(there.bends).toHaveLength(1);
-    expect(back.bends).toHaveLength(1);
-    // b is to the right of a, so the bows go up and down.
-    expect(Math.abs(there.bends[0].y - back.bends[0].y)).toBeGreaterThanOrEqual(30);
-    expect(layoutQuality(model, layout).edgeCrossings).toBe(0);
-  });
-
-  test("also between a group and something inside the other end's group", async () => {
-    const model: LayoutModel = {
-      sections: [{ id: "web", title: "Web" }, { id: "client", title: "Client", parentId: "web" }, { id: "proxy", title: "Proxy" }],
-      edges: [{ from: "client", to: "proxy", label: "requests" }, { from: "proxy", to: "web", label: "serves" }],
-    };
-    const layout = await layoutArchitecture(model);
-    expect(layout.edges.every((e) => e.bends.length === 1)).toBe(true);
-  });
-
-  test("a single arrow stays straight", async () => {
-    const layout = await layoutArchitecture({ sections: [{ id: "a", title: "A" }, { id: "b", title: "B" }], edges: [{ from: "a", to: "b", label: "" }] });
-    expect(layout.edges[0].bends).toEqual([]);
+    const boxes = byId(layout.boxes);
+    const [there, back] = layout.edges.map((e) => pathOf(e, boxes)!);
+    expect(slanted(layout)).toEqual([]);
+    // where each meets a's right side
+    expect(Math.abs(there[0].y - back[back.length - 1].y)).toBeGreaterThanOrEqual(8);
   });
 });

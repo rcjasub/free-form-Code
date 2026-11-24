@@ -1,5 +1,5 @@
 import type { ElkExtendedEdge, ElkNode, LayoutOptions } from "elkjs/lib/elk-api";
-import { anchorPoint, heightForLabel, LABEL_PAD, shapeCenter, type ShapeBox } from "./shapes";
+import { elbowAnchor, type ShapeBox } from "./shapes";
 
 // Where each part of an AI-drawn architecture goes on the canvas (Phase 2,
 // step 6). The AI only says what the sections are and how they connect;
@@ -7,16 +7,16 @@ import { anchorPoint, heightForLabel, LABEL_PAD, shapeCenter, type ShapeBox } fr
 // the AI ordered things.
 //
 // It uses ELK's layered layout: sections flow left to right in the
-// direction of their edges (frontend → API → database), with as few
-// crossings as it can find, and sections nested in another (an auth module
-// in the API) are laid out inside their parent's box.
+// direction of their edges (browser, then server, then its data and
+// workers), with as few crossings as it can find, and sections nested in
+// another (an auth module in the API) are laid out inside their parent's box.
+// Each section is a tile (an icon, its name underneath); the layout leaves
+// room for the names.
 //
-// Arrows on the canvas follow their shapes: each end is worked out from
-// where its shape is. A straight arrow does that perfectly, so an edge
-// stays straight unless the straight line would cut through another box;
-// only then does it get ELK's route around them as bend points. (A layered
-// layout can put a box in the way of an edge that spans several layers: on
-// the two diagrams of this repo, 1 or 2 edges in each.)
+// Arrows are right-angled, routed by ELK around the boxes, and drawn as
+// elbow arrows (shapes.ts): their bends stay where ELK put them and each end
+// meets its box straight on, so they read as tidy lines rather than
+// diagonals at every angle.
 //
 // ELK is large (about 1.6 MB), so it's loaded the first time a diagram is
 // laid out, not with the app.
@@ -50,6 +50,8 @@ export interface SectionBox {
   depth: number;
   // holds other sections: drawn as a frame with its title at the top
   isGroup: boolean;
+  // a tile's name, under it (not for a group)
+  label?: { x: number; y: number; w: number; h: number };
 }
 
 export interface Point {
@@ -76,38 +78,35 @@ export interface Size {
   h: number;
 }
 
-// Box sizes as the canvas will draw them: a rect's label at the default 14px.
+// A section's tile, as the canvas draws it (ShapeNode, labelAlign "below"):
+// a square with its kind's icon, its name in 14px text underneath, wrapping
+// at the tile's width plus TILE_LABEL_SPILL a side.
+export const TILE = 64;
 export const LABEL_FONT_SIZE = 14;
-const LINE_HEIGHT = 20;
-// a character's width as a share of the font size: shape labels are drawn in
-// the monospace font (font-mono) unless the shape is hand-drawn
-const CHAR_WIDTH = 0.6;
-const MIN_W = 140;
-const MAX_W = 240;
-const MIN_H = 64;
-// room around a title, beyond the label's own padding
-const SIDE_ROOM = 24;
+const TILE_LABEL_GAP = 8;
+const TILE_LABEL_SPILL = 48;
+const LABEL_LINE = LABEL_FONT_SIZE * 1.25;
+// a character's width as a share of the font size (the sans font, medium),
+// a little generous so a name never wraps more than planned
+const CHAR_WIDTH = 0.58;
 // a group's title sits in this band at its top; its children go below
 export const GROUP_HEADER = 44;
 const GROUP_PAD = 24;
-// how far each of two opposite arrows bows from the line between their boxes
-const PAIR_BOW = 18;
 
 function textWidth(text: string, fontSize = LABEL_FONT_SIZE) {
   return Math.ceil(text.length * fontSize * CHAR_WIDTH);
 }
 
-// A section's box, sized to its title: as wide as the title (within
-// limits), and tall enough for the lines it wraps to.
-export function estimateBoxSize(title: string): Size {
+// The room a tile's name takes under it.
+export function tileLabelSize(title: string): Size {
+  const max = TILE + 2 * TILE_LABEL_SPILL;
   const text = textWidth(title);
-  const w = Math.min(MAX_W, Math.max(MIN_W, text + 2 * LABEL_PAD + SIDE_ROOM));
-  const lines = Math.max(1, Math.ceil(text / (w - 2 * LABEL_PAD - SIDE_ROOM)));
-  return { w, h: Math.max(MIN_H, heightForLabel("rect", lines * LINE_HEIGHT)) };
+  const lines = Math.max(1, Math.ceil(text / max));
+  return { w: Math.min(max, Math.max(TILE, text)), h: Math.ceil(lines * LABEL_LINE) };
 }
 
-// How the layout reads: left to right, with room between layers for edge
-// labels and between boxes for arrows to pass.
+// How the layout reads: left to right, with room between layers and tiles
+// for the arrows to pass.
 const ROOT_OPTIONS: LayoutOptions = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
@@ -115,7 +114,7 @@ const ROOT_OPTIONS: LayoutOptions = {
   // of a group are taken into account on both sides
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   "elk.spacing.nodeNode": "48",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "80",
   "elk.spacing.edgeLabel": "8",
   "elk.edgeLabels.placement": "CENTER",
   // Chosen by measuring (layoutQuality) on two AI diagrams of this repo:
@@ -123,8 +122,12 @@ const ROOT_OPTIONS: LayoutOptions = {
   // settings tried (network simplex placement had up to 6 crossings).
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
   "elk.layered.thoroughness": "50",
-  // routes that don't pass through boxes, used for the edges that need them
-  "elk.edgeRouting": "POLYLINE",
+  // right angles only, around the boxes
+  "elk.edgeRouting": "ORTHOGONAL",
+  "elk.spacing.edgeNode": "20",
+  "elk.spacing.edgeEdge": "12",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "20",
+  "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
   "elk.spacing.componentComponent": "80",
 };
 
@@ -136,8 +139,6 @@ function loadElk(): Promise<ElkConstructor> {
 }
 
 export interface LayoutOptionsArg {
-  // box sizes; defaults to estimateBoxSize of each title
-  sizeOf?: (section: LayoutSection) => Size;
   // ELK options on top of the defaults, for trying alternatives
   elkOptions?: LayoutOptions;
 }
@@ -146,7 +147,6 @@ export interface LayoutOptionsArg {
 // section and one nested inside it are left out: the child is drawn inside
 // its parent, so an arrow between them would only cross the frame.
 export async function layoutArchitecture(model: LayoutModel, options: LayoutOptionsArg = {}): Promise<ArchitectureLayout> {
-  const sizeOf = options.sizeOf ?? ((s: LayoutSection) => estimateBoxSize(s.title));
   const byId = new Map(model.sections.map((s) => [s.id, s]));
   // A parent that isn't a section counts as none, so a bad reference can't
   // drop a section from the picture.
@@ -170,8 +170,16 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
   const toNode = (s: LayoutSection): ElkNode => {
     const kids = childrenOf.get(s.id) ?? [];
     if (kids.length === 0) {
-      const { w, h } = sizeOf(s);
-      return { id: s.id, width: w, height: h };
+      // the name as an outside label, so ELK keeps other tiles and arrows
+      // clear of it
+      const name = tileLabelSize(s.title);
+      return {
+        id: s.id,
+        width: TILE,
+        height: TILE,
+        labels: [{ text: s.title, width: name.w, height: name.h }],
+        layoutOptions: { "elk.nodeLabels.placement": "[H_CENTER, V_BOTTOM, OUTSIDE]", "elk.spacing.labelNode": `${TILE_LABEL_GAP}` },
+      };
     }
     // A group: ELK sizes it to fit its children, at least as wide as its
     // title, with a band at the top for the title.
@@ -182,7 +190,7 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
       layoutOptions: {
         "elk.padding": `[top=${GROUP_HEADER},left=${GROUP_PAD},bottom=${GROUP_PAD},right=${GROUP_PAD}]`,
         "elk.nodeSize.constraints": "MINIMUM_SIZE",
-        "elk.nodeSize.minimum": `(${titleW}, ${GROUP_HEADER + MIN_H})`,
+        "elk.nodeSize.minimum": `(${titleW}, ${GROUP_HEADER + TILE})`,
       },
     };
   };
@@ -217,48 +225,37 @@ export async function layoutArchitecture(model: LayoutModel, options: LayoutOpti
       const y = offsetY + (node.y ?? 0);
       origin.set(node.id, { x, y });
       elkRoutes.push(...(node.edges ?? []));
+      const isGroup = (node.children?.length ?? 0) > 0;
+      const w = Math.round(node.width ?? 0);
+      const h = Math.round(node.height ?? 0);
+      const name = isGroup ? null : tileLabelSize(byId.get(node.id)?.title ?? "");
       boxes.push({
         id: node.id,
         x: Math.round(x),
         y: Math.round(y),
-        w: Math.round(node.width ?? 0),
-        h: Math.round(node.height ?? 0),
+        w,
+        h,
         depth,
-        isGroup: (node.children?.length ?? 0) > 0,
+        isGroup,
+        ...(name && { label: { x: Math.round(x + w / 2 - name.w / 2), y: Math.round(y + h + TILE_LABEL_GAP), w: name.w, h: name.h } }),
       });
       walk(node.children, x, y, depth + 1);
     }
   };
   walk(result.children, 0, 0, 0);
 
+  // Each edge's bends. A route with none (ELK's straight drop from one box
+  // to the one below) gets one halfway along it, as an elbow arrow's ends
+  // only meet their boxes square when there's a bend to line up with.
   const bendsOf = new Map<string, Point[]>();
   for (const route of elkRoutes) {
     const at = origin.get((route as ElkExtendedEdge & { container?: string }).container ?? "root") ?? { x: 0, y: 0 };
-    const bends = (route.sections ?? []).flatMap((s) => s.bendPoints ?? []);
-    bendsOf.set(route.id, bends.map((p) => ({ x: Math.round(at.x + p.x), y: Math.round(at.y + p.y) })));
+    const points = (route.sections ?? []).flatMap((s) =>
+      s.bendPoints?.length ? s.bendPoints : [{ x: (s.startPoint.x + s.endPoint.x) / 2, y: (s.startPoint.y + s.endPoint.y) / 2 }],
+    );
+    bendsOf.set(route.id, points.map((p) => ({ x: Math.round(at.x + p.x), y: Math.round(at.y + p.y) })));
   }
-
-  const lineage = lineageOf(model);
-  const boxById = new Map(boxes.map((b) => [b.id, b]));
-  const routed: RoutedEdge[] = edges.map((e, i) => {
-    const straight = { ...e, bends: [] };
-    const route = { ...e, bends: bendsOf.get(`e${i}`) ?? [] };
-    return route.bends.length > 0 && boxesCrossed(straight, boxes, boxById, lineage) > 0 ? route : straight;
-  });
-
-  // Arrows both ways between two boxes (or between a box and a group, and
-  // something inside that group) would lie on about the same line, their
-  // labels on top of each other. Each one bows a little to its own side
-  // instead: the side to the left of its direction, so the pair split.
-  const related = (x: string, y: string) => lineage(x).has(y) || lineage(y).has(x);
-  const straight = routed.filter((e) => e.bends.length === 0);
-  const opposed = straight.filter((e) => straight.some((o) => o !== e && related(e.from, o.to) && related(e.to, o.from)));
-  for (const edge of opposed) {
-    const a = shapeCenter({ ...boxById.get(edge.from)!, kind: "rect" });
-    const b = shapeCenter({ ...boxById.get(edge.to)!, kind: "rect" });
-    const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    edge.bends = [{ x: Math.round((a.x + b.x) / 2 + ((b.y - a.y) / length) * PAIR_BOW), y: Math.round((a.y + b.y) / 2 - ((b.x - a.x) / length) * PAIR_BOW) }];
-  }
+  const routed: RoutedEdge[] = edges.map((e, i) => ({ ...e, bends: bendsOf.get(`e${i}`) ?? [] }));
 
   return { boxes, edges: routed, width: Math.round(result.width ?? 0), height: Math.round(result.height ?? 0) };
 }
@@ -274,18 +271,15 @@ function lineageOf(model: LayoutModel): (id: string) => Set<string> {
   };
 }
 
-// The line an arrow is drawn along, the way the canvas draws it
-// (resolveArrow in shapes.ts): each end on its box's border, aimed at the
-// next point along (its first bend, or the other box's center), with the
-// bends between.
-function pathOf(edge: RoutedEdge, boxById: Map<string, SectionBox>): Point[] | null {
+// The line an arrow is drawn along, the way the canvas draws an elbow
+// arrow (resolveArrow in shapes.ts): each end on its box's border, straight
+// across from its nearest bend, with the bends between.
+export function pathOf(edge: RoutedEdge, boxById: ReadonlyMap<string, SectionBox>): Point[] | null {
   const a = boxById.get(edge.from);
   const b = boxById.get(edge.to);
-  if (!a || !b) return null;
+  if (!a || !b || edge.bends.length === 0) return null;
   const toBox = (box: SectionBox): ShapeBox => ({ ...box, kind: "rect" });
-  const aimStart = edge.bends[0] ?? shapeCenter(toBox(b));
-  const aimEnd = edge.bends[edge.bends.length - 1] ?? shapeCenter(toBox(a));
-  return [anchorPoint(toBox(a), aimStart), ...edge.bends, anchorPoint(toBox(b), aimEnd)];
+  return [elbowAnchor(toBox(a), edge.bends[0]), ...edge.bends, elbowAnchor(toBox(b), edge.bends[edge.bends.length - 1])];
 }
 
 // How many boxes the arrow passes through, other than its own ends' boxes

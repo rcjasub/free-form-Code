@@ -66,7 +66,7 @@ export interface ShapeData extends DiagramStyle {
   fontSize?: number;
   // "top": the label sits at the top left instead of the middle, as a
   // title, for a frame that holds other shapes (an AI diagram's group)
-  labelAlign?: "top";
+  labelAlign?: "top" | "below";
   // keeps the hand-drawn wobble the same every time it's drawn (rough.js)
   seed: number;
   meta?: SectionMeta;
@@ -92,6 +92,10 @@ export interface ArrowData extends ElementStyle {
   // unset means the middle (of a bent arrow: its middle point). Set when a
   // diagram is generated, so labels don't land on each other.
   labelAt?: number;
+  // a right-angled arrow (a generated diagram's): each attached end meets
+  // its box straight on, on the side facing its bend, rather than aimed at
+  // the box's center, so the first and last segments stay square
+  elbow?: boolean;
   seed: number;
 }
 
@@ -235,7 +239,7 @@ export function parseShape(content: string): ShapeData {
     edges: oneOf(o.edges, EDGE_STYLES, DEFAULT_SHAPE.edges),
     label: text(o.label, MAX_LABEL) ?? "",
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
-    ...(o.labelAlign === "top" && { labelAlign: "top" as const }),
+    ...((o.labelAlign === "top" || o.labelAlign === "below") && { labelAlign: o.labelAlign }),
     seed: seed(o.seed),
     ...(meta && { meta }),
     ...(group !== undefined && { group }),
@@ -290,6 +294,7 @@ export function parseArrow(content: string): ArrowData {
     ...(label && { label }),
     ...(isNum(o.fontSize) && { fontSize: between(o.fontSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE, 0) }),
     ...(isNum(o.labelAt) && { labelAt: between(o.labelAt, MIN_LABEL_AT, 1 - MIN_LABEL_AT, 0.5) }),
+    ...(o.elbow === true && { elbow: true }),
   };
 }
 
@@ -348,6 +353,20 @@ export function anchorPoint(shape: ShapeBox, toward: Point): Point {
   return { x: c.x + dx / reach, y: c.y + dy / reach };
 }
 
+// Where a right-angled arrow meets a rect: straight across from the point
+// it comes from, when that point is level with the box (beside it) or in
+// line with it (above or below); otherwise, and for other shapes, as
+// anchorPoint does.
+export function elbowAnchor(shape: ShapeBox, toward: Point): Point {
+  if (shape.kind !== "rect" || shape.outline) return anchorPoint(shape, toward);
+  const { x, y, w, h } = shape;
+  const inX = toward.x >= x && toward.x <= x + w;
+  const inY = toward.y >= y && toward.y <= y + h;
+  if (inX && !inY) return { x: toward.x, y: toward.y < y ? y : y + h };
+  if (inY && !inX) return { x: toward.x < x ? x : x + w, y: toward.y };
+  return anchorPoint(shape, toward);
+}
+
 // Where the ray from `c` along `d` first crosses a closed outline: for each
 // edge p→q, solve c + t·d = p + u·(q − p) and keep the smallest t > 0 with
 // u in [0, 1]. Null if the ray misses (c outside an odd outline).
@@ -382,7 +401,8 @@ export function resolveArrow(arrow: ArrowData, x: number, y: number, shapes: Rea
   // what each end aims at: its neighbor point, or a bent arrow's middle
   const aimStart = abs.length > 2 ? abs[1] : to ? shapeCenter(to) : abs[last];
   const aimEnd = abs.length > 2 ? abs[last - 1] : from ? shapeCenter(from) : abs[0];
-  if (from) abs[0] = anchorPoint(from, aimStart);
-  if (to) abs[last] = anchorPoint(to, aimEnd);
+  const anchor = arrow.elbow && abs.length > 2 ? elbowAnchor : anchorPoint;
+  if (from) abs[0] = anchor(from, aimStart);
+  if (to) abs[last] = anchor(to, aimEnd);
   return { ...arrow, points: abs.map((p) => ({ x: p.x - x, y: p.y - y })) };
 }

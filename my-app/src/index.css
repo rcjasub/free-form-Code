@@ -421,6 +421,13 @@ body.canvas-panning * {
   opacity: 1;
 }
 
+/* An AI diagram's arrow inside a group, with nothing lit: out of the way
+   until one of its boxes is clicked or a flow reaches it. */
+.arrow-tucked {
+  opacity: 0;
+  visibility: hidden;
+}
+
 /* A flow step's box being reached (FlowsPanel): a soft ring that pulses. */
 [data-flow-target] {
   border-radius: 10px;

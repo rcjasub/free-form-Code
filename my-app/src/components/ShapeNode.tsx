@@ -9,7 +9,7 @@ import LinkBadge from "./LinkBadge";
 import { GLIDE_TRANSITION, pauseGlide, resumeGlide } from "../lib/glide";
 import { BOX_PAD, DRAG_SYNC_INTERVAL_MS, HANDLES, HANDLE_SIZE, handleEdge, screenPx, type Handle } from "../lib/boxHandles";
 import { MAX_LABEL_LENGTH, heightForLabel, labelBox, parseShape, serializeShape, shapeLabelSize, type ShapeData } from "../lib/shapes";
-import { TRANSPARENT, themeColor } from "../lib/colors";
+import { AUTO, TRANSPARENT, themeColor } from "../lib/colors";
 import { shapeClipPath, shapePaint } from "../lib/roughPaths";
 import PaintPaths from "./PaintPaths";
 import { KIND_ICONS } from "../lib/kindIcons";
@@ -24,6 +24,11 @@ const TITLE_INDENT = 6;
 const ICON_SIZE = 15;
 // room the icon takes before a frame's title
 const TITLE_ICON_ROOM = ICON_SIZE + 6;
+// A tile (labelAlign "below"): its icon fills this share of it, and its name
+// sits this far under it, free to be wider than the tile by this much a side.
+const TILE_ICON_SHARE = 0.45;
+const TILE_LABEL_GAP = 8;
+const TILE_LABEL_SPILL = 48;
 const round = (n: number) => Math.round(n * 100) / 100;
 
 interface Props {
@@ -111,7 +116,8 @@ export default React.memo(function ShapeNode({
   function commitLabel(typed: string, height: number) {
     onLabelDone?.(id);
     const label = typed.trim().slice(0, MAX_LABEL_LENGTH);
-    const fits = heightForLabel(shape.kind, height);
+    // a tile's name is under it, so the tile keeps its size
+    const fits = shape.labelAlign === "below" ? 0 : heightForLabel(shape.kind, height);
     const h = label && fits > shape.h ? fits : shape.h;
     if (label !== shape.label || h !== shape.h) reshape({ ...shape, label, h }, x, y, true);
   }
@@ -224,6 +230,8 @@ export default React.memo(function ShapeNode({
   const labelFont = shape.roughness > 0 ? "font-canvas" : "font-mono";
   const area = labelBox(shape.kind, w, h);
   const asTitle = shape.labelAlign === "top";
+  const asTile = shape.labelAlign === "below";
+  const halo = `0 0 3px ${isDark ? "#121212" : "#ffffff"}, 0 0 2px ${isDark ? "#121212" : "#ffffff"}`;
   const KindIcon = shape.meta?.kind ? KIND_ICONS[shape.meta.kind] : null;
 
   return (
@@ -271,7 +279,16 @@ export default React.memo(function ShapeNode({
         <PaintPaths paint={paint} clipId={`shape-clip-${id}`} drawIn={drawIn} intro={introDelay !== undefined} />
       </svg>
 
-      {KindIcon && (
+      {KindIcon && asTile && (
+        <KindIcon
+          aria-hidden
+          size={Math.round(Math.min(w, h) * TILE_ICON_SHARE)}
+          strokeWidth={1.75}
+          className="absolute"
+          style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)", color: labelColor, pointerEvents: "none" }}
+        />
+      )}
+      {KindIcon && !asTile && (
         <KindIcon
           aria-hidden
           size={ICON_SIZE}
@@ -293,17 +310,22 @@ export default React.memo(function ShapeNode({
           A frame's label (labelAlign "top") is a bold title at its top left
           instead, clear of the shapes inside it. */}
       <div
-        className={`absolute flex ${asTitle ? "items-start justify-start text-left font-bold" : "items-center justify-center text-center"} ${labelFont} ${editing ? "" : "select-none"}`}
+        className={`absolute flex ${asTitle ? "items-start justify-start text-left font-bold" : asTile ? "items-start justify-center text-center font-medium" : "items-center justify-center text-center"} ${asTile && shape.roughness === 0 ? "font-sans" : labelFont} ${editing ? "" : "select-none"}`}
         style={{
-          left: asTitle ? area.left + TITLE_INDENT + (KindIcon ? TITLE_ICON_ROOM : 0) : area.left,
-          right: area.left,
-          top: area.top,
-          bottom: area.top,
-          color: labelColor,
+          // a tile's name: under it, in the text color, and a little wider
+          ...(asTile
+            ? { left: -TILE_LABEL_SPILL, right: -TILE_LABEL_SPILL, top: h + TILE_LABEL_GAP, color: themeColor(AUTO, isDark), textShadow: halo }
+            : {
+                left: asTitle ? area.left + TITLE_INDENT + (KindIcon ? TITLE_ICON_ROOM : 0) : area.left,
+                right: area.left,
+                top: area.top,
+                bottom: area.top,
+                color: labelColor,
+                // a halo in the canvas color, so hatch lines don't run through the text
+                textShadow: !patterned ? undefined : halo,
+              }),
           fontSize: shapeLabelSize(shape),
           lineHeight: 1.25,
-          // a halo in the canvas color, so hatch lines don't run through the text
-          textShadow: !patterned ? undefined : `0 0 3px ${isDark ? "#121212" : "#ffffff"}, 0 0 2px ${isDark ? "#121212" : "#ffffff"}`,
           whiteSpace: "pre-wrap",
           overflowWrap: "anywhere",
           overflow: editing ? "visible" : "hidden",

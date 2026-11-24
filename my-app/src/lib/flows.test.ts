@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diagramArrows, playableFlows, sectionBoxes, stepView } from "./flows";
+import { diagramArrows, innerArrows, playableFlows, sectionBoxes, stepView } from "./flows";
 import { DEFAULT_ARROW, DEFAULT_SHAPE, serializeArrow, serializeShape } from "./shapes";
 
 // A flow's steps name sections; on the canvas they're boxes and arrows.
@@ -45,6 +45,26 @@ describe("flows on the canvas", () => {
       { title: "Gone", steps: [{ from: "queue", to: "mail", text: "x" }] },
     ];
     expect(playableFlows(flows, boxes)).toEqual([{ title: "Order", steps: [{ from: "web", to: "api", text: "1" }] }]);
+  });
+
+  it("knows which arrows join two boxes in the same group, at any depth", () => {
+    const inGroup = (id: string, sectionId: string, group: string | null) => ({
+      id,
+      type: "shape",
+      content: serializeShape({ ...DEFAULT_SHAPE, meta: { sectionId, summary: "", files: [], repo: REPO }, group }),
+    });
+    const grouped = [
+      inGroup("g-api", "api", null),
+      inGroup("g-auth", "auth", "api"),
+      inGroup("g-tokens", "tokens", "auth"), // in a group in a group
+      inGroup("g-routes", "routes", "api"),
+      inGroup("g-db", "db", null),
+      arrow("in", "g-auth", "g-routes"),
+      arrow("deep", "g-tokens", "g-routes"),
+      arrow("out", "g-auth", "g-db"),
+      arrow("to-group", "g-routes", "g-api"),
+    ];
+    expect([...innerArrows(grouped)].sort()).toEqual(["deep", "in"]);
   });
 
   it("knows which arrows join two diagram boxes", () => {

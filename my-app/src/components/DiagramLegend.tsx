@@ -13,6 +13,35 @@ interface Props {
   // arrow labels: all shown, or only on hover and for what's lit
   allLabels: boolean;
   onToggleLabels: () => void;
+  // arrows inside a group: always shown, or only for what's lit
+  allInner: boolean;
+  onToggleInner: () => void;
+}
+
+// Two choices side by side, the chosen one raised.
+function Choice({ label, value, options, onToggle }: { label: string; value: boolean; options: [string, string]; onToggle: () => void }) {
+  return (
+    <li className="flex items-center justify-between gap-2">
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="flex rounded-md bg-gray-100 p-0.5 dark:bg-[#2e2e3a]" role="radiogroup" aria-label={label}>
+        {options.map((name, i) => {
+          const on = value === (i === 1);
+          return (
+            <button
+              key={name}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => !on && onToggle()}
+              className={`rounded px-1.5 py-0.5 ${on ? "bg-white text-gray-900 shadow-sm dark:bg-[#3a3a48] dark:text-white" : "text-gray-500 dark:text-gray-400"}`}
+            >
+              {name}
+            </button>
+          );
+        })}
+      </span>
+    </li>
+  );
 }
 
 const OPEN_STORAGE = "free-form:legend-open";
@@ -27,8 +56,8 @@ function storedOpen(): boolean {
 
 // What an AI diagram's colors mean, for the kinds on this canvas: a swatch
 // drawn the way those boxes are (same line, fill and dash), and a group's
-// dashed frame. It can fold down to its title, and stays folded.
-export default function DiagramLegend({ kinds, isDark, allLabels, onToggleLabels }: Props) {
+// frame. It can fold down to its title, and stays folded.
+export default function DiagramLegend({ kinds, isDark, allLabels, onToggleLabels, allInner, onToggleInner }: Props) {
   const [open, setOpen] = useState(storedOpen);
 
   function toggle() {
@@ -78,31 +107,14 @@ export default function DiagramLegend({ kinds, isDark, allLabels, onToggleLabels
             );
           })}
           <li className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-            <span aria-hidden className="h-3 w-5 shrink-0 rounded-[3px] border-[1.5px] border-dashed border-gray-400" />
+            <span aria-hidden className="h-3 w-5 shrink-0 rounded-[3px] border-[1.5px] border-gray-400" />
             {/* where the others have their icon, so the names line up */}
             <span aria-hidden className="size-3.5 shrink-0" />
             Group
           </li>
-          <li className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-[#2e2e3a]">
-            <span className="text-gray-500 dark:text-gray-400">Arrow labels</span>
-            <span className="flex rounded-md bg-gray-100 p-0.5 dark:bg-[#2e2e3a]" role="radiogroup" aria-label="Arrow labels">
-              {[
-                { all: false, name: "On hover" },
-                { all: true, name: "All" },
-              ].map((o) => (
-                <button
-                  key={o.name}
-                  type="button"
-                  role="radio"
-                  aria-checked={allLabels === o.all}
-                  onClick={() => allLabels !== o.all && onToggleLabels()}
-                  className={`rounded px-1.5 py-0.5 ${allLabels === o.all ? "bg-white text-gray-900 shadow-sm dark:bg-[#3a3a48] dark:text-white" : "text-gray-500 dark:text-gray-400"}`}
-                >
-                  {o.name}
-                </button>
-              ))}
-            </span>
-          </li>
+          <li aria-hidden className="!mt-1.5 border-t border-gray-100 dark:border-[#2e2e3a]" />
+          <Choice label="Arrow labels" value={allLabels} options={["On hover", "All"]} onToggle={onToggleLabels} />
+          <Choice label="Inside groups" value={allInner} options={["On click", "All"]} onToggle={onToggleInner} />
         </ul>
       )}
     </div>

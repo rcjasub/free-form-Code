@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shapeClipPath } from "./roughPaths";
+import { roundedPath, shapeClipPath } from "./roughPaths";
 
 describe("shapeClipPath", () => {
   it("rounds a rectangle's corners unless they're sharp", () => {
@@ -14,5 +14,17 @@ describe("shapeClipPath", () => {
 
   it("an ellipse has no corners either way", () => {
     expect(shapeClipPath("ellipse", 100, 50, "sharp")).toBe(shapeClipPath("ellipse", 100, 50, "round"));
+  });
+});
+
+describe("roundedPath", () => {
+  it("turns each corner in a curve, smaller where a side is short", () => {
+    // right 100, down 100, right 10
+    const d = roundedPath([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 110, y: 100 }]);
+    expect(d).toBe("M0 0L88 0Q100 0 100 12L100 95Q100 100 105 100L110 100");
+  });
+
+  it("leaves a straight line straight", () => {
+    expect(roundedPath([{ x: 0, y: 0 }, { x: 50, y: 0 }])).toBe("M0 0L50 0");
   });
 });

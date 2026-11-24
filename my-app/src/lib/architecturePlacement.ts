@@ -6,6 +6,7 @@ import {
   anchorPoint,
   DEFAULT_ARROW,
   DEFAULT_STYLE,
+  elbowAnchor,
   newSeed,
   pointAlong,
   serializeArrow,
@@ -93,13 +94,15 @@ export function diagramBlocks(
     const { x, y } = at(box);
     boxes.set(box.id, { x, y, w: box.w, h: box.h, kind: "rect" });
     obstacles.push({ x, y, w: box.w, h: box.isGroup ? GROUP_HEADER : box.h });
+    if (box.label) obstacles.push({ ...at(box.label), w: box.label.w, h: box.label.h });
     const look = KIND_STYLE[section.kind] ?? KIND_STYLE.infra;
     const shape: ShapeData = {
       ...DEFAULT_STYLE,
       ...look,
-      // A group is a frame around its sections: its color's outline, dashed,
-      // with nothing over the shapes inside and its title at the top.
-      ...(box.isGroup && { fill: TRANSPARENT, strokeStyle: "dashed", labelAlign: "top" as const }),
+      // A section is a tile: its kind's icon, its name underneath. A group
+      // is a frame around its sections: its color's outline, with nothing
+      // over the tiles inside and its title at the top.
+      ...(box.isGroup ? { fill: TRANSPARENT, labelAlign: "top" as const } : { labelAlign: "below" as const }),
       kind: "rect",
       w: box.w,
       h: box.h,
@@ -121,11 +124,12 @@ export function diagramBlocks(
       const toId = blockIdOf.get(edge.to);
       if (!from || !to || !fromId || !toId) continue;
       const bends = edge.bends.map(at);
-      // Ends on the boxes' borders, aimed the way the canvas aims them
-      // (resolveArrow), so the arrow is drawn the same before and after
-      // anything moves.
-      const start = anchorPoint(from, bends[0] ?? shapeCenter(to));
-      const end = anchorPoint(to, bends[bends.length - 1] ?? shapeCenter(from));
+      // Ends on the boxes' borders, the way the canvas puts them
+      // (resolveArrow): an elbow arrow's straight across from its bends, so
+      // the arrow is drawn the same before and after anything moves.
+      const elbow = bends.length > 0;
+      const start = elbow ? elbowAnchor(from, bends[0]) : anchorPoint(from, shapeCenter(to));
+      const end = elbow ? elbowAnchor(to, bends[bends.length - 1]) : anchorPoint(to, shapeCenter(from));
       const path = [start, ...bends, end];
       const points = path.map((p) => ({ x: Math.round(p.x - start.x), y: Math.round(p.y - start.y) }));
       const arrow: ArrowData = {
@@ -139,6 +143,7 @@ export function diagramBlocks(
         points,
         fromId,
         toId,
+        ...(elbow && { elbow: true }),
         seed: seed(),
       };
       if (edge.label) {

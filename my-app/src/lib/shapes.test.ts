@@ -44,9 +44,11 @@ describe("parseShape", () => {
     expect(parseArrow(JSON.stringify(DEFAULT_ARROW)).labelAt).toBeUndefined();
   });
 
-  it("keeps a frame's top-aligned label, and drops any other alignment", () => {
+  it("keeps a frame's top-aligned label or a tile's label below, and drops any other alignment", () => {
     const frame = { ...DEFAULT_SHAPE, label: "Express API", labelAlign: "top" as const };
     expect(parseShape(serializeShape(frame))).toEqual(frame);
+    const tile = { ...DEFAULT_SHAPE, label: "Postgres", labelAlign: "below" as const };
+    expect(parseShape(serializeShape(tile))).toEqual(tile);
     expect(parseShape(JSON.stringify({ ...DEFAULT_SHAPE, labelAlign: "<script>" })).labelAlign).toBeUndefined();
     expect(parseShape(JSON.stringify(DEFAULT_SHAPE)).labelAlign).toBeUndefined();
   });
@@ -171,6 +173,18 @@ describe("resolveArrow", () => {
     const r = resolveArrow(arrow({ fromId: "a" }), 50, 25, shapes);
     close(r.points[0], 50, 0);
     close(r.points[1], 300, 0); // free end untouched
+  });
+
+  it("meets the boxes straight on when it's an elbow arrow", () => {
+    // a's bottom, down to y 100, across to b's middle, down to b's top
+    const below = new Map(shapes).set("b", { x: 300, y: 200, w: 100, h: 50, kind: "rect" });
+    const points = [{ x: 0, y: 0 }, { x: 20, y: 75 }, { x: 300, y: 75 }, { x: 300, y: 200 }];
+    const r = resolveArrow({ ...arrow({ fromId: "a", toId: "b", elbow: true }), points }, 50, 25, below);
+    close(r.points[0], 20, 25); // (70, 50): a's bottom, right above the bend
+    close(r.points[3], 300, 175); // (350, 200): b's top, right below the last bend
+    // without the flag, aimed at the centers as before
+    const plain = resolveArrow({ ...arrow({ fromId: "a", toId: "b" }), points }, 50, 25, below);
+    expect(plain.points[0].x).not.toBeCloseTo(20);
   });
 
   it("keeps the drawn end when its shape is gone", () => {

@@ -73,6 +73,37 @@ export function stepView(step: FlowStep, boxes: ReadonlyMap<string, string>, nod
   return { boxes: from === to ? [from] : [from, to], target: to, arrow };
 }
 
+// The arrows between two AI-diagram boxes that sit in the same group (at
+// any depth): the wiring inside a part of the system, shown when asked for.
+export function innerArrows(nodes: readonly BlockLike[]): Set<string> {
+  // each box's group, by section
+  const groupOf = new Map<string, string | null>();
+  const sectionOf = new Map<string, string>();
+  for (const n of nodes) {
+    if (n.type !== "shape") continue;
+    const shape = parseShape(n.content);
+    if (!shape.meta) continue;
+    sectionOf.set(n.id, shape.meta.sectionId);
+    groupOf.set(shape.meta.sectionId, shape.group ?? null);
+  }
+  const groups = (section: string) => {
+    const seen = new Set<string>();
+    for (let g = groupOf.get(section); g && !seen.has(g); g = groupOf.get(g)) seen.add(g);
+    return seen;
+  };
+  const ids = new Set<string>();
+  for (const n of nodes) {
+    if (n.type !== "arrow") continue;
+    const { fromId, toId } = parseArrow(n.content);
+    const a = fromId && sectionOf.get(fromId);
+    const b = toId && sectionOf.get(toId);
+    if (!a || !b) continue;
+    const shared = groups(b);
+    if ([...groups(a)].some((g) => shared.has(g))) ids.add(n.id);
+  }
+  return ids;
+}
+
 // The arrows between two AI-diagram boxes: their labels show only when
 // they're lit or hovered, unless all labels are switched on.
 export function diagramArrows(nodes: readonly BlockLike[]): Set<string> {

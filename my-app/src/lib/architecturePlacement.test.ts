@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArchitectureModel } from "../API/architecture";
-import { layoutArchitecture } from "./architectureLayout";
+import { layoutArchitecture, TILE } from "./architectureLayout";
 import { diagramBlocks, introSchedule, labelSize, viewToFit } from "./architecturePlacement";
 import { parseArrow, parseShape, pointAlong, resolveArrow, type ShapeBox } from "./shapes";
 
@@ -60,15 +60,16 @@ describe("shapes", () => {
     expect(blocks.bounds).toEqual({ x: 1000, y: 500, w: layout.width, h: layout.height });
   });
 
-  it("looks like its kind; a group is a dashed frame with its title on top", async () => {
+  it("is a tile that looks like its kind; a group is a frame with its title on top", async () => {
     const { blocks } = await placed();
     const shape = (id: string) => parseShape(blocks.shapes.find((s) => s.sectionId === id)!.block.content);
 
     expect(shape("web")).toMatchObject({ stroke: "blue", fill: "blue", strokeStyle: "solid" });
     expect(shape("db")).toMatchObject({ stroke: "red", fill: "red" });
     expect(shape("stripe")).toMatchObject({ stroke: "auto", fill: "transparent", strokeStyle: "dashed" });
-    expect(shape("auth").labelAlign).toBeUndefined();
-    expect(shape("api")).toMatchObject({ stroke: "green", fill: "transparent", strokeStyle: "dashed", labelAlign: "top" });
+    // a tile: its name under it
+    expect(shape("auth")).toMatchObject({ labelAlign: "below", w: TILE, h: TILE });
+    expect(shape("api")).toMatchObject({ stroke: "green", fill: "transparent", strokeStyle: "solid", labelAlign: "top" });
   });
 });
 
@@ -92,6 +93,8 @@ describe("arrows", () => {
       expect(arrow.fromId).toMatch(/^block-/);
       expect(arrow.toId).toMatch(/^block-/);
       expect(arrow.points[0]).toEqual({ x: 0, y: 0 });
+      // right-angled, its ends meeting the boxes straight on
+      expect(arrow.elbow).toBe(true);
       // Re-resolving against the shapes moves the ends by at most rounding:
       // the arrow doesn't jump the first time anything is drawn or moved.
       const resolved = resolveArrow(arrow, block.x, block.y, boxes);
