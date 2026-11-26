@@ -16,12 +16,12 @@ interface Props {
 
 // The last choices, kept in this browser between visits. The Anthropic key
 // is the server's own (backend/.env), so there's none to type or keep; a
-// GitHub token isn't kept at all. Earlier versions kept a typed key here:
-// it's cleared.
+// GitHub token isn't kept at all. Earlier versions kept a typed key, and a
+// detail level, here: both are cleared.
 const OLD_KEY_STORAGE = "free-form:anthropic-key";
+const OLD_DETAIL_STORAGE = "free-form:ai-detail";
 const URL_STORAGE = "free-form:last-repo-url";
 const MODEL_STORAGE = "free-form:ai-model";
-const DETAIL_STORAGE = "free-form:ai-detail";
 
 function load(key: string): string {
   try {
@@ -45,10 +45,9 @@ const MODELS: { id: AiModel; name: string; note: string }[] = [
   { id: "claude-opus-5-5", name: "Opus", note: "More careful, for demos" },
 ];
 
-const DETAILS: { id: DetailLevel; name: string; note: string }[] = [
-  { id: "overview", name: "Overview", note: "The main parts, 5–9 boxes" },
-  { id: "detailed", name: "Detailed", note: "Their pieces too, a bit more cost and time" },
-];
+// Every diagram is detailed: the main parts and their pieces. (The server
+// still takes "overview" too; the dialog just doesn't offer it.)
+const DETAIL: DetailLevel = "detailed";
 
 // Asks for a GitHub repo and draws its architecture on the canvas: the AI
 // reads the repo (Phase 2, steps 1-5) and the diagram is placed (step 7).
@@ -126,7 +125,6 @@ function progressSteps(phase: Phase, seconds: number, model: AiModel, result: Ge
 function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">) {
   const [repoUrl, setRepoUrl] = useState(() => load(URL_STORAGE));
   const [model, setModel] = useState<AiModel>(() => (load(MODEL_STORAGE) === "claude-opus-5-5" ? "claude-opus-5-5" : "claude-sonnet-5-5"));
-  const [detail, setDetail] = useState<DetailLevel>(() => (load(DETAIL_STORAGE) === "detailed" ? "detailed" : "overview"));
   const [githubToken, setGithubToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -136,8 +134,12 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
   const request = useRef<AbortController | null>(null);
   const busy = phase !== "idle";
 
-  // a key an earlier version kept in this browser isn't needed anymore
-  useEffect(() => save(OLD_KEY_STORAGE, ""), []);
+  // a key or detail level an earlier version kept in this browser isn't
+  // needed anymore
+  useEffect(() => {
+    save(OLD_KEY_STORAGE, "");
+    save(OLD_DETAIL_STORAGE, "");
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -164,13 +166,12 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
     setPhase("generating");
     save(URL_STORAGE, repoUrl.trim());
     save(MODEL_STORAGE, model);
-    save(DETAIL_STORAGE, detail);
     const controller = new AbortController();
     request.current = controller;
     try {
       const result = await generateArchitecture(
         canvasId,
-        { repoUrl: repoUrl.trim(), model, detail },
+        { repoUrl: repoUrl.trim(), model, detail: DETAIL },
         { githubToken: githubToken.trim() || undefined },
         controller.signal,
       );
@@ -216,7 +217,7 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
         <div role="status" className="mt-5">
           <p className="mb-3 truncate text-xs text-gray-500 dark:text-gray-400">{repoUrl.trim()}</p>
           <Pipeline aria-label="Progress" steps={progressSteps(phase, seconds, model, result)} edges={[...LINKS]} stepWidth={260} />
-          {phase === "generating" && <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">Usually 10–30s, a bit more for a detailed diagram.</p>}
+          {phase === "generating" && <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">This can take a minute.</p>}
         </div>
       ) : (
         <>
@@ -252,28 +253,6 @@ function VisualizeRepoForm({ canvasId, onClose, onDiagram }: Omit<Props, "open">
               >
                 <span className="block text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
                 <span className="block text-xs text-gray-500 dark:text-gray-400">{m.note}</span>
-              </button>
-            ))}
-          </div>
-
-          <span className={label}>Detail</span>
-          <div className="mt-1.5 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Detail">
-            {DETAILS.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                role="radio"
-                aria-checked={detail === d.id}
-                disabled={busy}
-                onClick={() => setDetail(d.id)}
-                className={`rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${
-                  detail === d.id
-                    ? "bg-[#4f8cff]/15 dark:bg-[#4f8cff]/20"
-                    : "bg-gray-100 hover:bg-gray-200 dark:bg-[#232329] dark:hover:bg-[#2a2a33]"
-                }`}
-              >
-                <span className="block text-sm font-medium text-gray-900 dark:text-white">{d.name}</span>
-                <span className="block text-xs text-gray-500 dark:text-gray-400">{d.note}</span>
               </button>
             ))}
           </div>

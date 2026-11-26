@@ -71,7 +71,8 @@ test.describe("signed in", () => {
     await openDialog(page);
     await page.getByLabel("GitHub repo").fill(REPO);
     await page.getByRole("radio", { name: /Opus/ }).click();
-    await page.getByRole("radio", { name: /Detailed/ }).click();
+    // no detail choice: every diagram is detailed
+    await expect(page.getByRole("radiogroup", { name: "Detail" })).toHaveCount(0);
     await page.getByRole("button", { name: "Generate diagram" }).click();
 
     await expect(page.getByRole("dialog")).toHaveCount(0);

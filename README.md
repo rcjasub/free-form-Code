@@ -10,7 +10,7 @@ Getting to know an unfamiliar codebase means reading dozens of files before the 
 
 ## How it works
 
-1. Paste a GitHub repo URL in **Visualize repo** and pick a model (Sonnet by default, Opus for a more careful diagram) and a level of detail (**Overview**, 5–9 parts, or **Detailed**, 15–40). While it works, the dialog shows each step as it runs.
+1. Paste a GitHub repo URL in **Visualize repo** and pick a model (Sonnet by default, Opus for a more careful diagram). Every diagram is detailed: the main parts and their pieces, about 15–40 boxes. While it works, the dialog shows each step as it runs.
 2. The backend reads the repo's file tree and key files (manifests, README, routes, schema, Docker config) at one commit.
 3. Claude returns a structured model of the architecture: its sections (each with a kind, a shape for its job, a summary and its files), the connections between them, and a few guided flows through them.
 4. Zod validates that model against a schema. Mistakes the AI can make are cleaned up (file paths that don't exist are dropped) or sent back to it once to fix; a response that still breaks the rules becomes a clean error.
