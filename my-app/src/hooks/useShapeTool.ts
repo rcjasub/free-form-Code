@@ -20,27 +20,25 @@ export interface ShapeDraft {
   square: boolean; // Shift held: equal width and height
 }
 
-// a click without a drag makes a shape this big, centered on the click
-const DEFAULT_SIZE = { w: 160, h: 80 };
 const MIN_SIZE = 16;
 const CLICK_SLOP = 4; // a drag shorter than this counts as a click
 const MIN_ARROW = 8;
 
-// Where a draft shape sits: the box dragged out (squared with Shift), or the
-// default size around a plain click.
+// Where a draft shape sits: the box dragged out (squared with Shift). A
+// shape is sized by dragging it out, as in whiteboard apps: a plain click
+// (no drag yet) has no box, so it shows nothing and makes nothing.
 export function draftBox(draft: ShapeDraft) {
   const dx = draft.to.x - draft.from.x;
   const dy = draft.to.y - draft.from.y;
-  if (Math.abs(dx) < CLICK_SLOP && Math.abs(dy) < CLICK_SLOP) {
-    return { x: draft.from.x - DEFAULT_SIZE.w / 2, y: draft.from.y - DEFAULT_SIZE.h / 2, ...DEFAULT_SIZE };
-  }
+  if (Math.abs(dx) < CLICK_SLOP && Math.abs(dy) < CLICK_SLOP) return null;
   let w = Math.max(Math.abs(dx), MIN_SIZE);
   let h = Math.max(Math.abs(dy), MIN_SIZE);
   if (draft.square) w = h = Math.max(w, h);
   return { x: dx < 0 ? draft.from.x - w : draft.from.x, y: dy < 0 ? draft.from.y - h : draft.from.y, w, h };
 }
 
-// What to save for a finished draft, or null for an arrow too short to keep.
+// What to save for a finished draft, or null for a click (a shape that was
+// never dragged out) or an arrow too short to keep.
 export function draftToBlock(draft: ShapeDraft, style: DiagramStyle) {
   if (draft.tool === "arrow") {
     const dx = draft.to.x - draft.from.x;
@@ -60,6 +58,7 @@ export function draftToBlock(draft: ShapeDraft, style: DiagramStyle) {
     return { type: "arrow", content, x: draft.from.x, y: draft.from.y, width: Math.max(Math.abs(dx), 1) };
   }
   const box = draftBox(draft);
+  if (!box) return null;
   const kind: ShapeKind = draft.tool;
   const content = serializeShape({ ...style, kind, w: box.w, h: box.h, label: "", seed: newSeed() });
   return { type: "shape", content, x: box.x, y: box.y, width: box.w };
@@ -71,6 +70,7 @@ export function draftToBlock(draft: ShapeDraft, style: DiagramStyle) {
 export function snappedShapeBlock(kind: "rect" | "ellipse", points: Point[], style: DiagramStyle) {
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
+  // (a stroke only snaps when it's big enough to be a shape, so it's never a click)
   return draftToBlock(
     { tool: kind, from: { x: Math.min(...xs), y: Math.min(...ys) }, to: { x: Math.max(...xs), y: Math.max(...ys) }, square: false },
     style,

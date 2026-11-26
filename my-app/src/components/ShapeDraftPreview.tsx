@@ -18,17 +18,22 @@ export default function ShapeDraftPreview({
   style: DiagramStyle;
   isDark: boolean;
 }) {
+  // null until the pointer has moved: a shape is dragged out, so a click
+  // shows nothing
   const box = draftBox(draft);
+  const w = box?.w ?? 0;
+  const h = box?.h ?? 0;
   const paint = useMemo(() => {
     const s = { ...style, seed: PREVIEW_SEED };
     if (draft.tool === "arrow") {
       const { from, to } = draft;
       return arrowPaint(s, [{ x: 0, y: 0 }, { x: to.x - from.x, y: to.y - from.y }], isDark);
     }
-    return shapePaint({ ...s, kind: draft.tool }, box.w, box.h, isDark);
-  }, [draft, style, isDark, box.w, box.h]);
+    return w > 0 ? shapePaint({ ...s, kind: draft.tool }, w, h, isDark) : null;
+  }, [draft, style, isDark, w, h]);
 
   const at = draft.tool === "arrow" ? draft.from : box;
+  if (!paint || !at) return null;
   return (
     <svg
       className="absolute pointer-events-none"
