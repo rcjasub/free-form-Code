@@ -221,11 +221,12 @@ export function useDiagram({
 
 
   // A shape tool's drag was released: save it, then (unless the tool is
-  // locked) go back to select with the new shape or arrow selected.
+  // locked) go back to select with the new shape or arrow selected. A click
+  // without a drag makes nothing and keeps the tool, ready for a drag.
   async function finishShape(draft: ShapeDraft) {
-    if (!toolLocked) setMode("select");
     const block = draftToBlock(draft, style);
     if (!block) return;
+    if (!toolLocked) setMode("select");
     const id = await createBlock(block);
     // A new shape comes out selected (so Enter or a double-click puts text
     // in it), not with text already started: drawing a shape mustn't leave

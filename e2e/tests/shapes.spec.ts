@@ -17,6 +17,25 @@ test.beforeEach(async ({ page }) => {
   await startAsGuest(page);
 });
 
+test("a shape is dragged out to its size: a click alone makes nothing", async ({ page }) => {
+  await page.keyboard.press("r");
+  const rectTool = page.getByTitle(/^Rectangle/);
+  await expect(rectTool).toHaveAttribute("aria-pressed", "true");
+
+  // a click: no shape, and the tool stays picked, ready for a drag
+  await page.mouse.click(CANVAS.x, CANVAS.y);
+  await page.waitForTimeout(300); // time for a block to appear, if one were made
+  expect(await blockIds(page)).toEqual([]);
+  await expect(rectTool).toHaveAttribute("aria-pressed", "true");
+
+  // a drag: one shape, the size of the drag
+  const shape = await newBlockFrom(page, () => dragMouse(page, CANVAS, { x: CANVAS.x + 180, y: CANVAS.y + 90 }));
+  const box = await boxOf(page, shape);
+  expect(Math.round(box.width)).toBeGreaterThanOrEqual(175);
+  expect(Math.round(box.height)).toBeGreaterThanOrEqual(85);
+  expect(await blockIds(page)).toEqual([shape]);
+});
+
 test("while typing a shape's label, the toolbar shows the text tool", async ({ page }) => {
   await drawRectangle(page, CANVAS, { x: CANVAS.x + 200, y: CANVAS.y + 100 });
   const textTool = page.getByTitle(/^Text/);

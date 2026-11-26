@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { draftBox, isShapeTool, type ShapeDraft } from "./useShapeTool";
+import { draftBox, draftToBlock, isShapeTool, type ShapeDraft } from "./useShapeTool";
+import { DEFAULT_STYLE } from "../lib/shapes";
 
 const draft = (over: Partial<ShapeDraft>): ShapeDraft => ({
   tool: "rect",
@@ -10,8 +11,8 @@ const draft = (over: Partial<ShapeDraft>): ShapeDraft => ({
 });
 
 describe("draftBox", () => {
-  it("makes a default-size shape centered on a plain click", () => {
-    expect(draftBox(draft({ to: { x: 102, y: 101 } }))).toEqual({ x: 20, y: 60, w: 160, h: 80 });
+  it("has no box for a plain click: a shape is dragged out", () => {
+    expect(draftBox(draft({ to: { x: 102, y: 101 } }))).toBeNull();
   });
 
   it("uses the dragged box", () => {
@@ -27,7 +28,19 @@ describe("draftBox", () => {
   });
 
   it("never goes below the minimum size", () => {
-    expect(draftBox(draft({ to: { x: 300, y: 105 } })).h).toBe(16);
+    expect(draftBox(draft({ to: { x: 300, y: 105 } }))!.h).toBe(16);
+  });
+});
+
+describe("draftToBlock", () => {
+  it("makes nothing from a click with a shape tool", () => {
+    for (const tool of ["rect", "ellipse", "diamond"] as const) {
+      expect(draftToBlock(draft({ tool, to: { x: 102, y: 101 } }), DEFAULT_STYLE)).toBeNull();
+    }
+  });
+
+  it("makes the shape that was dragged out", () => {
+    expect(draftToBlock(draft({ to: { x: 250, y: 160 } }), DEFAULT_STYLE)).toMatchObject({ type: "shape", x: 100, y: 100, width: 150 });
   });
 });
 

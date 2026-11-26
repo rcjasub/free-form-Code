@@ -60,7 +60,7 @@ import { movingWith } from "./lib/containment";
 import DiagramLegend from "./components/DiagramLegend";
 import { LANGUAGE_OPTIONS, isRunnable, languageOption, type Language } from "./lib/languages";
 import { requestRun } from "./lib/runCode";
-import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "./lib/runOutputs";
+import { type Output, makeRunKey, isAlreadyShown, placeOutput, outputFontSize } from "./lib/runOutputs";
 import { getMe, type Me } from "./API/auth";
 import { getArchitecture, type Architecture } from "./API/architecture";
 import { FlowList, FlowPlayer, type FlowPosition } from "./components/FlowsPanel";
@@ -653,15 +653,18 @@ export default function App() {
       try {
         const { output, error } = await requestRun(socket, code, language);
         const id = nextId.current++;
+        // sized to the block it came from
+        const source = sourceId ? history.nodesRef.current.find((n) => n.id === sourceId) : undefined;
+        const fontSize = outputFontSize(source?.fontSize);
         setOutputs((prev) => {
           const { x, y } = placeOutput(prev, sourceId, anchor, scaleRef.current);
-          return [...prev, { id, x, y, text: output, isError: error, sourceId, runKey }];
+          return [...prev, { id, x, y, text: output, isError: error, sourceId, runKey, fontSize }];
         });
       } finally {
         if (runKey) pendingRunKeys.current.delete(runKey);
       }
     },
-    [],
+    [history.nodesRef],
   );
 
   useEffect(() => {
