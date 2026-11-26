@@ -73,6 +73,28 @@ describe("toPreviewItem", () => {
     });
     expect(toPreviewItem(row({ type: "arrow", content: "{}" }))).toBeNull();
   });
+
+  test("a shape keeps its outline and colors, so circles and diamonds look like themselves", () => {
+    const shape = (look: object) => toPreviewItem(row({ type: "shape", content: JSON.stringify({ w: 100, h: 80, ...look }) }));
+    expect(shape({ kind: "ellipse", stroke: "red", fill: "red", strokeStyle: "solid" })).toEqual({
+      t: "shape", x: 10, y: 21, w: 100, h: 80, k: "ellipse", s: "red", f: "red",
+    });
+    expect(shape({ kind: "diamond", stroke: "#1971c2", fill: "transparent", strokeStyle: "dashed" })).toEqual({
+      t: "shape", x: 10, y: 21, w: 100, h: 80, k: "diamond", s: "#1971c2", d: 1,
+    });
+    // a plain rect with the default look sends nothing more than before
+    expect(shape({ kind: "rect", stroke: "auto", fill: "transparent", strokeStyle: "solid" })).toEqual({
+      t: "shape", x: 10, y: 21, w: 100, h: 80, s: "auto",
+    });
+  });
+
+  test("anything that isn't a plain color or a known outline is left out", () => {
+    const item = toPreviewItem(row({
+      type: "shape",
+      content: JSON.stringify({ w: 50, h: 50, kind: "star", stroke: "url(javascript:alert(1))", fill: "red; stroke: blue", strokeStyle: 5 }),
+    }));
+    expect(item).toEqual({ t: "shape", x: 10, y: 21, w: 50, h: 50 });
+  });
 });
 
 describe("downsample", () => {

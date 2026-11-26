@@ -92,6 +92,7 @@ export default function CanvasToolbar({
             <button
               key={tool.mode}
               onClick={() => onSelect(tool.mode)}
+              aria-pressed={activeTool === tool.mode}
               title={TOOL_KEYS[tool.mode] ? `${tool.title} — ${TOOL_KEYS[tool.mode]!.join(" or ")}` : tool.title}
               className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
                 activeTool === tool.mode

@@ -17,6 +17,20 @@ test.beforeEach(async ({ page }) => {
   await startAsGuest(page);
 });
 
+test("while typing a shape's label, the toolbar shows the text tool", async ({ page }) => {
+  await drawRectangle(page, CANVAS, { x: CANVAS.x + 200, y: CANVAS.y + 100 });
+  const textTool = page.getByTitle(/^Text/);
+  await expect(textTool).toHaveAttribute("aria-pressed", "false");
+
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[contenteditable]").first()).toBeFocused();
+  await expect(textTool).toHaveAttribute("aria-pressed", "true");
+
+  await page.keyboard.type("API server");
+  await page.mouse.click(EMPTY.x, EMPTY.y);
+  await expect(textTool).toHaveAttribute("aria-pressed", "false");
+});
+
 test("typing in a shape gives it a label that moves with it", async ({ page }) => {
   const shape = await drawRectangle(page, CANVAS, { x: CANVAS.x + 200, y: CANVAS.y + 100 });
   await typeLabel(page, "API server");

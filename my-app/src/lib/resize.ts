@@ -1,11 +1,17 @@
 import { pauseGlide, resumeGlide } from "./glide";
 import { dragTravel, trackDrag } from "./dragMath";
 
-// Excalidraw-style resizing for text boxes (text blocks and run outputs):
-// a dot on each corner scales the font (and the wrap width with it); the
-// left and right edges can be grabbed anywhere to change where lines wrap.
-// Dragging from the left or top moves the box so the opposite side stays put.
-export type ResizeHandle = "left" | "right" | "nw" | "ne" | "sw" | "se";
+// Resizing for text boxes (text blocks and run outputs), as whiteboard apps
+// do it: a dot on each corner scales the font (and the wrap width with it);
+// the left and right edges can be grabbed anywhere to change where lines
+// wrap; the top and bottom edges scale the font like a corner, by how far
+// they move up or down. Dragging from the left or top moves the box so the
+// opposite side stays put.
+export type ResizeHandle = "left" | "right" | "top" | "bottom" | "nw" | "ne" | "sw" | "se";
+
+// The top and bottom edges: they follow the pointer up and down, the rest
+// follow it sideways.
+export const isVertical = (handle: ResizeHandle) => handle === "top" || handle === "bottom";
 
 // How far the dashed selection outline sits outside a box; the handles sit
 // on it (see components/ResizeHandles).
@@ -26,6 +32,10 @@ export interface ResizeStart {
   font: number | null; // null: the default font size
   defaultFont: number;
   wrap: number | null; // null: lines don't wrap
+  // the width the text takes on one line (unwrapped), if known: a side
+  // dragged out to it or past it ends the wrap, so the box fits the text
+  // instead of growing empty space
+  natural?: number;
 }
 
 export interface ResizeResult {
@@ -37,20 +47,29 @@ export interface ResizeResult {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-// The new size and position after the pointer moved `dx` canvas units
-// sideways from where the drag started.
-export function resizeFrom(handle: ResizeHandle, start: ResizeStart, dx: number, limits: ResizeLimits): ResizeResult {
-  const fromLeft = handle === "left" || handle === "nw" || handle === "sw";
-  const fromTop = handle === "nw" || handle === "ne";
-  const out = fromLeft ? -dx : dx; // how far the dragged side moved outward
+// The new size and position after the pointer moved `d` canvas units from
+// where the drag started: down for the top and bottom edges, sideways for
+// the rest.
+export function resizeFrom(handle: ResizeHandle, start: ResizeStart, d: number, limits: ResizeLimits): ResizeResult {
+  // the top edge keeps the bottom-right corner in place, like the top-left dot
+  const fromLeft = handle === "left" || handle === "nw" || handle === "sw" || handle === "top";
+  const fromTop = handle === "nw" || handle === "ne" || handle === "top";
+  const vertical = isVertical(handle);
+  // how far the dragged side moved outward
+  const out = (vertical ? fromTop : fromLeft) ? -d : d;
 
   if (handle === "left" || handle === "right") {
     const wrap = Math.round(clamp(start.width + out, limits.minWidth, limits.maxWidth));
+    // as wide as the text on one line, or wider: no wrap, the box fits the text
+    if (start.natural !== undefined && wrap >= start.natural) {
+      return { wrap: null, font: start.font, x: fromLeft ? start.x + (start.width - start.natural) : start.x, y: start.y };
+    }
     return { wrap, font: start.font, x: fromLeft ? start.x + (start.width - wrap) : start.x, y: start.y };
   }
 
   const base = start.font ?? start.defaultFont;
-  const factor = Math.max(0.1, (start.width + out) / start.width);
+  const size = vertical ? start.height : start.width;
+  const factor = Math.max(0.1, (size + out) / size);
   const font = Math.round(clamp(base * factor, limits.minFont, limits.maxFont) * 10) / 10;
   const scaled = font / base; // after clamping, so everything stays in step
   return {
@@ -92,7 +111,8 @@ export function startResizeDrag(
   if (glides) pauseGlide(el); // the position follows the drag, not a glide
 
   function onMove(mv: PointerEvent) {
-    latest = resizeFrom(handle, full, travel(mv).dx, limits);
+    const moved = travel(mv);
+    latest = resizeFrom(handle, full, isVertical(handle) ? moved.dy : moved.dx, limits);
     preview(latest);
     if (!frame) {
       frame = requestAnimationFrame(() => {

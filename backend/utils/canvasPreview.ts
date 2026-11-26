@@ -1,6 +1,8 @@
 // Turns a canvas's blocks into a rough sketch of its layout, for the
 // dashboard's cards: a box per text/code/image block, a few points per
-// drawing. No text is sent, only where things are and roughly how big.
+// drawing, and each shape as its own outline (rect, ellipse or diamond) in
+// its colors. No text is sent, only where things are, roughly how big and
+// how shapes look.
 
 export interface PreviewRow {
   canvas_id: string;
@@ -17,7 +19,8 @@ export interface PreviewRow {
 }
 
 export type PreviewItem =
-  | { t: "text" | "code" | "image" | "shape"; x: number; y: number; w: number; h: number }
+  | { t: "text" | "code" | "image"; x: number; y: number; w: number; h: number }
+  | { t: "shape"; x: number; y: number; w: number; h: number; k?: "ellipse" | "diamond"; s?: string; f?: string; d?: 1 }
   | { t: "draw"; x: number; y: number; pts: [number, number][] };
 
 // Blocks per canvas the sketch draws (the query takes the newest ones).
@@ -58,16 +61,35 @@ function drawingPoints(content: string | null): [number, number][] | null {
   }
 }
 
-// A diagram shape's size, from its { w, h } content.
-function shapeSize(content: string | null): { w: number; h: number } | null {
+// A color as shapes save it: a palette name ("red", "auto") or a hex code,
+// the same rule the canvas uses (my-app lib/shapes.ts). Anything else is
+// left out, so only plain color values reach the card.
+const COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i;
+const color = (v: unknown) => (typeof v === "string" && COLOR.test(v) ? v : undefined);
+
+// How a shape looks, from its content: its size, outline (a rect is the
+// default, so it's left out), line and fill colors (none when transparent)
+// and whether its line is dashed.
+function shapeLook(content: string | null): Omit<Extract<PreviewItem, { t: "shape" }>, "t" | "x" | "y"> | null {
   if (!content) return null;
   try {
-    const value = JSON.parse(content) as { w?: unknown; h?: unknown };
-    if (Number.isFinite(value?.w) && Number.isFinite(value?.h)) return { w: value.w as number, h: value.h as number };
+    const value = JSON.parse(content) as Record<string, unknown>;
+    if (!Number.isFinite(value?.w) || !Number.isFinite(value?.h)) return null;
+    const kind = value.kind === "ellipse" || value.kind === "diamond" ? value.kind : undefined;
+    const stroke = color(value.stroke);
+    const fill = value.fill === "transparent" ? undefined : color(value.fill);
+    const dashed = value.strokeStyle === "dashed" || value.strokeStyle === "dotted";
+    return {
+      w: round(value.w as number),
+      h: round(value.h as number),
+      ...(kind && { k: kind }),
+      ...(stroke && { s: stroke }),
+      ...(fill && { f: fill }),
+      ...(dashed && { d: 1 as const }),
+    };
   } catch {
-    // not a shape we can read
+    return null; // not a shape we can read
   }
-  return null;
 }
 
 export function toPreviewItem(row: PreviewRow): PreviewItem | null {
@@ -82,8 +104,8 @@ export function toPreviewItem(row: PreviewRow): PreviewItem | null {
     return { t: "image", x, y, w: round(w), h: round(w * 0.66) };
   }
   if (row.type === "shape") {
-    const size = shapeSize(row.content);
-    return size ? { t: "shape", x, y, w: round(size.w), h: round(size.h) } : null;
+    const look = shapeLook(row.content);
+    return look ? { t: "shape", x, y, ...look } : null;
   }
   if (row.type !== "text" && row.type !== "code") return null; // arrows etc.
 

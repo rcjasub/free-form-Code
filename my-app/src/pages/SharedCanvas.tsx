@@ -174,7 +174,8 @@ export default function SharedCanvas() {
   // The block just made by a text click — it opens with the cursor in it.
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const lastTextCreate = useRef(0);
-  // While the cursor is in a block the toolbar shows T, whatever the mode.
+  // While the cursor is in a block, or in a shape's or arrow's label (see
+  // diagram.labelEditId, at the toolbar), the toolbar shows T, whatever the mode.
   const [editingText, setEditingText] = useState(false);
   const activeTool: Mode = editingText ? "text" : mode;
 
@@ -1215,7 +1216,7 @@ export default function SharedCanvas() {
       {/* mode toolbar + run hint — only in edit mode */}
       {canEdit && (
         <CanvasToolbar
-          activeTool={activeTool}
+          activeTool={diagram.labelEditId !== null ? "text" : activeTool}
           onSelect={setMode}
           toolLocked={diagram.toolLocked}
           onToggleLock={diagram.toggleToolLock}

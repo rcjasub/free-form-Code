@@ -26,6 +26,16 @@ const DRAG_SYNC_INTERVAL_MS = 40;
 
 // Text size bounds for the resize handles; they match the backend's checks.
 const DEFAULT_FONT_SIZE = 14;
+
+// How much bigger than the default font a block's text is (--block-scale),
+// and the gentler scale its run button and language picker take from it
+// (--controls-scale): the text's scale to the power CONTROLS_GROWTH, so at
+// twice the text they're about 1.6x, at four times about 2.5x, at half
+// about 0.64x. They stay in proportion to the block without getting huge
+// on a big one or unreadable on a small one.
+const CONTROLS_GROWTH = 0.65;
+const fontScale = (font: number | null | undefined) => (font ?? DEFAULT_FONT_SIZE) / DEFAULT_FONT_SIZE;
+const controlsScale = (scale: number) => scale ** CONTROLS_GROWTH;
 const TEXT_LIMITS: ResizeLimits = { minWidth: 40, maxWidth: 4000, minFont: 6, maxFont: 200 };
 
 interface Props {
@@ -347,23 +357,49 @@ export default React.memo(function FloatingNode({
     view.focus();
   }
 
+  // How wide the block is with its text on one line: wrapping turned off for
+  // a moment and the width read, all before the browser paints, so nothing
+  // shows. (A side handle dragged out to it ends the wrap; lib/resize.)
+  function naturalWidth(el: HTMLElement): number {
+    const content = el.querySelector(".cm-content");
+    const wrapped = content?.classList.contains("cm-lineWrapping") ?? false;
+    const width = el.style.width;
+    if (wrapped) content!.classList.remove("cm-lineWrapping");
+    el.style.width = "max-content";
+    const natural = el.offsetWidth;
+    el.style.width = width;
+    if (wrapped) content!.classList.add("cm-lineWrapping");
+    return natural;
+  }
+
   // Dragging a resize handle (see lib/resize).
   function handleResizePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
     const el = containerRef.current;
     if (!el || !onResize || e.button !== 0) return;
+    const side = handle === "left" || handle === "right";
     startResizeDrag(
       e,
       el,
       handle,
-      { x: xRef.current, y: yRef.current, font: fontSize ?? null, defaultFont: DEFAULT_FONT_SIZE, wrap: wrapWidth ?? null },
+      {
+        x: xRef.current,
+        y: yRef.current,
+        font: fontSize ?? null,
+        defaultFont: DEFAULT_FONT_SIZE,
+        wrap: wrapWidth ?? null,
+        ...(side && { natural: naturalWidth(el) }),
+      },
       TEXT_LIMITS,
       (r, done) => onResize?.(id, r.wrap, r.font, r.x, r.y, done),
       {
         preview: (r) => {
           el.style.left = `${r.x}px`;
           el.style.top = `${r.y}px`;
-          if (r.wrap !== null) el.style.width = `${r.wrap}px`;
+          // no wrap (dragged out past the text): the box fits the text
+          el.style.width = r.wrap !== null ? `${r.wrap}px` : "max-content";
           el.style.setProperty("--block-font-size", `${r.font ?? DEFAULT_FONT_SIZE}px`);
+          el.style.setProperty("--block-scale", String(fontScale(r.font)));
+          el.style.setProperty("--controls-scale", String(controlsScale(fontScale(r.font))));
         },
       },
     );
@@ -385,6 +421,9 @@ export default React.memo(function FloatingNode({
         left: x,
         top: y,
         ["--block-font-size" as string]: fontSize ? `${fontSize}px` : undefined,
+        // the run button and the language picker grow and shrink with these
+        ["--block-scale" as string]: fontSize ? fontScale(fontSize) : undefined,
+        ["--controls-scale" as string]: fontSize ? controlsScale(fontScale(fontSize)) : undefined,
         // only plain text takes a color; code keeps its syntax colors
         ["--block-color" as string]: language === "text" && color ? themeColor(color, isDark) : undefined,
         // a wrapping block is exactly its wrap width, so its edge follows
@@ -432,16 +471,33 @@ export default React.memo(function FloatingNode({
           editors: grab the left/right edge of the box to change where lines
           wrap, or a corner dot to scale the text */}
       {onResize && selected && (mode === "select" || mode === "text") && (
-        <ResizeHandles isDark={isDark} onPointerDown={handleResizePointerDown} />
+        <ResizeHandles
+          isDark={isDark}
+          onPointerDown={handleResizePointerDown}
+          // wrapping at a set width: the fit line ends it, keeping the size
+          onFit={wraps ? () => onResize?.(id, null, fontSize ?? null, xRef.current, yRef.current, true) : undefined}
+        />
       )}
 
       {/* hand mode overlay */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
 
-      {/* play button — plain text has nothing to run */}
+      {/* play button — plain text has nothing to run. Sized from the gentler
+          --controls-scale, and centered on the first line, which follows
+          the text's own --block-scale */}
       {isRunnable(language) && (
         <div
-          className={`absolute -left-5 top-1 opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer text-xs transition-opacity ${isDark ? "text-gray-400" : "text-gray-400"}`}
+          data-run
+          className={`absolute opacity-0 group-hover:opacity-40 hover:opacity-100 cursor-pointer transition-opacity ${isDark ? "text-gray-400" : "text-gray-400"}`}
+          style={{
+            // at the default size, what -left-5 top-1 text-xs gave it
+            left: "calc(-1.25rem * var(--controls-scale, 1))",
+            // the middle of a 1rem box at 0.25rem, scaled with the text,
+            // less half of this (gentler-scaled) one
+            top: "calc(0.75rem * var(--block-scale, 1) - 0.5rem * var(--controls-scale, 1))",
+            fontSize: "calc(0.75rem * var(--controls-scale, 1))",
+            lineHeight: "calc(1rem * var(--controls-scale, 1))",
+          }}
           onClick={() => onRun(id)}
         >
           ▶
@@ -458,8 +514,18 @@ export default React.memo(function FloatingNode({
           // top covers the label instead of it showing through. While the
           // menu is open: fully opaque, or it would inherit the fade, and
           // raised above everything (the menu's own z-50 only counts inside
-          // this wrapper).
-          className={`absolute -bottom-7 left-0 w-max whitespace-nowrap text-[11px] font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          // this wrapper). Its label grows and shrinks gently with the text
+          // (--controls-scale): at the default size it's where -bottom-7 and
+          // text-[11px] put it. Only the label: the menu that opens keeps
+          // its usual size, so a big block doesn't get a giant menu.
+          data-language-picker
+          // (line height too: otherwise it inherits the page's fixed 1.45rem)
+          style={{
+            bottom: "calc(-1.75rem * var(--controls-scale, 1))",
+            fontSize: "calc(11px * var(--controls-scale, 1))",
+            lineHeight: "calc(1.45rem * var(--controls-scale, 1))",
+          }}
+          className={`absolute left-0 w-max whitespace-nowrap font-canvas opacity-40 group-hover:opacity-70 hover:opacity-100 has-[[data-state=open]]:opacity-100 transition-opacity has-[[data-state=open]]:z-50 ${isDark ? "text-gray-400" : "text-gray-500"}`}
         >
           {onLanguageChange ? (
             <AnimatedDropdown
@@ -467,6 +533,8 @@ export default React.memo(function FloatingNode({
               value={language}
               onChange={(lang) => onLanguageChange(id, lang)}
               ariaLabel="Block language"
+              // the chevron in step with the label (its h-3 w-3 at 11px)
+              triggerClassName="[&_svg]:h-[1.227em] [&_svg]:w-[1.227em]"
               menuClassName="text-xs"
             />
           ) : (
