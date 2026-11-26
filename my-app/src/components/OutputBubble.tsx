@@ -5,6 +5,7 @@ import type { Mode } from "../App";
 import { BOX_PAD, startResizeDrag, type ResizeHandle, type ResizeLimits } from "../lib/resize";
 import ResizeHandles from "./ResizeHandles";
 import { dragFrom, trackDrag, zoomOf } from "../lib/dragMath";
+import { OUTPUT_FONT_SIZE } from "../lib/runOutputs";
 
 // Outputs only live on this screen — nobody else sees them — so a drag or
 // resize is shown on this bubble alone while it happens, and the page only
@@ -13,7 +14,7 @@ import { dragFrom, trackDrag, zoomOf } from "../lib/dragMath";
 
 // Unresized, an output wraps at this width; the handles change it.
 const DEFAULT_WIDTH = 320;
-const DEFAULT_FONT_SIZE = 12;
+const DEFAULT_FONT_SIZE = OUTPUT_FONT_SIZE;
 const OUTPUT_LIMITS: ResizeLimits = { minWidth: 60, maxWidth: 2000, minFont: 6, maxFont: 120 };
 
 interface Props {
@@ -198,7 +199,10 @@ export default React.memo(function OutputBubble({
       data-output-id={id} // lets the next output from the same block be placed beside this one
       // Matches the canvas: white text on the dark canvas black, black text on
       // white in light mode. Errors are the app's red, #FF3B6B.
-      className={`absolute group rounded-lg px-3 py-2 shadow-lg font-canvas whitespace-pre-wrap ${
+      // Everything is sized in em, from its font size, so a bigger output
+      // (from a scaled block, or the resize handles) is the same box scaled
+      // up: at 12px the padding is the px-3 py-2 it had.
+      className={`absolute group shadow-lg font-canvas whitespace-pre-wrap ${
         isDark ? "bg-[#121212]" : "bg-white"
       } ${
         isError ? "text-[#FF3B6B]" : isDark ? "text-white" : "text-black"
@@ -211,9 +215,12 @@ export default React.memo(function OutputBubble({
         // squeezed an output into whatever room was left before the canvas's
         // right edge.
         width: width ?? "max-content",
-        maxWidth: width ? undefined : DEFAULT_WIDTH,
+        // DEFAULT_WIDTH at the default font, and in step with a bigger one
+        maxWidth: width ? undefined : `${DEFAULT_WIDTH / DEFAULT_FONT_SIZE}em`,
         fontSize: fontSize ?? DEFAULT_FONT_SIZE,
         lineHeight: 1.4,
+        padding: "0.75em 1.125em",
+        borderRadius: 0, // square corners: a box, not a speech bubble
         outline: selected ? SELECTION_OUTLINE : undefined,
         outlineOffset: selected ? BOX_PAD : undefined,
         pointerEvents: mode === "draw" ? "none" : undefined,
@@ -231,12 +238,15 @@ export default React.memo(function OutputBubble({
       {/* hand mode overlay — sits on top of CodeMirror so clicks pan instead of focus */}
       {mode === "hand" && <div className="absolute inset-0 z-10 cursor-grab" />}
       <button
-        className={`absolute top-1 right-1.5 text-[10px] cursor-pointer opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#FF3B6B]" : "text-[#7A86b3]"}`}
+        data-close
+        className={`absolute cursor-pointer opacity-40 hover:opacity-100 transition-opacity ${isError ? "text-[#FF3B6B]" : "text-[#7A86b3]"}`}
+        // 10px, 4.5px down and 6.75px in at the default size (its own em)
+        style={{ fontSize: `${10 / DEFAULT_FONT_SIZE}em`, top: "0.45em", right: "0.675em" }}
         onClick={() => onDelete(id)}
       >
         ✕
       </button>
-      <span className="pr-3">{text}</span>
+      <span style={{ paddingRight: "1.125em" }}>{text}</span>
     </div>
   );
 })

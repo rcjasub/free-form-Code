@@ -49,7 +49,7 @@ import { toolForKey } from "@/lib/toolKeys";
 import PropertiesPanel from "@/components/PropertiesPanel";
 import ShapeNode from "@/components/ShapeNode";
 import ArrowNode from "@/components/ArrowNode";
-import { type Output, makeRunKey, isAlreadyShown, placeOutput } from "@/lib/runOutputs";
+import { type Output, makeRunKey, isAlreadyShown, placeOutput, outputFontSize } from "@/lib/runOutputs";
 
 // a block as this page holds it — see hooks/useCanvasHistory
 type Node = CanvasNode;
@@ -827,18 +827,21 @@ export default function SharedCanvas() {
       try {
         const { output, error } = await requestRun(socket, code, language);
         const outputId = nextId.current++;
+        // sized to the block it came from
+        const source = sourceId ? history.nodesRef.current.find((n) => n.id === sourceId) : undefined;
+        const fontSize = outputFontSize(source?.fontSize);
         setOutputs((prev) => {
           const pos = placeOutput(prev, sourceId, anchor, scaleRef.current);
           return [
             ...prev,
-            { id: outputId, ...pos, text: output, isError: error, sourceId, runKey },
+            { id: outputId, ...pos, text: output, isError: error, sourceId, runKey, fontSize },
           ].slice(-MAX_OUTPUTS);
         });
       } finally {
         if (runKey) pendingRunKeys.current.delete(runKey);
       }
     },
-    [canEdit],
+    [canEdit, history.nodesRef],
   );
 
   const handleRunNode = useCallback(async (id: string) => {
