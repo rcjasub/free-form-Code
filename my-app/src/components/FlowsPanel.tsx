@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Play, Route, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Play, Route, X } from "lucide-react";
 import { motion } from "motion/react";
+import { FoldBody, FoldChevron } from "./Fold";
 import type { Flow } from "../lib/flows";
 
 export interface FlowPosition {
@@ -60,9 +61,9 @@ export function FlowList({ flows, onPlay }: Pick<Props, "flows" | "onPlay">) {
           <Route className="size-3.5" />
           How it works
         </span>
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronUp className="size-3.5" />}
+        <FoldChevron open={open} />
       </button>
-      {open && (
+      <FoldBody open={open}>
         <ul className="mt-1.5 space-y-0.5">
           {flows.map((flow, i) => (
             <li key={`${i}-${flow.title}`}>
@@ -78,7 +79,7 @@ export function FlowList({ flows, onPlay }: Pick<Props, "flows" | "onPlay">) {
             </li>
           ))}
         </ul>
-      )}
+      </FoldBody>
     </nav>
   );
 }

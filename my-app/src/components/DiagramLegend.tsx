@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { FoldBody, FoldChevron } from "./Fold";
 import { KIND_STYLE } from "../lib/architecturePlacement";
 import { AUTO, fillColor, themeColor, TRANSPARENT } from "../lib/colors";
 import { KIND_NAMES } from "../lib/sectionDetails";
@@ -91,9 +91,9 @@ export default function DiagramLegend({ kinds, shapes = [], isDark, allLabels, o
         className="flex w-full items-center justify-between gap-3 font-medium text-gray-500 dark:text-gray-400"
       >
         Diagram key
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronUp className="size-3.5" />}
+        <FoldChevron open={open} />
       </button>
-      {open && (
+      <FoldBody open={open}>
         <ul className="mt-1.5 space-y-1" aria-label="Diagram key">
           {kinds.map((kind) => {
             const look = KIND_STYLE[kind];
@@ -133,7 +133,7 @@ export default function DiagramLegend({ kinds, shapes = [], isDark, allLabels, o
           <Choice label="Arrow labels" value={allLabels} options={["On hover", "All"]} onToggle={onToggleLabels} />
           <Choice label="Inside groups" value={allInner} options={["On click", "All"]} onToggle={onToggleInner} />
         </ul>
-      )}
+      </FoldBody>
     </div>
   );
 }

@@ -364,6 +364,47 @@ test.describe("signed in", () => {
     await expect(inner.locator("svg").first()).toBeVisible();
   });
 
+  test("the key and flows cards fold and unfold smoothly", async ({ page, request }) => {
+    const canvasId = await openNewServerCanvas(page, request);
+    await fakeGenerate(page, ok(canvasId));
+    await openDialog(page);
+    await page.getByLabel("GitHub repo").fill(REPO);
+    await page.getByRole("button", { name: "Generate diagram" }).click();
+    await expect.poll(async () => (await blockIds(page)).length).toBe(DIAGRAM_BLOCKS);
+
+    for (const [title, card] of [["Diagram key", "div"], ["How it works", "nav"]] as const) {
+      const toggle = page.getByRole("button", { name: title });
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+      // Clicks the toggle in the page and records the card's height on each
+      // frame for half a second: a slide passes through heights in between,
+      // a pop jumps straight from one to the other.
+      const heights = () =>
+        toggle.evaluate(async (button, tag) => {
+          const box = button.closest(tag)!;
+          const seen: number[] = [];
+          (button as HTMLElement).click();
+          const end = performance.now() + 500;
+          while (performance.now() < end) {
+            seen.push(Math.round(box.getBoundingClientRect().height));
+            await new Promise(requestAnimationFrame);
+          }
+          return seen;
+        }, card);
+
+      const folding = await heights();
+      const [open, shut] = [folding[0], folding.at(-1)!];
+      expect(shut).toBeLessThan(open);
+      expect(folding.filter((h) => h < open && h > shut).length, `${title} folding: ${folding}`).toBeGreaterThan(2);
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      const unfolding = await heights();
+      expect(unfolding.at(-1)).toBe(open);
+      expect(unfolding.filter((h) => h > shut && h < open).length, `${title} unfolding: ${unfolding}`).toBeGreaterThan(2);
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    }
+  });
+
   test("a flow plays step by step, lighting each step's boxes and arrow", async ({ page, request }) => {
     const canvasId = await openNewServerCanvas(page, request);
     await fakeGenerate(page, ok(canvasId));
