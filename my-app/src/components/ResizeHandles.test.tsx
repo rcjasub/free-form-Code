@@ -3,11 +3,13 @@ import { fireEvent, render } from "@testing-library/react";
 import ResizeHandles from "./ResizeHandles";
 
 describe("ResizeHandles", () => {
-  test("grabbing a side starts a wrap resize", () => {
+  test("each of the four edges can be grabbed, as its own handle", () => {
     const onPointerDown = vi.fn();
     const { container } = render(<ResizeHandles isDark={false} onPointerDown={onPointerDown} />);
-    fireEvent.pointerDown(container.querySelector('[data-side="right"]')!);
-    expect(onPointerDown).toHaveBeenCalledWith(expect.anything(), "right");
+    for (const side of ["left", "right", "top", "bottom"]) {
+      fireEvent.pointerDown(container.querySelector(`[data-side="${side}"]`)!);
+      expect(onPointerDown).toHaveBeenLastCalledWith(expect.anything(), side);
+    }
   });
 
   test("the fit line shows only for a box that wraps, and clicking it fits the box", () => {

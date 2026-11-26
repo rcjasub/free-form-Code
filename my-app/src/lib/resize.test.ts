@@ -48,6 +48,21 @@ describe("resizeFrom", () => {
     expect(r.y).toBe(START.y - START.height * 0.5);
   });
 
+  test("the bottom edge scales by how far it moves down, keeping the top-left corner", () => {
+    // 40 tall, dragged down 20: 1.5x
+    expect(resizeFrom("bottom", { ...START, wrap: 200 }, 20, LIMITS)).toEqual({ wrap: 300, font: 21, x: 100, y: 50 });
+    // dragged up 20: half the size
+    expect(resizeFrom("bottom", START, -20, LIMITS).font).toBe(7);
+  });
+
+  test("the top edge scales by how far it moves up, keeping the bottom-right corner", () => {
+    const r = resizeFrom("top", { ...START, wrap: 200 }, -20, LIMITS); // 1.5x
+    expect(r.font).toBe(21);
+    expect(r.wrap).toBe(300);
+    expect(r.x).toBe(START.x - START.width * 0.5); // the right side stays put
+    expect(r.y).toBe(START.y - START.height * 0.5); // and the bottom
+  });
+
   test("font clamps to its limits, and the wrap follows the clamped scale", () => {
     const r = resizeFrom("se", { ...START, font: 100, wrap: 200 }, 10000, LIMITS);
     expect(r.font).toBe(LIMITS.maxFont);

@@ -28,10 +28,10 @@ interface Props {
 }
 
 // A text box's resize handles (see lib/resize): a dot on each corner, and
-// the left and right edges of the selection box, which can be grabbed
-// anywhere along their line to change where the text wraps. They're not
-// drawn: the cursor shows them. Once the text wraps, a faint line beside the
-// right side undoes it.
+// the four edges of the selection box, which can be grabbed anywhere along
+// their line: left and right change where the text wraps, top and bottom
+// scale it. The edges aren't drawn: the cursor shows them. Once the text
+// wraps, a faint line beside the right side undoes it.
 export default function ResizeHandles({ isDark, onPointerDown, onFit }: Props) {
   return (
     <>
@@ -42,6 +42,16 @@ export default function ResizeHandles({ isDark, onPointerDown, onFit }: Props) {
           title="Drag to change where lines wrap"
           className="node-handle absolute z-20 cursor-ew-resize"
           style={{ [side]: handleEdge(-BOX_PAD, HANDLE_SIZE), top: -BOX_PAD, bottom: -BOX_PAD, width: screenPx(HANDLE_SIZE) }}
+          onPointerDown={(e) => onPointerDown(e, side)}
+        />
+      ))}
+      {(["top", "bottom"] as const).map((side) => (
+        <div
+          key={side}
+          data-side={side}
+          title="Drag to resize the text"
+          className="node-handle absolute z-20 cursor-ns-resize"
+          style={{ [side]: handleEdge(-BOX_PAD, HANDLE_SIZE), left: -BOX_PAD, right: -BOX_PAD, height: screenPx(HANDLE_SIZE) }}
           onPointerDown={(e) => onPointerDown(e, side)}
         />
       ))}
